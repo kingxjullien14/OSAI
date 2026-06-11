@@ -69,11 +69,14 @@ export function PaneDropZone({
     <div className="relative h-full min-h-0 w-full">
       {children}
       {armed && (
+        // armed (a drag is in flight somewhere) = a quiet dashed edge only;
+        // the LABEL + accent appear on the pane you're actually hovering, so
+        // the eye follows the cursor instead of every pane shouting at once.
         <div
           className={`absolute inset-0 z-30 grid place-items-center border-2 border-dashed transition-colors ${
             over
-              ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15"
-              : "border-[var(--color-border-strong)] bg-[var(--color-text)]/[0.03]"
+              ? "border-[var(--color-accent)] bg-[var(--color-accent)]/12"
+              : "border-[var(--color-border-strong)]/60 bg-transparent"
           }`}
           onDragOver={(e) => {
             e.preventDefault();
@@ -103,8 +106,13 @@ export function PaneDropZone({
           }}
           // pointer-based in-app drags (Windows: HTML5 dnd never fires in the
           // webview) — same delivery contract as the HTML5 path above.
+          // onPointerMove (not just enter) so the overlay that mounts directly
+          // under the cursor still lights up without crossing an edge first.
           onPointerEnter={() => {
             if (currentPathDrag()) setOver(true);
+          }}
+          onPointerMove={() => {
+            if (!over && currentPathDrag()) setOver(true);
           }}
           onPointerLeave={() => setOver(false)}
           onPointerUp={() => {
@@ -115,13 +123,11 @@ export function PaneDropZone({
             onPath(drag.path);
           }}
         >
-          <span
-            className={`rounded-md px-3 py-1.5 text-[12px] transition-opacity ${
-              over ? "bg-[var(--color-panel)]/95 text-[var(--color-text)]" : "bg-[var(--color-panel)]/80 text-[var(--color-muted)]"
-            }`}
-          >
-            {label}
-          </span>
+          {over && (
+            <span className="fade-in-up rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+              {label}
+            </span>
+          )}
         </div>
       )}
     </div>

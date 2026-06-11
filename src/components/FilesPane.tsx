@@ -41,6 +41,7 @@ import { listProjects, type ProjectInfo } from "../lib/run";
 import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane, startPathDrag } from "../lib/paneBus";
 import { fileIcon } from "../lib/fileIcons";
 import { basename, dirname, normalizeSlashes } from "../lib/paths.ts";
+import { isApple } from "../lib/platform";
 import { PaneDropZone } from "./PaneDropZone";
 
 const GIT_COLOR: Record<GitCode, string> = {
@@ -477,7 +478,11 @@ function TreeRow({
 
   return (
     <div
-      draggable
+      // HTML5 draggable stays mac-only: on Windows WebView2 turns it into a
+      // native OLE drag that SUPPRESSES every in-page event — no overlays, no
+      // ghost, no live feedback, delivery only at release via the Tauri drop
+      // event. Disabling it lets the pointer-based drag below own the gesture.
+      draggable={isApple}
       onDragStart={(ev) => {
         ev.dataTransfer.setData("text/plain", entry.path);
         ev.dataTransfer.setData(AIOS_PATH_MIME, entry.path);

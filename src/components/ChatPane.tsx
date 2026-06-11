@@ -3666,7 +3666,7 @@ export function ChatPane({
       <PaneDropZone onPath={insertPath} onFiles={onDropFiles} label="drop image or path">
       {/* anchored (not centered): supplementary rows grow DOWNWARD so the
           title never jumps as chips/ledger/status bloom in. */}
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto bg-[var(--color-bg)] px-6 pt-[16vh]">
+      <div className="flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto overflow-x-hidden bg-[var(--color-bg)] px-6 pt-[16vh]">
         <div className="fade-in-up w-full max-w-2xl">
           <h1 className="hero-title mb-7 text-center">
             {resumedTitle ? "picking up where we left off" : "what should we work on?"}
@@ -5274,6 +5274,43 @@ function Dropdown({
   label?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // FIXED positioning (computed from the trigger on open) so the menu can
+  // never be clipped by the pane's overflow — the old absolute/bottom-full
+  // menu was cut off at the pane edge with the long model list. Opens upward
+  // when there's room (the composer lives at the bottom), else downward, and
+  // long lists scroll INSIDE the menu.
+  const [menuPos, setMenuPos] = useState<React.CSSProperties | null>(null);
+  useEffect(() => {
+    if (!open) {
+      setMenuPos(null);
+      return;
+    }
+    const r = rootRef.current?.getBoundingClientRect();
+    if (r) {
+      const openUp = r.top > Math.min(360, window.innerHeight * 0.5);
+      const pos: React.CSSProperties = {};
+      if (align === "right") pos.right = Math.max(8, window.innerWidth - r.right);
+      else pos.left = Math.max(8, r.left);
+      if (openUp) pos.bottom = window.innerHeight - r.top + 6;
+      else pos.top = r.bottom + 6;
+      (pos as Record<string, string | number>)["--aios-origin"] = openUp
+        ? "bottom center"
+        : "top center";
+      setMenuPos(pos);
+    }
+    // repositioning mid-scroll is overkill — dismiss instead (standard menus).
+    const onScroll = (e: Event) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      onToggle();
+    };
+    window.addEventListener("resize", onToggle);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onToggle);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, align, onToggle]);
   // outside-click + Escape close — a pinned-open menu over the composer was
   // the old behavior; standard dismissal everywhere else in the app.
   useEffect(() => {
@@ -5307,13 +5344,12 @@ function Dropdown({
       >
         {trigger}
       </button>
-      {open && (
+      {open && menuPos && (
         <div
+          ref={menuRef}
           role="menu"
-          className={`scale-in absolute bottom-full z-30 mb-1.5 min-w-[140px] overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50 ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-          style={{ ["--aios-origin" as string]: "bottom center" }}
+          className="scale-in fixed z-50 max-h-[min(380px,60vh)] min-w-[150px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50"
+          style={menuPos}
         >
           {children}
         </div>
