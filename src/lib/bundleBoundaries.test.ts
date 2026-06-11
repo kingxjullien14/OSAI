@@ -297,7 +297,11 @@ test("money agents open as chatpane-backed agents", () => {
   assert.match(agents, /buildMoneyAgentRunCommand/);
   assert.match(agents, /shell control plane/);
   assert.match(agents, /saveMoneyAgentChatSession/);
-  assert.match(agents, /AGENT_CHAT_MODEL = "gpt-5\.3-codex-spark"/);
+  // the developer's home may appear exactly once: in the cleanse migration
+  // that detects and heals legacy stored paths. never in a config/default.
+  assert.equal((agents.match(/firazfhansurie/g) ?? []).length, 1);
+  assert.match(agents, /cleanseStored/);
+  assert.match(agents, /ensureMoneyAgentHome/);
   assert.match(agents, /loadConfiguredMoneyAgents/);
   assert.match(agents, /createMoneyAgent/);
 });

@@ -52,8 +52,8 @@ function safeStorageSet(key: string, value: string): void {
 export function ensureMirrorPairing(): MirrorPairing {
   let room = safeStorageGet(ROOM_KEY);
   let token = safeStorageGet(TOKEN_KEY);
-  if (!room) {
-    room = `firaz-${randomToken(5)}`;
+  if (!room || room.startsWith("firaz-")) {
+    room = `aios-${randomToken(5)}`;
     safeStorageSet(ROOM_KEY, room);
   }
   if (!token || token.length < 24) {

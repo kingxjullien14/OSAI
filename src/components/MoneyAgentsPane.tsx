@@ -59,7 +59,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
           "agent control update from the aios shell:",
           instruction,
           "",
-          "apply this to your operating plan for getting sales for aios.",
+          "apply this to your operating plan for your mission.",
           "keep your chat history ordered, continue autonomously, and write a concise status entry for the shell control plane.",
         ].join("\n"),
       );
@@ -72,7 +72,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
         <div className="flex items-center gap-2">
           <Target size={14} className="text-[var(--color-success)]" />
-          <span className="text-[13px] font-medium text-[var(--color-text)]">aios sales agents</span>
+          <span className="text-[13px] font-medium text-[var(--color-text)]">aios agents</span>
         </div>
         <button
           type="button"
@@ -121,6 +121,15 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {!loading && !error && agents.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 text-center">
+            <Target size={28} className="text-[var(--color-faint)]" />
+            <p className="text-[12.5px] text-[var(--color-muted)]">no agents yet</p>
+            <p className="max-w-[260px] font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
+              create one from the agents section in the sidebar — it runs as a chatpane the shell can monitor and steer
+            </p>
+          </div>
+        )}
         <div className="grid gap-3 xl:grid-cols-2">
           {agents.map((agent) => (
             <section

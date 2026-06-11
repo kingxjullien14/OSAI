@@ -274,6 +274,13 @@ function AgentRow({
 }) {
   const controlLabel = chatStateLabel(chatState);
   const controlColor = chatStateColor(chatState);
+  // two-click delete: first click arms (danger state, auto-disarms), second fires.
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  useEffect(() => {
+    if (!confirmRemove) return;
+    const t = setTimeout(() => setConfirmRemove(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmRemove]);
   return (
     <div className="group relative flex min-w-0 items-center rounded-md transition-colors hover:bg-[var(--color-panel-2)]">
       <button
@@ -304,12 +311,21 @@ function AgentRow({
         type="button"
         onClick={(event) => {
           event.stopPropagation();
-          if (confirm(`remove "${row.label}" agent? this clears its saved chat + schedule state.`)) onRemove();
+          if (confirmRemove) onRemove();
+          else setConfirmRemove(true);
         }}
-        className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100"
-        title={`remove ${row.label}`}
+        className={`mr-1 grid h-6 shrink-0 place-items-center rounded transition-all ${
+          confirmRemove
+            ? "w-auto bg-[var(--color-danger)]/15 px-1.5 font-mono text-[9.5px] text-[var(--color-danger)] opacity-100"
+            : "w-6 text-[var(--color-faint)] opacity-0 hover:text-[var(--color-danger)] group-hover:opacity-100 group-focus-within:opacity-100"
+        }`}
+        title={
+          confirmRemove
+            ? `click again to remove — clears ${row.label}'s saved chat + schedule state`
+            : `remove ${row.label}`
+        }
       >
-        <X size={12} />
+        {confirmRemove ? "sure?" : <X size={12} />}
       </button>
     </div>
   );

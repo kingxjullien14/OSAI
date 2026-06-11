@@ -1,3 +1,5 @@
+import { joinPath } from "./paths.ts";
+
 export type MoneyAgentHealth = "running" | "scheduled" | "needs-steer" | "failed" | "unknown";
 
 export interface MoneyAgentConfig {
@@ -52,54 +54,34 @@ export interface MoneyAgentChatSession {
   updatedAt: number;
 }
 
-const home = "/Users/firazfhansurie";
-const aiosOutputs = `${home}/Repo/firaz/adletic/aios-firaz/outputs`;
+// The agent home is resolved from the backend at runtime — nothing in this
+// module may bake in a developer's home directory. Sync callers read the
+// cached value; async loaders await ensureMoneyAgentHome() first. Until the
+// cache is warm, derived paths use "~" (readJson fails soft → health unknown).
+let runtimeHome = "";
+export async function ensureMoneyAgentHome(): Promise<string> {
+  if (runtimeHome) return runtimeHome;
+  try {
+    const { homeDir } = await import("./fs");
+    runtimeHome = (await homeDir()) || "";
+  } catch {
+    runtimeHome = "";
+  }
+  return runtimeHome;
+}
+
+const agentHome = () => runtimeHome || "~";
+const defaultStatePath = (id: string) => joinPath(agentHome(), ".aios", "state", "chat-agents", id, "status.json");
+const defaultQueuePath = (id: string) => joinPath(agentHome(), ".aios", "state", "chat-agents", id, "queue.json");
+const defaultStdoutPath = (id: string) => joinPath(agentHome(), ".aios", "logs", "chat-agents", `${id}-out.log`);
+const defaultStderrPath = (id: string) => joinPath(agentHome(), ".aios", "logs", "chat-agents", `${id}-err.log`);
+
 const customAgentsKey = "aios.chatAgents.custom";
 const lastScheduledRunKey = (id: string) => `aios.chatAgents.lastScheduledRun:${id}`;
 
-export const AGENT_CHAT_MODEL = "gpt-5.3-codex-spark";
-
-export const MONEY_AGENTS: MoneyAgentConfig[] = [
-  {
-    id: "firaz",
-    label: "firaz",
-    shortLabel: "firaz",
-    launchdLabel: "aios.chatpane.firaz",
-    statePath: `${home}/.aios/state/chat-agents/firaz/status.json`,
-    queuePath: `${home}/.aios/state/chat-agents/firaz/queue.json`,
-    stdoutPath: `${home}/Library/Logs/aios-chat-agents/firaz-out.log`,
-    stderrPath: `${home}/Library/Logs/aios-chat-agents/firaz-err.log`,
-    cwd: `${home}/Repo/firaz/adletic/aios-firaz`,
-    mission: "firaz's personal aios cofounder loop, goals, shell control, and execution follow-through",
-    schedule: "always-on",
-  },
-  {
-    id: "growth",
-    label: "growth agents",
-    shortLabel: "growth",
-    launchdLabel: "com.firaz.aios-growth-agents",
-    statePath: `${home}/.aios/state/growth-agents/status.json`,
-    queuePath: `${home}/.aios/state/growth-agents/queue/social-posts.json`,
-    stdoutPath: `${home}/Library/Logs/aios-growth-agents/out.log`,
-    stderrPath: `${home}/Library/Logs/aios-growth-agents/err.log`,
-    cwd: `${aiosOutputs}/aios-growth-agents`,
-    mission: "threads, landing page, discord, and support loop",
-    schedule: "daily work blocks",
-  },
-  {
-    id: "outreach",
-    label: "agency outreach",
-    shortLabel: "outreach",
-    launchdLabel: "com.firaz.aios-agency-outreach-scout",
-    statePath: `${home}/.aios/state/outreach/agencies/status.json`,
-    queuePath: `${home}/.aios/state/outreach/agencies/queue.json`,
-    stdoutPath: `${home}/Library/Logs/aios-growth-agents/agency-scout-out.log`,
-    stderrPath: `${home}/Library/Logs/aios-growth-agents/agency-scout-err.log`,
-    cwd: `${aiosOutputs}/aios-agency-outreach-scout`,
-    mission: "research, qualify, demo, and draft agency leads",
-    schedule: "daily work blocks",
-  },
-];
+/** Legacy catalog — intentionally empty. The shell ships with no agents; only
+ *  the fleets users create exist. (Kept as an export for type/id lookups.) */
+export const MONEY_AGENTS: MoneyAgentConfig[] = [];
 
 function normalizeAgentId(value: string): string {
   return value
@@ -111,10 +93,27 @@ function normalizeAgentId(value: string): string {
     .slice(0, 48);
 }
 
+/** Drop stored paths that point at the original developer's machine — agents
+ *  created by older builds baked them in; deriving fresh ones self-heals. */
+const cleanseStored = (value: unknown): string | undefined => {
+  const s = typeof value === "string" ? value.trim() : "";
+  if (!s || s.includes("/Users/firazfhansurie")) return undefined;
+  return s;
+};
+
+function readStoredAgents(): Partial<MoneyAgentConfig>[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(customAgentsKey) || "[]") as Partial<MoneyAgentConfig>[];
+  } catch {
+    return [];
+  }
+}
+
 export function loadCustomMoneyAgents(): MoneyAgentConfig[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    const raw = JSON.parse(localStorage.getItem(customAgentsKey) || "[]") as Partial<MoneyAgentConfig>[];
+    const raw = readStoredAgents();
     return raw.reduce<MoneyAgentConfig[]>((agents, agent) => {
         const id = normalizeAgentId(String(agent.id || agent.label || ""));
         if (!id || !agent.label) return agents;
@@ -125,11 +124,11 @@ export function loadCustomMoneyAgents(): MoneyAgentConfig[] {
           label,
           shortLabel: String(agent.shortLabel || id).trim(),
           launchdLabel: `aios.chatpane.${id}`,
-          statePath: String(agent.statePath || `${home}/.aios/state/chat-agents/${id}/status.json`),
-          queuePath: String(agent.queuePath || `${home}/.aios/state/chat-agents/${id}/queue.json`),
-          stdoutPath: String(agent.stdoutPath || `${home}/Library/Logs/aios-chat-agents/${id}-out.log`),
-          stderrPath: String(agent.stderrPath || `${home}/Library/Logs/aios-chat-agents/${id}-err.log`),
-          cwd: String(agent.cwd || `${home}`),
+          statePath: cleanseStored(agent.statePath) ?? defaultStatePath(id),
+          queuePath: cleanseStored(agent.queuePath) ?? defaultQueuePath(id),
+          stdoutPath: cleanseStored(agent.stdoutPath) ?? defaultStdoutPath(id),
+          stderrPath: cleanseStored(agent.stderrPath) ?? defaultStderrPath(id),
+          cwd: cleanseStored(agent.cwd) ?? agentHome(),
           mission,
           schedule: String(agent.schedule || "manual").trim(),
         });
@@ -157,7 +156,9 @@ export function loadConfiguredMoneyAgents(): MoneyAgentConfig[] {
  *  ever needs to drop a custom agent. No-op if the id isn't a custom agent. */
 export function removeMoneyAgent(id: string): void {
   if (typeof localStorage === "undefined") return;
-  const next = loadCustomMoneyAgents().filter((agent) => agent.id !== id);
+  const next = readStoredAgents().filter(
+    (agent) => normalizeAgentId(String(agent.id || agent.label || "")) !== id,
+  );
   localStorage.setItem(customAgentsKey, JSON.stringify(next));
   try {
     localStorage.removeItem(agentChatSessionKey(id));
@@ -184,15 +185,24 @@ export function createMoneyAgent(input: {
     label,
     shortLabel: id,
     launchdLabel: `aios.chatpane.${id}`,
-    statePath: `${home}/.aios/state/chat-agents/${id}/status.json`,
-    queuePath: `${home}/.aios/state/chat-agents/${id}/queue.json`,
-    stdoutPath: `${home}/Library/Logs/aios-chat-agents/${id}-out.log`,
-    stderrPath: `${home}/Library/Logs/aios-chat-agents/${id}-err.log`,
-    cwd: input.cwd?.trim() || home,
+    statePath: defaultStatePath(id),
+    queuePath: defaultQueuePath(id),
+    stdoutPath: defaultStdoutPath(id),
+    stderrPath: defaultStderrPath(id),
+    cwd: input.cwd?.trim() || agentHome(),
     mission: input.mission?.trim() || "custom aios chatpane agent",
     schedule: input.schedule?.trim() || "manual",
   };
-  const next = [...loadCustomMoneyAgents(), agent];
+  // Persist only the user's inputs — derived paths re-resolve at load so they
+  // always track the runtime home, never a frozen snapshot.
+  const stored: Partial<MoneyAgentConfig> = {
+    id,
+    label,
+    mission: agent.mission,
+    schedule: agent.schedule,
+    ...(input.cwd?.trim() ? { cwd: input.cwd.trim() } : {}),
+  };
+  const next = [...readStoredAgents(), stored];
   localStorage.setItem(customAgentsKey, JSON.stringify(next));
   return agent;
 }
@@ -236,38 +246,12 @@ export function loadMoneyAgentLastScheduledRun(id: string): number | null {
 }
 
 export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
-  const role = (() => {
-    if (agent.id === "firaz") {
-      return "you are aios, firaz's ai co-founder. run inside the local tauri shell chatpane, keep goals moving, and use pane-native actions before terminal work.";
-    }
-    if (agent.id === "growth") {
-      return "you are the aios growth manager. run the threads, landing page, discord, and support growth loop for firaz.";
-    }
-    if (agent.id === "outreach") {
-      return "you are the aios agency outreach operator. research, qualify, draft, and nurture marketing agency leads for firaz.";
-    }
-    return `you are the aios ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`;
-  })();
-  const guardrail = (() => {
-    if (agent.id === "outreach") {
-      return "do not blast or send whatsapp messages. prepare researched targets, evidence, and high-signal drafts, then write a pending approval item for the shell control plane.";
-    }
-    if (agent.id === "growth") {
-      return "do not autopost weak content. build hooks and post ideas firaz would actually publish, then write a pending approval item for the shell control plane when risk is non-trivial.";
-    }
-    if (agent.id === "firaz") {
-      return "do not open terminal/oracle panes as the primary interface. use the existing chatpane session as the agent home, and only use terminal for concrete tools.";
-    }
-    return "do not execute irreversible external actions. produce concrete next steps, artifacts, observable run state, and pending approval items for the shell control plane.";
-  })();
-
   return [
-    role,
+    `you are the aios ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`,
     "",
     "context:",
     `- agent: ${agent.label}`,
     `- mission: ${agent.mission}`,
-    `- model: ${AGENT_CHAT_MODEL}`,
     `- schedule: ${agent.schedule || "manual"}`,
     `- workspace: ${agent.cwd}`,
     `- state file: ${agent.statePath}`,
@@ -276,11 +260,11 @@ export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
     "operating rules:",
     "- act like a live goal-moving operator, not a logger.",
     "- start by inspecting current state, queue, recent outputs, and repo context before proposing work.",
-    "- do not ask firaz to continue, approve, or tell you what to do next inside this agent chat.",
+    "- do not ask the user to continue, approve, or tell you what to do next inside this agent chat.",
     "- treat this chat as an ordered execution log for the aios shell to monitor and control.",
     "- continue autonomously inside your policy limits; when blocked, write a concise pending approval item instead of asking a question.",
     "- report concrete next actions, current blockers, and what moves the goal.",
-    `- ${guardrail}`,
+    "- do not execute irreversible external actions. produce concrete next steps, artifacts, observable run state, and pending approval items for the shell control plane.",
     "- if work needs background execution, create/steer the right local process and report exactly where it is observable.",
     "",
     "first task:",
@@ -288,17 +272,20 @@ export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
   ].join("\n");
 }
 
-export function buildMoneyAgentRunCommand(agent: { label: string }, reason = "manual"): string {
+export function buildMoneyAgentRunCommand(
+  agent: { label: string; mission?: string },
+  reason = "manual",
+): string {
   return [
-    `run a ${reason} sales pulse for ${agent.label}.`,
+    `run a ${reason} pulse for ${agent.label}.`,
     "",
-    "goal: get sales for aios, the shell app that monitors, controls, creates, schedules, and runs chatpane agents.",
+    `goal: ${agent.mission?.trim() || "move this agent's mission forward"}.`,
     "",
     "do now:",
     "- inspect your current state, queue, prior outputs, and relevant local context.",
-    "- choose the single highest-leverage revenue action for today.",
+    "- choose the single highest-leverage action for today.",
     "- produce the artifact or draft inside this chatpane.",
-    "- do not ask firaz what to do next.",
+    "- do not ask the user what to do next.",
     "- if approval is needed, write a pending approval item for the shell control plane.",
     "- report blocker, next step, and the control decision needed.",
   ].join("\n");
@@ -331,46 +318,15 @@ export function summarizeMoneyAgentState(
   else if (launchd && launchd.lastExit === 0) health = "scheduled";
   else if (status.ok === true) health = dryRun ? "needs-steer" : "running";
 
-  if (agent.id === "firaz") {
-    return {
-      id: agent.id,
-      label: agent.label,
-      health: health === "unknown" ? "running" : health,
-      primaryMetric: AGENT_CHAT_MODEL.replace("gpt-", ""),
-      currentJob: "personal goals and shell control",
-      nextAction: "open the existing firaz chatpane agent",
-      schedule: agent.schedule || "manual",
-      lastRunAt: loadMoneyAgentLastScheduledRun(agent.id),
-    };
-  }
-
-  if (agent.id === "growth") {
-    return {
-      id: agent.id,
-      label: agent.label,
-      health,
-      primaryMetric: `${queued} queued`,
-      currentJob: nextName || "waiting for next content slot",
-      nextAction: dryRun
-        ? "approve autopost policy or keep reviewed drafts only"
-        : "publish the next approved post at the scheduled slot",
-      schedule: agent.schedule || "manual",
-      lastRunAt: loadMoneyAgentLastScheduledRun(agent.id),
-    };
-  }
-
-  const prospects = Number(status.prospects ?? 0);
-  const bespokeDemos = Number(status.bespokeDemos ?? 0);
-  const lead = status.next?.name ?? "next qualified agency";
   return {
     id: agent.id,
     label: agent.label,
     health,
-    primaryMetric: `${queued || prospects} leads`,
-    currentJob: `${lead}${bespokeDemos ? ` · ${bespokeDemos} demos` : ""}`,
+    primaryMetric: `${queued} queued`,
+    currentJob: nextName || "no active job",
     nextAction: dryRun
-      ? "review the next whatsapp draft before any send"
-      : "send only reviewed, high-signal whatsapp outreach",
+      ? "review the pending draft before approving"
+      : "open the agent chat to steer",
     schedule: agent.schedule || "manual",
     lastRunAt: loadMoneyAgentLastScheduledRun(agent.id),
   };
@@ -386,6 +342,7 @@ async function readJson(path: string): Promise<any | null> {
 }
 
 export async function loadMoneyAgentSummaries(): Promise<MoneyAgentSummary[]> {
+  await ensureMoneyAgentHome();
   const rows = await Promise.all(
     loadConfiguredMoneyAgents().map(async (agent) => {
       const [status, queue] = await Promise.all([
@@ -408,6 +365,7 @@ async function tailText(path: string, maxLines = 28): Promise<string[]> {
 }
 
 export async function loadMoneyAgentDetails(): Promise<MoneyAgentDetail[]> {
+  await ensureMoneyAgentHome();
   return Promise.all(
     loadConfiguredMoneyAgents().map(async (agent) => {
       const [status, queue, stdout, stderr] = await Promise.all([

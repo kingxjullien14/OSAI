@@ -260,7 +260,7 @@ export function OracleRoster({
               onClick={spawnPrimary}
               disabled={spawning}
               className="group flex items-center gap-2 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1.5 text-left transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
-              title="spawn your oracle (aios-firaz)"
+              title={`spawn your oracle (aios-${PRIMARY_ORACLE_IDENTITY})`}
             >
               {spawning ? (
                 <RefreshCw size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
@@ -269,7 +269,7 @@ export function OracleRoster({
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] text-[var(--color-text)]">
-                  {spawning ? "spawning firaz…" : "spawn my oracle"}
+                  {spawning ? `spawning ${PRIMARY_ORACLE_IDENTITY}…` : "spawn my oracle"}
                 </div>
                 <div className="truncate text-[10px] text-[var(--color-faint)]">
                   {PRIMARY_ORACLE_IDENTITY} · offline
@@ -517,7 +517,7 @@ function OracleRow({
       {isPrimary && confirmPrimary && (
         <div className="flex flex-col gap-1.5 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-2 py-1.5">
           <span className="text-[10px] leading-snug text-[var(--color-danger)]">
-            deleting aios-firaz breaks your whatsapp routing
+            {`deleting aios-${PRIMARY_ORACLE_IDENTITY} breaks your whatsapp routing`}
           </span>
           <div className="flex items-center gap-1.5">
             <button
@@ -645,6 +645,9 @@ function CreateOracleForm({
           className="accent-[var(--color-accent)]"
         />
         launch claude on start
+        <span className="font-mono text-[9px] text-[var(--color-faint)]" title="runs: claude --dangerously-skip-permissions">
+          (skips permission prompts)
+        </span>
       </label>
       <button
         type="submit"
