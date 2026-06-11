@@ -2103,6 +2103,10 @@ fn claude_usage_event() -> Option<String> {
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
     let path = format!("{home}/.aios/state/usage.json");
+    // stale snapshots (an old session's file) must not feed the live strip.
+    if !crate::usage::fresh_enough(&path) {
+        return None;
+    }
     let s = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&s).ok()?;
     let rl = v.get("rate_limits")?;

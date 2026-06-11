@@ -6,6 +6,17 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::process::Stdio;
 
+/// Treat the statusline file as live only when it was written recently —
+/// yesterday's snapshot showing up as today's 5h window is worse than no data.
+pub(crate) fn fresh_enough(path: &str) -> bool {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|age| age.as_secs() < 3 * 3600)
+        .unwrap_or(false)
+}
+
 /// Returns the raw usage payload as JSON, or `null` if not yet written.
 /// Frontend renders 5h/7d %, reset countdowns, cost, context — or a graceful
 /// "waiting for first tick" state when absent.
@@ -30,6 +41,9 @@ pub fn usage_stats() -> Value {
 pub fn claude_usage() -> Value {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let path = format!("{home}/.aios/state/usage.json");
+    if !fresh_enough(&path) {
+        return Value::Null;
+    }
     let s = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(_) => return Value::Null,
