@@ -40,6 +40,7 @@ import {
 import { listProjects, type ProjectInfo } from "../lib/run";
 import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane } from "../lib/paneBus";
 import { fileIcon } from "../lib/fileIcons";
+import { basename, dirname, normalizeSlashes } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
 
 const GIT_COLOR: Record<GitCode, string> = {
@@ -118,16 +119,18 @@ export function FilesPane({
     try {
       const st = await gitStatus(path);
       setGitRoot(st.root);
+      // keys are normalized to forward slashes: list_dir and git_status can
+      // emit different separator styles on Windows, so lookups normalize too.
       const m = new Map<string, GitCode>();
       const folders = new Set<string>();
-      const stop = st.root ?? "";
+      const stop = st.root ? normalizeSlashes(st.root) : "";
       for (const e of st.entries) {
-        m.set(e.path, e.status);
-        let dir = e.path.slice(0, e.path.lastIndexOf("/"));
+        m.set(normalizeSlashes(e.path), e.status);
+        let dir = normalizeSlashes(dirname(e.path));
         while (dir && dir.length >= stop.length) {
           folders.add(dir);
           if (dir === stop) break;
-          const next = dir.slice(0, dir.lastIndexOf("/"));
+          const next = normalizeSlashes(dirname(dir));
           if (next === dir) break;
           dir = next;
         }
@@ -197,7 +200,7 @@ export function FilesPane({
 
   const collapseAll = () => setExpanded(new Set([root]));
   const goUp = () => {
-    const parent = root.replace(/\/[^/]+\/?$/, "") || "/";
+    const parent = dirname(root);
     if (parent !== root) setRootTo(parent);
   };
 
@@ -229,9 +232,9 @@ export function FilesPane({
     // is the selection a known folder? scan loaded children for a dir match.
     for (const list of children.values()) {
       const hit = list.find((e) => e.path === selected);
-      if (hit) return hit.is_dir ? hit.path : selected.slice(0, selected.lastIndexOf("/")) || root;
+      if (hit) return hit.is_dir ? hit.path : dirname(selected) || root;
     }
-    return selected.slice(0, selected.lastIndexOf("/")) || root;
+    return dirname(selected) || root;
   }, [selected, children, root]);
 
   const openTerminalHere = useCallback(() => {
@@ -263,7 +266,7 @@ export function FilesPane({
     }
   }, [projects.length]);
 
-  const rootName = root.split("/").filter(Boolean).pop() ?? root;
+  const rootName = basename(root) || root;
   const f = filter.trim().toLowerCase();
 
   // Whether the current selection is a file (enables "open in browser").
@@ -406,7 +409,7 @@ export function FilesPane({
         }}
         onPath={(p) => {
           // a non-dir path dropped → open it as a file in the editor/viewer.
-          onOpenFile?.(p, p.split("/").filter(Boolean).pop() ?? p);
+          onOpenFile?.(p, basename(p));
         }}
         label="drop folder to set as workspace"
       >
@@ -419,8 +422,8 @@ export function FilesPane({
             open={expanded.has(entry.path)}
             loading={loadingDirs.has(entry.path)}
             selected={selected === entry.path}
-            gitCode={git.get(entry.path)}
-            folderDirty={entry.is_dir && gitFolders.has(entry.path)}
+            gitCode={git.get(normalizeSlashes(entry.path))}
+            folderDirty={entry.is_dir && gitFolders.has(normalizeSlashes(entry.path))}
             onToggle={() => toggle(entry.path)}
             onOpen={() => openFile(entry)}
             onSelect={() => setSelected(entry.path)}

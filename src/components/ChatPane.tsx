@@ -343,8 +343,8 @@ function tokensFromUsage(usage: unknown): number | undefined {
 
 /** basename for a path, for the @-mention picker labels. */
 function baseName(p: string): string {
-  const i = p.replace(/\/+$/, "").lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
+  const clean = p.replace(/[\\/]+$/, "");
+  return clean.split(/[\\/]/).filter(Boolean).pop() ?? p;
 }
 
 // ── tool presentation (Codex-style activity steps) ───────────────────────────

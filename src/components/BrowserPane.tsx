@@ -89,6 +89,7 @@ import { rememberUrl } from "../lib/browser-mem";
 import { type NotificationLevel } from "../lib/notifications";
 import { onAiosDrag, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
 import { homeDir } from "../lib/fs";
+import { basename, dirname, toFileUrl } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
 
@@ -599,13 +600,12 @@ export function BrowserPane({
       }
       // a filesystem path
       if (BROWSER_VIEWABLE.test(s)) {
-        const url = `file://${encodeURI(s)}`;
+        const url = toFileUrl(s);
         setCurrent(url);
         setInput(url);
         browserNavigate(label, url).catch((e) => reportDiag("browser.nav", e, { action: "navigate" }));
       } else {
-        const name = s.split("/").pop() ?? s;
-        openViewerFileInPane(s, name);
+        openViewerFileInPane(s, basename(s));
       }
       return true;
     },
@@ -752,8 +752,7 @@ export function BrowserPane({
 
   const openDownload = useCallback((d: DownloadRecord) => {
     setDownloadsOpen(false);
-    const name = d.name || d.path.split("/").pop() || d.path;
-    openViewerFileInPane(d.path, name);
+    openViewerFileInPane(d.path, d.name || basename(d.path));
   }, []);
 
   const forgetDownload = useCallback((id: string) => {
@@ -771,8 +770,8 @@ export function BrowserPane({
   // Open the containing folder of a download in a files pane (cross-pane spawn).
   const openDownloadInFiles = useCallback((d: DownloadRecord) => {
     setDownloadsOpen(false);
-    const dir = d.path.replace(/\/[^/]*$/, "");
-    spawnPane("files", { path: dir || d.path });
+    const dir = dirname(d.path);
+    spawnPane("files", { path: dir !== d.path ? dir : d.path });
   }, []);
 
   // Close the downloads panel on outside click.
@@ -841,8 +840,7 @@ export function BrowserPane({
     if (!r) return;
     browserScreenshot(label, r)
       .then((path) => {
-        const file = path.split("/").pop() ?? path;
-        showToast(`saved ${file}`, "success", path);
+        showToast(`saved ${basename(path)}`, "success", path);
       })
       .catch((e) => showToast(typeof e === "string" ? e : "screenshot failed", "error"));
   }, [label, rect, showToast]);

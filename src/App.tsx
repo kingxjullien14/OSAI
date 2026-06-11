@@ -116,6 +116,7 @@ import {
   type PayloadKind,
 } from "./lib/paneBus";
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
+import { basename as pathBasename } from "./lib/paths.ts";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord } from "./lib/platform";
@@ -776,7 +777,7 @@ function App() {
       // so the OPEN rail + overview never show two indistinguishable "terminal"s.
       let base = label;
       if ((kind.type === "shell") && kind.cwd) {
-        const dir = kind.cwd.replace(/\/+$/, "").split("/").pop();
+        const dir = pathBasename(kind.cwd);
         if (dir) base = `${label} · ${dir}`;
       }
       const taken = new Set(p.map((x) => x.label));
@@ -855,7 +856,7 @@ function App() {
     let unlisten: (() => void) | undefined;
     void listen<{ path: string; name?: string }>("browser-download", ({ payload }) => {
       if (!payload?.path) return;
-      const name = payload.name || payload.path.split("/").pop() || payload.path;
+      const name = payload.name || pathBasename(payload.path);
       openFileInPane(payload.path, name);
     })
       .then((stop) => {
@@ -1016,7 +1017,7 @@ function App() {
           break;
         case "files": {
           const root = ctx?.path;
-          const name = root ? root.split("/").filter(Boolean).pop() ?? root : "files";
+          const name = root ? pathBasename(root) || root : "files";
           spawn({ type: "files", root }, ctx?.label ?? `files · ${name}`);
           break;
         }
@@ -1225,7 +1226,7 @@ function App() {
   const fireAppshot = useCallback(async () => {
     try {
       const path = await appshot();
-      flash(`appshot → master oracle · ${path.split("/").pop()}`);
+      flash(`appshot → master oracle · ${pathBasename(path)}`);
     } catch (e) {
       flash(`appshot failed: ${e}`);
     }
@@ -2588,15 +2589,13 @@ function App() {
         root={finderRoot}
         mru={mru}
         onClose={() => setFileFinderOpen(false)}
-        onPick={(abs) => openFile(abs, abs.split("/").filter(Boolean).pop() ?? abs)}
+        onPick={(abs) => openFile(abs, pathBasename(abs))}
       />
       <GlobalSearch
         open={globalSearchOpen}
         root={finderRoot}
         onClose={() => setGlobalSearchOpen(false)}
-        onPick={(abs, line, col) =>
-          openEditorFile(abs, abs.split("/").filter(Boolean).pop() ?? abs, { line, col })
-        }
+        onPick={(abs, line, col) => openEditorFile(abs, pathBasename(abs), { line, col })}
       />
       <PinSiteModal spaceId={pinSiteSpace} onClose={() => setPinSiteSpace(null)} />
       <PaneOverview

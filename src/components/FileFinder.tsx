@@ -10,13 +10,9 @@ import { CornerDownLeft, FileText, History, Search } from "lucide-react";
 
 import { fuzzyMatch, Highlight } from "./CommandPalette";
 import { findFiles } from "../lib/fs";
+import { basename, joinPath, normalizeSlashes } from "../lib/paths.ts";
 
 const MAX_RESULTS = 50;
-
-function basename(rel: string): string {
-  const i = rel.lastIndexOf("/");
-  return i >= 0 ? rel.slice(i + 1) : rel;
-}
 
 interface Scored {
   rel: string;
@@ -83,10 +79,12 @@ export function FileFinder({
   // but keep them only if they actually live under root (so we can open them).
   const recentRels = useMemo(() => {
     if (!root) return [];
-    const prefix = root.endsWith("/") ? root : `${root}/`;
+    // separator-insensitive: MRU absolutes may be backslash paths on Windows.
+    const prefix = `${normalizeSlashes(root).replace(/\/+$/, "")}/`;
     const out: string[] = [];
     for (const abs of mru) {
-      if (abs.startsWith(prefix)) out.push(abs.slice(prefix.length));
+      const fwd = normalizeSlashes(abs);
+      if (fwd.startsWith(prefix)) out.push(abs.slice(prefix.length));
       if (out.length >= MAX_RESULTS) break;
     }
     return out;
@@ -133,9 +131,8 @@ export function FileFinder({
   };
 
   const pickAbs = (rel: string) => {
-    const prefix = root.endsWith("/") ? root : `${root}/`;
     onClose();
-    onPick(`${prefix}${rel}`);
+    onPick(joinPath(root, rel));
   };
 
   const runSel = () => {
