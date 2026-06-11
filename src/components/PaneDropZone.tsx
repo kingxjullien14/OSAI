@@ -6,7 +6,7 @@
  *
  *  Usage: <PaneDropZone onPath={(p) => insert(p)}>…pane content…</PaneDropZone> */
 import { useEffect, useState } from "react";
-import { AIOS_DIR_MIME, AIOS_PATH_MIME, onAiosDrag } from "../lib/paneBus";
+import { AIOS_DIR_MIME, AIOS_PATH_MIME, currentPathDrag, onAiosDrag } from "../lib/paneBus";
 
 /** True when the drag carries our directory marker (a folder row from the Files
  *  pane). Lets a pane do the folder-appropriate thing (`cd`, re-root) instead of
@@ -100,6 +100,19 @@ export function PaneDropZone({
             // a folder drop gets the dir-specific handler first (cd / re-root).
             if (onDir && isDirDrop(e.dataTransfer) && onDir(path)) return;
             onPath(path);
+          }}
+          // pointer-based in-app drags (Windows: HTML5 dnd never fires in the
+          // webview) — same delivery contract as the HTML5 path above.
+          onPointerEnter={() => {
+            if (currentPathDrag()) setOver(true);
+          }}
+          onPointerLeave={() => setOver(false)}
+          onPointerUp={() => {
+            setOver(false);
+            const drag = currentPathDrag();
+            if (!drag) return;
+            if (onDir && drag.isDir && onDir(drag.path)) return;
+            onPath(drag.path);
           }}
         >
           <span

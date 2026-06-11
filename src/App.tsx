@@ -509,46 +509,69 @@ function App() {
     });
     setActiveKey(fromKey);
   }, []);
-  // pointerdown on a pane's title strip → arm a drag (window listeners track the
-  // gesture; per-pane onPaneDragOver reports the target). A 6px threshold keeps
-  // plain clicks click-y.
+  // pointerdown on a pane's title strip → arm a drag. The strip captures the
+  // pointer once armed so moves keep flowing even over native-webview panes,
+  // and the target is hit-tested from the DOM under the cursor (every pane
+  // wrapper carries data-pane-key — the slot div sits under the native layer).
+  // A 6px threshold keeps plain clicks click-y; text selection is suppressed
+  // for the whole gesture so dragging never paints blue smears.
   const onPaneDragStart = useCallback(
-    (key: string, x: number, y: number) => {
-      paneDragRef.current = { from: key, x, y, armed: false };
+    (key: string, e: React.PointerEvent<HTMLElement>) => {
+      const strip = e.currentTarget;
+      const pointerId = e.pointerId;
+      paneDragRef.current = { from: key, x: e.clientX, y: e.clientY, armed: false };
       paneDragOverRef.current = null;
-      const onMove = (e: PointerEvent) => {
+      const onMove = (ev: PointerEvent) => {
         const d = paneDragRef.current;
-        if (!d || d.armed) return;
-        if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
-        d.armed = true;
-        setDragActiveKey(d.from);
-        document.body.style.cursor = "grabbing";
+        if (!d) return;
+        if (!d.armed) {
+          if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6) return;
+          d.armed = true;
+          setDragActiveKey(d.from);
+          document.body.style.cursor = "grabbing";
+          document.body.style.userSelect = "none";
+          window.getSelection()?.removeAllRanges();
+          try {
+            strip.setPointerCapture(pointerId);
+          } catch {
+            /* capture is best-effort */
+          }
+        }
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const overKey = el?.closest?.("[data-pane-key]")?.getAttribute("data-pane-key") ?? null;
+        const over = overKey && overKey !== d.from ? overKey : null;
+        if (paneDragOverRef.current !== over) {
+          paneDragOverRef.current = over;
+          setDropTargetKey(over);
+        }
       };
-      const onUp = () => {
+      const finish = (commit: boolean) => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
         const d = paneDragRef.current;
         const over = paneDragOverRef.current;
         paneDragRef.current = null;
         paneDragOverRef.current = null;
         document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        try {
+          strip.releasePointerCapture(pointerId);
+        } catch {
+          /* already released */
+        }
         setDragActiveKey(null);
         setDropTargetKey(null);
-        if (d?.armed && over && over !== d.from) swapPanes(d.from, over);
+        if (commit && d?.armed && over && over !== d.from) swapPanes(d.from, over);
       };
+      const onUp = () => finish(true);
+      const onCancel = () => finish(false);
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     },
     [swapPanes],
   );
-  // a pane's chrome reports the drag-pointer entering it → it's the drop target.
-  const onPaneDragOver = useCallback((key: string) => {
-    const d = paneDragRef.current;
-    if (!d?.armed) return;
-    const over = key !== d.from ? key : null;
-    paneDragOverRef.current = over;
-    setDropTargetKey(over);
-  }, []);
   // TRUE video fullscreen: a child webview's HTML fullscreen only fills its rect.
   // When a video enters fullscreen we maximize the pane (webview → whole window)
   // AND fullscreen the OS window (window → whole screen); on exit we restore the
@@ -2437,10 +2460,8 @@ function App() {
                   onMoveLeft={() => movePaneByKey(pane.key, -1)}
                   onMoveRight={() => movePaneByKey(pane.key, 1)}
                   reorderable={panes.length > 1}
-                  dragActive={dragActiveKey !== null}
                   isDragging={dragActiveKey === pane.key}
                   onPaneDragStart={onPaneDragStart}
-                  onPaneDragOver={onPaneDragOver}
                   onFocus={() => {
                     focusedPane.current = pane.key;
                     setActiveKey(pane.key);
@@ -3819,10 +3840,8 @@ function PaneCard({
   onMoveLeft,
   onMoveRight,
   reorderable,
-  dragActive,
   isDragging,
   onPaneDragStart,
-  onPaneDragOver,
   onFocus,
   onAnnotate,
   onSendImage,
@@ -3857,10 +3876,8 @@ function PaneCard({
   onMoveLeft?: () => void;
   onMoveRight?: () => void;
   reorderable?: boolean;
-  dragActive?: boolean;
   isDragging?: boolean;
-  onPaneDragStart?: (key: string, x: number, y: number) => void;
-  onPaneDragOver?: (key: string) => void;
+  onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
   onFocus: () => void;
   onAnnotate: (text: string) => void;
   onSendImage: (path: string) => void;
@@ -3925,7 +3942,6 @@ function PaneCard({
       ref={wrapRef}
       data-pane-key={pane.key}
       onMouseDownCapture={onFocus}
-      onPointerMove={dragActive ? () => onPaneDragOver?.(pane.key) : undefined}
       style={hidden ? { display: "none" } : style}
       className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-colors ${
         maximized
@@ -3951,7 +3967,7 @@ function PaneCard({
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
           onPointerDown={(e) => {
-            if (canReorder && e.button === 0) onPaneDragStart?.(pane.key, e.clientX, e.clientY);
+            if (canReorder && e.button === 0) onPaneDragStart?.(pane.key, e);
           }}
           title={canReorder ? "drag to rearrange" : undefined}
         >
@@ -4167,10 +4183,12 @@ function PaneCard({
           </Suspense>
         </PaneErrorBoundary>
       </div>
-      {dropTarget && isTerminal(pane.kind) && (
-        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center border-2 border-dashed border-[var(--color-accent)]/70 bg-[var(--color-accent)]/10">
-          <span className="rounded-md bg-[var(--color-panel)]/90 px-3 py-1.5 text-[12px] text-[var(--color-text)]">
-            drop to insert path
+      {dropTarget && (
+        // pane-REORDER target affordance (path drops have their own PaneDropZone
+        // overlays) — says what release will actually do: swap the two panes.
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-[var(--color-accent)]/[0.06]">
+          <span className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 font-mono text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+            release to swap panes
           </span>
         </div>
       )}

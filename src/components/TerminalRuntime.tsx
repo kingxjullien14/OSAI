@@ -23,7 +23,7 @@ import {
   spawnTmux,
 } from "../lib/pty";
 import { homeDir, saveImageTemp } from "../lib/fs";
-import { chord } from "../lib/platform";
+import { chord, isApple } from "../lib/platform";
 import { paneWriters, paneSubmitters, openUrlInPane, spawnPane } from "../lib/paneBus";
 import { isTauriRuntime } from "../lib/tauri";
 
@@ -70,8 +70,13 @@ const THEME = {
 const FONT_FAMILY =
   '"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Consolas", ui-monospace, monospace';
 
-/** Shell-quote a path (single-quote wrap) only when it needs it. */
+/** Shell-quote a path (single-quote wrap) only when it needs it. POSIX shells
+ *  escape an embedded quote as '\''; PowerShell doubles it — and backslashes
+ *  are ordinary path characters on Windows, so they must NOT trigger quoting. */
 function quotePath(path: string): string {
+  if (!isApple) {
+    return /[\s'"&(){}\[\];,$]/.test(path) ? `'${path.replace(/'/g, "''")}'` : path;
+  }
   return /[\s'"\\]/.test(path) ? `'${path.replace(/'/g, "'\\''")}'` : path;
 }
 

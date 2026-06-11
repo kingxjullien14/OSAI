@@ -38,7 +38,7 @@ import {
   type GitCode,
 } from "../lib/fs";
 import { listProjects, type ProjectInfo } from "../lib/run";
-import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane } from "../lib/paneBus";
+import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane, startPathDrag } from "../lib/paneBus";
 import { fileIcon } from "../lib/fileIcons";
 import { basename, dirname, normalizeSlashes } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
@@ -466,6 +466,9 @@ function TreeRow({
 }) {
   const isDir = entry.is_dir;
   const { Icon, color } = fileIcon(entry.name);
+  // set when a pointer drag actually started, so the click that may land back
+  // on this row after the gesture doesn't toggle/open it.
+  const dragStartedRef = useRef(false);
   const nameColor = gitCode
     ? GIT_COLOR[gitCode]
     : isDir
@@ -483,7 +486,30 @@ function TreeRow({
         if (isDir) ev.dataTransfer.setData(AIOS_DIR_MIME, entry.path);
         ev.dataTransfer.effectAllowed = "copy";
       }}
+      // Windows: HTML5 dnd never fires inside the Tauri webview, so rows also
+      // start the pointer-based path drag after a 6px threshold (paneBus).
+      onPointerDown={(ev) => {
+        if (ev.button !== 0) return;
+        const sx = ev.clientX;
+        const sy = ev.clientY;
+        const move = (me: PointerEvent) => {
+          if (Math.hypot(me.clientX - sx, me.clientY - sy) < 6) return;
+          cleanup();
+          dragStartedRef.current = true;
+          startPathDrag({ path: entry.path, isDir }, me, entry.name);
+        };
+        const cleanup = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", cleanup);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", cleanup);
+      }}
       onClick={() => {
+        if (dragStartedRef.current) {
+          dragStartedRef.current = false;
+          return;
+        }
         onSelect();
         if (isDir) onToggle();
         else onOpen();

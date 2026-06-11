@@ -318,6 +318,78 @@ export function onAiosDrag(fn: DragListener): () => void {
   };
 }
 
+// ── pointer-based in-app path drag ───────────────────────────────────────────
+// Tauri's dragDropEnabled swallows HTML5 drag events inside the Windows
+// webview (the same reason pane-reorder is pointer-driven), so in-app drags
+// (Files-pane row → terminal/chat/files) ride plain pointer events: the source
+// calls `startPathDrag` once its 6px threshold trips; the existing onAiosDrag
+// signal arms every PaneDropZone overlay; the overlay under the cursor reads
+// `currentPathDrag()` on pointerup and delivers. HTML5 drags keep working
+// where the platform allows them (macOS) — both paths feed the same overlays.
+
+export interface PathDragPayload {
+  path: string;
+  isDir: boolean;
+}
+let pathDrag: PathDragPayload | null = null;
+
+/** The in-flight pointer path-drag payload (null when none). */
+export function currentPathDrag(): PathDragPayload | null {
+  return pathDrag;
+}
+
+export function startPathDrag(
+  payload: PathDragPayload,
+  at: { clientX: number; clientY: number },
+  label?: string,
+): void {
+  if (pathDrag) return;
+  pathDrag = payload;
+  setDragActive(true);
+  // no text selection while dragging — the gesture sweeps across panes.
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "grabbing";
+  window.getSelection()?.removeAllRanges();
+  // a small ghost chip that follows the cursor (vanilla DOM, removed on end).
+  const ghost = document.createElement("div");
+  ghost.textContent =
+    label ?? payload.path.split(/[\\/]/).filter(Boolean).pop() ?? payload.path;
+  ghost.style.cssText =
+    "position:fixed;z-index:9999;pointer-events:none;padding:3px 9px;" +
+    "font:11px ui-monospace,monospace;color:var(--color-text);" +
+    "background:var(--color-panel-2);border:1px solid var(--color-border-strong);" +
+    "border-radius:9999px;box-shadow:var(--aios-shadow-pop);opacity:0.95;";
+  const place = (x: number, y: number) => {
+    ghost.style.left = `${x + 14}px`;
+    ghost.style.top = `${y + 12}px`;
+  };
+  place(at.clientX, at.clientY);
+  document.body.appendChild(ghost);
+  const onMove = (ev: PointerEvent) => place(ev.clientX, ev.clientY);
+  const finish = () => {
+    // window-level non-capture listener: the drop target's own pointerup ran
+    // first (target phase), so the payload was still readable there.
+    pathDrag = null;
+    setDragActive(false);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    ghost.remove();
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", finish);
+    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("blur", finish);
+  };
+  const onKey = (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") finish();
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", finish);
+  window.addEventListener("pointercancel", finish);
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", finish);
+}
+
 // Wire the window-level listeners once. We arm the overlays on any in-app HTML5
 // drag (Files-pane row → another pane). NOTE: `dragDropEnabled:true` means OS
 // file drops (Finder → pane) bypass HTML5 entirely and are handled by the

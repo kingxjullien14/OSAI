@@ -638,9 +638,13 @@ test("onboarding is gated + veteran-safe, and detect_providers is wired (PLAN §
 test("panes are drag-to-move reorderable (pointer-driven, webview-safe)", () => {
   const app = read("src/App.tsx");
   // pointer-driven, because HTML5 draggable is swallowed by the Tauri webview;
-  // tracked via per-pane pointer-enter over the HTML title strips
+  // the strip captures the pointer once armed and the target is hit-tested
+  // from the DOM under the cursor (data-pane-key), so browser panes acquire.
   assert.match(app, /onPaneDragStart/);
-  assert.match(app, /onPaneDragOver/);
+  assert.match(app, /setPointerCapture/);
+  assert.match(app, /elementFromPoint/);
+  // text-selection is suppressed for the gesture so drags never paint smears.
+  assert.match(app, /userSelect = "none"/);
   assert.match(app, /const swapPanes = useCallback/);
   // CRUCIAL: a reorder must NOT deactivate panes — that blanked native webviews
   // (the browser flicker/"offline" bug). The drag layers over still-live webviews.
