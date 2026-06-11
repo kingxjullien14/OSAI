@@ -3718,6 +3718,30 @@ export function ChatPane({
               <AtSign size={10} /> files
             </span>
           </div>
+          {/* starter deck: the hero hands you somewhere to go instead of a
+              blank box. Quiet pills, gone the moment you start typing. */}
+          {!hasDraft && started && (
+            <div className="stagger mt-6 flex flex-wrap items-center justify-center gap-2">
+              {[
+                "explain this codebase",
+                "plan a feature",
+                "find and fix a bug",
+                "what can you do?",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  className="pill press"
+                  onClick={() => {
+                    setInput(prompt);
+                    taRef.current?.focus();
+                  }}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {goalDraft !== null && (

@@ -470,6 +470,8 @@ function App() {
   // drag is pure DOM layered over still-live webviews, tracked via each pane's own
   // pointer-enter over its HTML title strip (the original AIOS approach).
   const [dragActiveKey, setDragActiveKey] = useState<string | null>(null);
+  // focus spotlight (⌘./Ctrl+.) — dim every pane but the active one.
+  const [focusSpotlight, setFocusSpotlight] = useState(false);
   const paneDragRef = useRef<{ from: string; x: number; y: number; armed: boolean } | null>(null);
   const paneDragOverRef = useRef<string | null>(null);
   // per-pane window controls. The maximized pane escapes the CSS grid to fill
@@ -1472,6 +1474,14 @@ function App() {
         // pane; otherwise a new terminal).
         e.preventDefault();
         newPaneForContext();
+      } else if (mod && e.key === ".") {
+        // ⌘. / Ctrl+. — focus spotlight: dim every pane but the active one so
+        // a busy grid collapses into the thing you're working in.
+        e.preventDefault();
+        setFocusSpotlight((v) => {
+          flash(v ? "spotlight off" : "spotlight — focused pane only");
+          return !v;
+        });
       } else if (mod && e.key.toLowerCase() === "r") {
         // ⌘R — reload the cockpit fresh (re-init theme, re-poll all live data).
         e.preventDefault();
@@ -2516,6 +2526,12 @@ function App() {
                   onMoveRight={() => movePaneByKey(pane.key, 1)}
                   reorderable={panes.length > 1}
                   isDragging={dragActiveKey === pane.key}
+                  dimmed={
+                    focusSpotlight &&
+                    panes.length > 1 &&
+                    maximizedKey === null &&
+                    (activeKey ?? focusedPane.current) !== pane.key
+                  }
                   onPaneDragStart={onPaneDragStart}
                   onFocus={() => {
                     focusedPane.current = pane.key;
@@ -3907,6 +3923,7 @@ function PaneCard({
   onMoveRight,
   reorderable,
   isDragging,
+  dimmed,
   onPaneDragStart,
   onFocus,
   onAnnotate,
@@ -3943,6 +3960,8 @@ function PaneCard({
   onMoveRight?: () => void;
   reorderable?: boolean;
   isDragging?: boolean;
+  /** focus-spotlight: this pane is NOT the focused one — recede. */
+  dimmed?: boolean;
   onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
   onFocus: () => void;
   onAnnotate: (text: string) => void;
@@ -4009,7 +4028,9 @@ function PaneCard({
       data-pane-key={pane.key}
       onMouseDownCapture={onFocus}
       style={hidden ? { display: "none" } : style}
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-colors ${
+      className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-[color,background-color,border-color,box-shadow,opacity] duration-200 ${
+        dimmed ? "opacity-45" : ""
+      } ${
         maximized
           ? // truly fullscreen — edge-to-edge over the top bar + sidebar, no chrome
             "fixed inset-0 z-40"
