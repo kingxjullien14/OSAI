@@ -289,6 +289,17 @@ export function defaultAiForProvider(
   return e === "claude" ? "claude-code" : e === "codex" ? "codex-code" : "chat";
 }
 
+/** The interactive `codex` CLI launch command for shell panes. Uses the user's
+ *  saved codex model when one is pinned; otherwise no --model flag, so the CLI
+ *  follows its own configured default — never a hardcoded model literal. */
+export function codexShellCommand(savedModel?: string | null): string {
+  const pinned =
+    savedModel && CHAT_MODELS.some((m) => m.id === savedModel && m.engine === "codex")
+      ? savedModel
+      : null;
+  return `codex${pinned ? ` --model ${pinned}` : ""} --dangerously-bypass-approvals-and-sandbox`;
+}
+
 /** Permission modes claude accepts, for the "Full access ▾" chip. */
 export interface PermissionOption {
   id: string;

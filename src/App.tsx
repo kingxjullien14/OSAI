@@ -72,6 +72,7 @@ import {
   listChatLive,
   listChatSessions,
   baseModelId,
+  codexShellCommand,
   engineForProvider,
   defaultAiForProvider,
   type ChatSessionInfo,
@@ -119,7 +120,7 @@ import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
-import { MOD, chord } from "./lib/platform";
+import { MOD, chord, isApple } from "./lib/platform";
 import { homeDir, startupOpenPane } from "./lib/fs";
 import { detectProject, listProjects, type ProjectInfo } from "./lib/run";
 import { loadProjectsStore, mergeProjects, subscribeProjects } from "./lib/projects";
@@ -384,6 +385,12 @@ function pushMru(path: string) {
 function startWindowDrag(e: React.MouseEvent<HTMLElement>) {
   if (e.button !== 0) return;
   if ((e.target as HTMLElement | null)?.closest(INTERACTIVE_SELECTOR)) return;
+  // The hidden-top-bar drag strip floats over the first pane row — if an
+  // interactive control sits directly UNDER the press point, don't steal it.
+  const under = document
+    .elementsFromPoint(e.clientX, e.clientY)
+    .find((el) => el !== e.currentTarget && !e.currentTarget.contains(el));
+  if (under?.closest?.(INTERACTIVE_SELECTOR)) return;
   if (!isTauriRuntime()) return;
   void getCurrentWindow().startDragging().catch((e) => reportDiag("app.window", e, { action: "startDragging" }));
 }
@@ -652,8 +659,18 @@ function App() {
   // which space the pin-a-site modal targets (null = closed).
   const [pinSiteSpace, setPinSiteSpace] = useState<string | null>(null);
   // Native browser webviews paint ABOVE html, so any floating overlay (modals,
-  // palette) must hide them or it gets occluded.
-  const overlayOpen = settingsOpen || paletteOpen || pinSiteSpace != null || overviewOpen;
+  // palette, finders, the busy-chat close prompt, splash, onboarding) must hide
+  // them or it gets occluded.
+  const overlayOpen =
+    settingsOpen ||
+    paletteOpen ||
+    pinSiteSpace != null ||
+    overviewOpen ||
+    fileFinderOpen ||
+    globalSearchOpen ||
+    closePrompt != null ||
+    onboardingOpen ||
+    splash;
 
   useEffect(() => {
     if (!splash) return; // splashOnLaunch === false → never showed; nothing to time
@@ -1410,7 +1427,7 @@ function App() {
       // none open → spawn the right one and fire when it's live.
       if (wantCodex) {
         spawnAndFire(
-          { type: "shell", cmd: "codex --model gpt-5.3-codex-spark --dangerously-bypass-approvals-and-sandbox" },
+          { type: "shell", cmd: codexShellCommand(loadSettings().chatModel) },
           "codex",
           3200,
         );
@@ -1502,7 +1519,9 @@ function App() {
         setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
         setMaximizedKey(null);
       }
-      if (e.key === "Meta") {
+      // ⌘ double-tap appshot is macOS-only (the capture backend is SCK); on
+      // Windows "Meta" is the Win key — firing there opened a dead feature.
+      if (isApple && e.key === "Meta") {
         const now = e.timeStamp || performance.now();
         if (now - lastMeta.current < 400) {
           lastMeta.current = 0;
@@ -1991,7 +2010,7 @@ function App() {
     spawn({ type: "chat", seed: query }, "ask");
   }, [spawn]);
   const talkToJarvis = useCallback((seed: string) => {
-    spawn({ type: "chat", seed }, "jarvis");
+    spawn({ type: "chat", seed }, "chat");
   }, [spawn]);
   const openMoneyAgentChat = useCallback(
     (id: string, label: string, command?: string) => {
@@ -2237,9 +2256,11 @@ function App() {
         </IconBtn>
       )}
       <VoiceButton onTranscript={handleTranscript} />
-      <IconBtn title={`Appshot — screenshot to oracle (${MOD}${MOD})`} onClick={fireAppshot}>
-        <Camera size={15} />
-      </IconBtn>
+      {isApple && (
+        <IconBtn title={`Appshot — screenshot to oracle (${MOD} double-tap)`} onClick={fireAppshot}>
+          <Camera size={15} />
+        </IconBtn>
+      )}
       <div className="relative" data-no-window-drag>
         <button
           type="button"
@@ -2253,7 +2274,7 @@ function App() {
         >
           <Bell size={15} />
           {unreadNotifications > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-white">
+            <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-[var(--color-bg)]">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
             </span>
           )}
@@ -2279,9 +2300,11 @@ function App() {
         <Layers size={15} />
       </IconBtn>
       <VoiceButton onTranscript={handleTranscript} />
-      <IconBtn title={`Appshot — screenshot to oracle (${MOD}${MOD})`} onClick={fireAppshot}>
-        <Camera size={15} />
-      </IconBtn>
+      {isApple && (
+        <IconBtn title={`Appshot — screenshot to oracle (${MOD} double-tap)`} onClick={fireAppshot}>
+          <Camera size={15} />
+        </IconBtn>
+      )}
       <div className="relative" data-no-window-drag>
         <button
           type="button"
@@ -2295,7 +2318,7 @@ function App() {
         >
           <Bell size={15} />
           {unreadNotifications > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-white">
+            <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-[var(--color-bg)]">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
             </span>
           )}
@@ -2313,9 +2336,11 @@ function App() {
 
       {topBarHidden ? (
         // No floating overlay — actions now live in the sidebar. Keep ONLY a thin
-        // top drag strip so the window can still be moved by its top edge.
+        // top drag strip so the window can still be moved by its top edge. 6px:
+        // thin enough to sit inside the pane chrome's dead top padding, so the
+        // first row's close/maximize buttons stay fully clickable.
         <div
-          className="absolute left-0 right-0 top-0 z-40 h-5"
+          className="absolute left-0 right-0 top-0 z-40 h-1.5"
           data-tauri-drag-region
           onMouseDown={startWindowDrag}
         />
@@ -2387,6 +2412,36 @@ function App() {
               <AccountMenu iconsOnly={iconsOnly} onOpenSettings={() => setSettingsOpen(true)} />
             </div>
           </aside>
+        )}
+
+        {/* collapsed-sidebar fallback chrome: palette + notifications must stay
+            reachable when the rail is hidden — a minimal floating corner cluster
+            (same handlers/badge state as the rail's action row). */}
+        {!sidebarOpen && !compactWebLayout && !webMirrorMode && (
+          <div
+            data-no-window-drag
+            className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-1.5 py-1 shadow-[var(--aios-shadow-pop)] backdrop-blur"
+          >
+            <IconBtn title={`Command palette (${chord("K")})`} onClick={() => setPaletteOpen(true)}>
+              <Search size={14} />
+            </IconBtn>
+            <IconBtn title={`Show sidebar (${chord("B")})`} onClick={() => setSidebarOpen(true)}>
+              <PanelLeft size={14} />
+            </IconBtn>
+            <button
+              type="button"
+              onClick={openNotificationsPane}
+              title="notifications"
+              className="relative rounded-md p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            >
+              <Bell size={14} />
+              {unreadNotifications > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-[var(--color-bg)]">
+                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                </span>
+              )}
+            </button>
+          </div>
         )}
 
         <main className="relative min-h-0 flex-1">
@@ -2551,7 +2606,7 @@ function App() {
                   closePane(closePrompt);
                   setClosePrompt(null);
                 }}
-                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-white"
+                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)]"
               >
                 keep running + notify me when done
               </button>
@@ -3467,7 +3522,7 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-white"
+              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)]"
             >
               pin
             </button>
@@ -3587,8 +3642,9 @@ function PaneOverview({
         </div>
       </div>
 
-      {/* the gallery — vertically + horizontally centered, wraps gracefully */}
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
+      {/* the gallery — empty space stays click-to-close (cards stop their own
+          propagation), so a stray click anywhere dims out of Mission Control */}
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6">
         <div className="flex flex-wrap items-center justify-center gap-6">
           {panes.map((p, i) => {
             const hidden = hiddenKeys.includes(p.key);
@@ -3611,8 +3667,18 @@ function PaneOverview({
                     <span className={`status-dot shrink-0 ${hidden ? "status-dot--cold" : DOT[p.kind.type] ?? "status-dot--cold"}`} />
                     <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-text-2)]">{p.label}</span>
                     <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`close ${p.label}`}
                       onMouseDown={(e) => { e.stopPropagation(); onClosePane(p.key); }}
-                      className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)] group-hover:opacity-100"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onClosePane(p.key);
+                        }
+                      }}
+                      className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
                       title="close pane"
                     >
                       <X size={12} />

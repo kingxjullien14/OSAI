@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import type { PaneKind } from "../components/TerminalPane";
+import { isApple } from "./platform";
 
 /** A pane's content — terminal-backed (shell/oracle/tmux) or a view. */
 export type PaneContent =
@@ -60,20 +61,28 @@ export type AppDef = {
   firstClass?: boolean;
 };
 
-/** Default app catalog — order here == the seeded default sidebar order. */
+/** Default app catalog — order here == the seeded default sidebar order.
+ *  Cast & attach ride macOS-only backends (ScreenCaptureKit / NSWorkspace), so
+ *  they only exist in the catalog on macOS — Windows never offers dead panes. */
 export const SPAWN: AppDef[] = [
   { id: "chat", kind: { type: "chat" }, icon: MessageSquare, label: "chat", group: "tools", firstClass: true },
   { id: "pet", kind: { type: "pet" }, icon: Bug, label: "pet", group: "tools" },
   { id: "terminal", kind: { type: "shell" }, icon: TerminalSquare, label: "terminal", group: "tools", firstClass: true },
-  { id: "codex-code", kind: { type: "shell", cmd: "codex --model gpt-5.3-codex-spark --dangerously-bypass-approvals-and-sandbox" }, icon: Bot, label: "codex", group: "tools", firstClass: true },
+  // no hardcoded model: the CLI follows its own configured default; the
+  // send-to-codex path uses codexShellCommand() to honor a pinned model.
+  { id: "codex-code", kind: { type: "shell", cmd: "codex --dangerously-bypass-approvals-and-sandbox" }, icon: Bot, label: "codex", group: "tools", firstClass: true },
   { id: "claude-code", kind: { type: "shell", cmd: "claude --dangerously-skip-permissions" }, icon: Bot, label: "claude code", group: "tools" },
   { id: "notes", kind: { type: "notes" }, icon: NotebookPen, label: "notes", group: "tools", firstClass: true },
   { id: "files", kind: { type: "files" }, icon: Folder, label: "files", group: "tools", firstClass: true },
   { id: "browser", kind: { type: "browser" }, icon: Globe, label: "browser", group: "tools", firstClass: true },
-  { id: "apps", kind: { type: "apps" }, icon: MonitorUp, label: "apps", group: "tools" },
-  // App-cast (ScreenCaptureKit spike): live-mirror a native macOS window in a
-  // pane. Hidden by default (not firstClass) — reachable via ⌘K. macOS-only.
-  { id: "appcast", kind: { type: "appcast" }, icon: MonitorPlay, label: "app cast", group: "tools" },
+  ...(isApple
+    ? [
+        { id: "apps", kind: { type: "apps" }, icon: MonitorUp, label: "apps", group: "tools" } as AppDef,
+        // App-cast (ScreenCaptureKit spike): live-mirror a native macOS window
+        // in a pane. Hidden by default (not firstClass) — reachable via ⌘K.
+        { id: "appcast", kind: { type: "appcast" }, icon: MonitorPlay, label: "app cast", group: "tools" } as AppDef,
+      ]
+    : []),
 ];
 
 /** Stable id → AppDef, for sidebar render-time lookup. */
