@@ -33,7 +33,6 @@ import {
   type TmuxSession,
 } from "../lib/pty";
 import { isTauriRuntime } from "../lib/tauri";
-import { SidebarUsage } from "./SidebarUsage";
 
 interface Props {
   iconsOnly?: boolean;
@@ -338,7 +337,8 @@ export function OracleRoster({
         )}
 
         {/* ---- live usage (5h / 7d rate windows) ---- */}
-        {!collapsed && <SidebarUsage />}
+        {/* usage moved to the sidebar footer (App.tsx) so it's always visible —
+            it used to vanish whenever this AGENTS section was collapsed. */}
       </div>
 
       {/* ---- all tmux sessions ---- */}

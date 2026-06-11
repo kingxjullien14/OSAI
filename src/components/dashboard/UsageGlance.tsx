@@ -185,16 +185,44 @@ function UsageSkeleton() {
 export function UsageGlance() {
   const { claude, codex, hasClaude, hasCodex, loaded } = useUsageRates();
   if (!loaded) return <UsageSkeleton />; // first poll in flight → shimmer, not blank
-  if (!hasClaude && !hasCodex) return null;
+  if (!hasClaude && !hasCodex)
+    // never silently hide — say WHY there's nothing (user-reported: "I can't
+    // see my usage limits"). claude's 5h/7d only exist once its statusline
+    // hook writes ~/.aios/state/usage.json; codex once its CLI reports.
+    return (
+      <div
+        className="flex flex-col gap-1 border-t border-[var(--color-border)] pt-3"
+        title={"the 5h/7d windows appear after the engine's first usage report:\nclaude — the aios statusline hook writes ~/.aios/state/usage.json on each tick\ncodex — the CLI pushes its ChatGPT-sub windows"}
+      >
+        <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+        <span className="text-[10.5px] leading-snug text-[var(--color-faint)]">
+          waiting for the first usage report from claude / codex
+        </span>
+      </div>
+    );
 
   return (
     <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-3">
       <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
-      {hasClaude && (
+      {hasClaude ? (
         <ProviderBlock name="claude" fiveHour={claude!.fiveHour} sevenDay={claude!.sevenDay} showRemaining />
+      ) : (
+        // one provider reporting while claude is silent looked like fake data
+        // (user-reported) — say explicitly why claude has no bars yet.
+        <div
+          className="flex flex-col gap-0.5"
+          title={"claude only reports its 5h/7d windows through the aios statusline hook,\nwhich writes ~/.aios/state/usage.json on every claude-code tick.\nthat hook isn't set up on this machine yet."}
+        >
+          <span className="text-[10px] font-medium lowercase tracking-wide text-[var(--color-text-2)]">claude</span>
+          <span className="text-[10.5px] leading-snug text-[var(--color-faint)]">
+            no usage feed yet — statusline hook not set up
+          </span>
+        </div>
       )}
       {hasCodex && (
-        <ProviderBlock name="codex" fiveHour={codex!.fiveHour} sevenDay={codex!.sevenDay} showRemaining />
+        // labeled with its true source: the ChatGPT-subscription account
+        // windows (read via ~/.codex/auth.json), live even without the CLI.
+        <ProviderBlock name="codex · chatgpt sub" fiveHour={codex!.fiveHour} sevenDay={codex!.sevenDay} showRemaining />
       )}
     </div>
   );

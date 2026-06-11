@@ -2099,7 +2099,9 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
 /// Reads the statusline's `~/.aios/state/usage.json` and builds a claude-shaped
 /// `usage` event line (5h/7d windows), or `None` if it's not written yet.
 fn claude_usage_event() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
     let path = format!("{home}/.aios/state/usage.json");
     let s = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&s).ok()?;

@@ -11,7 +11,7 @@ use std::process::Stdio;
 /// "waiting for first tick" state when absent.
 #[tauri::command]
 pub fn usage_stats() -> Value {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let path = format!("{home}/.aios/state/usage.json");
     match std::fs::read_to_string(&path) {
         Ok(s) => serde_json::from_str(&s).unwrap_or(Value::Null),
@@ -28,7 +28,7 @@ pub fn usage_stats() -> Value {
 /// (the GUI-launched app has no node on PATH).
 #[tauri::command]
 pub fn claude_usage() -> Value {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let path = format!("{home}/.aios/state/usage.json");
     let s = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -68,14 +68,14 @@ pub fn codex_usage() -> Value {
 }
 
 fn codex_usage_from_wham() -> Option<Value> {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let auth: Value = serde_json::from_str(
         &std::fs::read_to_string(format!("{home}/.codex/auth.json")).ok()?,
     )
     .ok()?;
     let token = auth.pointer("/tokens/access_token")?.as_str()?;
     let account = auth.pointer("/tokens/account_id")?.as_str()?;
-    let mut child = std::process::Command::new("/usr/bin/curl")
+    let mut child = std::process::Command::new(if cfg!(windows) { "curl.exe" } else { "/usr/bin/curl" })
         .args([
             "-fsS",
             "--max-time",
@@ -122,7 +122,7 @@ fn map_wham_usage(payload: &Value) -> Option<Value> {
 }
 
 fn codex_usage_from_sqlite() -> Value {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let db = format!("{home}/.codex/logs_2.sqlite");
     if !std::path::Path::new(&db).exists() {
         return Value::Null;

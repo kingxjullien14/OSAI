@@ -49,11 +49,11 @@ export function PluginsPane() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+      <div className="pane-header justify-between">
         <div className="flex items-center gap-2">
-          <Blocks size={14} className="text-[var(--color-accent)]" />
-          <span className="text-[13px] font-medium text-[var(--color-text)]">plugins · skills</span>
-          <span className="text-[11px] text-[var(--color-muted)]">
+          <Blocks size={14} className="text-[var(--color-muted)]" />
+          <span className="pane-header__title">plugins · skills</span>
+          <span className="text-[11px] text-[var(--color-faint)]">
             {data?.skills.length ?? 0} skills · {data?.mcps.length ?? 0} mcp
           </span>
         </div>

@@ -186,10 +186,10 @@ export function BridgesPane() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+      <div className="pane-header justify-between">
         <div className="flex items-center gap-2">
-          <Radio size={14} className="text-[var(--color-accent)]" />
-          <span className="text-[13px] font-medium text-[var(--color-text)]">channels</span>
+          <Radio size={14} className="text-[var(--color-muted)]" />
+          <span className="pane-header__title">channels</span>
           {channels.length > 0 && (
             <span className="text-[11px] text-[var(--color-muted)]">
               {connectedCount} connected

@@ -118,6 +118,7 @@ import {
 } from "./lib/paneBus";
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
+import { SidebarUsage } from "./components/SidebarUsage";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, isApple } from "./lib/platform";
@@ -2416,6 +2417,13 @@ function App() {
               />
             </div>
             <div className="flex flex-col gap-0.5 border-t border-[var(--color-border)] p-2">
+              {/* live 5h/7d usage — pinned to the footer so it's ALWAYS visible
+                  (it used to hide inside the collapsible agents section). */}
+              {!iconsOnly && (
+                <div className="px-1.5 pb-2">
+                  <SidebarUsage />
+                </div>
+              )}
               <div className={`flex pb-1 ${iconsOnly ? "justify-center" : "justify-center px-1.5"}`}>
                 {sidebarActions}
               </div>

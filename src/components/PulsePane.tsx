@@ -48,10 +48,10 @@ export function PulsePane() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
       {/* header — same shape as the other tool panes */}
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3">
-        <Zap size={14} className="text-[var(--color-highlight)]" />
-        <span className="text-[13px] font-medium text-[var(--color-text)]">pulse</span>
-        <span className="text-[11px] text-[var(--color-muted)]">activity &amp; usage</span>
+      <div className="pane-header gap-2">
+        <Zap size={14} className="text-[var(--color-muted)]" />
+        <span className="pane-header__title">pulse</span>
+        <span className="text-[11px] text-[var(--color-faint)]">activity &amp; usage</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">

@@ -69,10 +69,10 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+      <div className="pane-header justify-between">
         <div className="flex items-center gap-2">
-          <Target size={14} className="text-[var(--color-success)]" />
-          <span className="text-[13px] font-medium text-[var(--color-text)]">aios agents</span>
+          <Target size={14} className="text-[var(--color-muted)]" />
+          <span className="pane-header__title">aios agents</span>
         </div>
         <button
           type="button"

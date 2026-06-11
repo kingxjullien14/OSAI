@@ -3962,8 +3962,18 @@ function UsageStrip({
 }) {
   const current = usage?.[window].pct ?? null;
   const initial = baseline?.[window].pct ?? current;
-  // nothing to show yet (e.g. codex before its first rate-limit push) → hide.
-  if (current == null) return null;
+  // nothing yet (claude before its statusline tick / codex before its first
+  // rate-limit push) → say so quietly instead of hiding the whole strip.
+  if (current == null)
+    return (
+      <div
+        className="mb-2 flex items-center gap-2 px-1 font-mono text-[10px] text-[var(--color-faint)]"
+        title={"the 5h/7d rate-limit windows appear after the engine's first usage report\nclaude: written by the aios statusline hook (~/.aios/state/usage.json)\ncodex: pushed live by the CLI"}
+      >
+        <span className="shrink-0 lowercase tracking-wide text-[var(--color-muted)]">{engine}</span>
+        <span>5h/7d usage · waiting for the engine's first report</span>
+      </div>
+    );
   const stack = current != null && initial != null ? usageStack(current, initial) : null;
   const reset = usage?.[window].resetsAt ? resetIn(usage[window].resetsAt) : "";
   const remaining = stack ? 100 - stack.total : null;
