@@ -23,6 +23,7 @@
  *   8. `@` file-mention picker sourced from cwd
  */
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Channel } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
@@ -3225,7 +3226,7 @@ export function ChatPane({
           </div>
         )}
 
-        <div className="flash-composer relative rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/70 shadow-2xl shadow-black/40 backdrop-blur transition-colors focus-within:border-[var(--color-accent)]/50">
+        <div className="flash-composer relative rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/80 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors focus-within:border-[var(--color-accent)]/50">
           {/* attached-image thumbnails (paste a screenshot / + attach) */}
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
@@ -3536,7 +3537,7 @@ export function ChatPane({
                 type="button"
                 onClick={send}
                 disabled={action.disabled}
-                className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3 text-[12px] font-medium text-[var(--color-bg)] transition-all hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
+                className="btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
                 title={action.title}
               >
                 <ArrowUp size={16} />
@@ -3690,13 +3691,13 @@ export function ChatPane({
             (drift keyframes die under reduce-motion; the static wash stays). */}
         <div
           aria-hidden
-          className="aios-drift-a pointer-events-none absolute h-[40vh] w-[40vh] rounded-full opacity-[0.07]"
-          style={{ background: "radial-gradient(circle, var(--color-accent), transparent 65%)", filter: "blur(48px)" }}
+          className="aios-drift-a pointer-events-none absolute h-[44vh] w-[44vh] rounded-full opacity-[0.04]"
+          style={{ background: "radial-gradient(circle, var(--color-accent), transparent 62%)", filter: "blur(80px)" }}
         />
         <div
           aria-hidden
-          className="aios-drift-b pointer-events-none absolute h-[34vh] w-[34vh] rounded-full opacity-[0.05]"
-          style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 65%)", filter: "blur(56px)" }}
+          className="aios-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
+          style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 62%)", filter: "blur(80px)" }}
         />
         <div className="fade-in-up relative w-full max-w-2xl">
           <div className="helper-line mb-2.5 text-center" style={{ animationDelay: "60ms" }}>
@@ -5377,11 +5378,14 @@ function Dropdown({
     };
   }, [open, align, onToggle]);
   // outside-click + Escape close — a pinned-open menu over the composer was
-  // the old behavior; standard dismissal everywhere else in the app.
+  // the old behavior; standard dismissal everywhere else in the app. The menu
+  // lives in a body portal, so "inside" means trigger OR menu.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onToggle();
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      onToggle();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onToggle();
@@ -5409,16 +5413,23 @@ function Dropdown({
       >
         {trigger}
       </button>
-      {open && menuPos && (
-        <div
-          ref={menuRef}
-          role="menu"
-          className="scale-in fixed z-50 max-h-[min(380px,60vh)] min-w-[150px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50"
-          style={menuPos}
-        >
-          {children}
-        </div>
-      )}
+      {open &&
+        menuPos &&
+        // PORTAL to <body>: position:fixed is re-anchored by any ancestor with
+        // backdrop-filter/transform (the composer has backdrop-blur), which
+        // teleported menus into the wrong corner. From <body> the viewport
+        // coordinates are honored everywhere.
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            className="scale-in glass fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 p-1 shadow-[var(--aios-shadow-pop)]"
+            style={menuPos}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -5442,15 +5453,19 @@ function MenuItem({
       title={title}
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full items-center px-3 py-1.5 text-left font-sans text-[12px] transition-colors ${
+      role="menuitem"
+      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors ${
         disabled
           ? "cursor-not-allowed text-[var(--color-faint)]"
           : active
             ? "bg-[var(--color-accent-soft)] text-[var(--color-text)]"
-            : "text-[var(--color-text-2)] hover:bg-[var(--color-panel)]"
+            : "text-[var(--color-text-2)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
       }`}
     >
-      {children}
+      <span className="min-w-0 flex-1">{children}</span>
+      {active && !disabled && (
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+      )}
     </button>
   );
 }
