@@ -1210,6 +1210,30 @@ fn ripgrep_bin() -> Option<String> {
             return Some(c.to_string());
         }
     }
+    #[cfg(windows)]
+    {
+        // Typical Windows installs: scoop shim, cargo install, chocolatey —
+        // then a plain PATH scan for rg.exe.
+        if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+            for rel in [r"scoop\shims\rg.exe", r".cargo\bin\rg.exe"] {
+                let p = std::path::Path::new(&home).join(rel);
+                if p.is_file() {
+                    return Some(p.to_string_lossy().into_owned());
+                }
+            }
+        }
+        if std::path::Path::new(r"C:\ProgramData\chocolatey\bin\rg.exe").is_file() {
+            return Some(r"C:\ProgramData\chocolatey\bin\rg.exe".to_string());
+        }
+        if let Some(path) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path) {
+                let p = dir.join("rg.exe");
+                if p.is_file() {
+                    return Some(p.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
     None
 }
 

@@ -248,6 +248,7 @@ pub fn pty_spawn_terminal(
     on_data: Channel<String>,
     name: String,
     cmd: Option<String>,
+    cwd: Option<String>,
     cols: u16,
     rows: u16,
 ) -> Result<u32, String> {
@@ -277,7 +278,14 @@ pub fn pty_spawn_terminal(
     }
     cmdb.env("TERM", "xterm-256color");
     cmdb.env("COLORTERM", "truecolor");
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+    // Honor the requested cwd ("open terminal here", restored layouts); only
+    // fall back to the home dir when it's absent or no longer a directory.
+    let requested = cwd
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty() && std::path::Path::new(c).is_dir());
+    if let Some(dir) = requested {
+        cmdb.cwd(dir);
+    } else if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
         cmdb.cwd(home);
     }
     spawn_internal(app, &state, on_data, cmdb, cols, rows)

@@ -254,8 +254,21 @@ fn resolve_bin(name: &str, env_override: &str, extra: &[&str]) -> String {
     for e in extra {
         candidates.push(e.to_string());
     }
-    if let Ok(home) = std::env::var("HOME") {
+    // GUI-launched Windows processes have no HOME — fall back to USERPROFILE so
+    // home-dir installs (~/.local/bin, scoop, npm global) stay discoverable.
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         candidates.push(format!("{home}/.local/bin/{name}"));
+        #[cfg(windows)]
+        {
+            for ext in ["exe", "cmd"] {
+                candidates.push(format!("{home}\\.local\\bin\\{name}.{ext}"));
+                candidates.push(format!("{home}\\scoop\\shims\\{name}.{ext}"));
+            }
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                candidates.push(format!("{appdata}\\npm\\{name}.cmd"));
+                candidates.push(format!("{appdata}\\npm\\{name}.exe"));
+            }
+        }
         // nvm: pick the newest versioned bin that has the binary.
         let nvm = format!("{home}/.nvm/versions/node");
         if let Ok(entries) = std::fs::read_dir(&nvm) {
@@ -270,6 +283,14 @@ fn resolve_bin(name: &str, env_override: &str, extra: &[&str]) -> String {
     for c in &candidates {
         if std::path::Path::new(c).exists() {
             return c.clone();
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Some(p) =
+            which_on_path(&format!("{name}.exe")).or_else(|| which_on_path(&format!("{name}.cmd")))
+        {
+            return p;
         }
     }
     name.to_string()
@@ -329,10 +350,19 @@ fn codex_bin() -> String {
 
 /// Resolves the `opencode` binary (its installer drops it under ~/.opencode/bin).
 fn opencode_bin() -> String {
-    let extra = std::env::var("HOME")
-        .map(|h| format!("{h}/.opencode/bin/opencode"))
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_default();
-    resolve_bin("opencode", "AIOS_OPENCODE_BIN", &[extra.as_str()])
+    let mut extra: Vec<String> = Vec::new();
+    if !home.is_empty() {
+        extra.push(format!("{home}/.opencode/bin/opencode"));
+        if cfg!(windows) {
+            extra.push(format!("{home}\\.opencode\\bin\\opencode.exe"));
+            extra.push(format!("{home}\\.opencode\\bin\\opencode.cmd"));
+        }
+    }
+    let refs: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
+    resolve_bin("opencode", "AIOS_OPENCODE_BIN", &refs)
 }
 
 /// Cross-platform PATH search used by `detect_providers`. If `name` is already
@@ -1025,16 +1055,32 @@ fn run_per_turn(sess: Arc<ChatSession>, app: AppHandle, text: String) -> Result<
                 ingest_line(&rsess, &app, &out);
             }
         }
-        *rsess.child.lock() = None;
+        // Reap the child so the EOF fallback below can tell a clean exit-on-
+        // complete (opencode's normal turn end) from a crash.
+        let exit_code = rsess
+            .child
+            .lock()
+            .take()
+            .and_then(|mut c| c.wait().ok())
+            .and_then(|s| s.code());
         // Fallback close: if the engine never emitted a turn-end (crash / kill /
         // an engine that just EOFs), synthesize a result so the composer frees.
         // `busy` is still true ONLY if no adapted `result` line cleared it.
         if rsess.busy.swap(false, Ordering::SeqCst) {
             let tid = rsess.thread_id.lock().clone().unwrap_or_default();
-            let result = format!(
-                "{{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
-                json_escape(&tid)
-            );
+            let failed = exit_code.map_or(false, |c| c != 0);
+            let result = if failed {
+                format!(
+                    "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"the engine exited with code {}\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                    exit_code.unwrap_or(-1),
+                    json_escape(&tid)
+                )
+            } else {
+                format!(
+                    "{{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                    json_escape(&tid)
+                )
+            };
             ingest_line(&rsess, &app, &result);
         }
     });
@@ -1364,7 +1410,7 @@ fn start_codex_appserver(
         if sess.busy.swap(false, Ordering::SeqCst) {
             let tid = sess.thread_id.lock().clone().unwrap_or_default();
             let result = format!(
-                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"codex app-server exited unexpectedly\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
                 json_escape(&tid)
             );
             ingest_line(&sess, &app_rdr, &result);
@@ -1647,8 +1693,20 @@ fn adapt_codex_appserver_frame(sess: &Arc<ChatSession>, line: &str) -> Vec<Strin
             *sess.active_turn.lock() = None;
             *sess.answer_item.lock() = None;
             let tid = sess.thread_id.lock().clone().unwrap_or_default();
+            // Carry the engine's own message so the transcript can show WHY —
+            // without is_error the frontend renders this as a success footer.
+            let msg = params
+                .and_then(|p| {
+                    p.get("turn")
+                        .and_then(|t| t.get("error"))
+                        .or_else(|| p.get("error"))
+                })
+                .and_then(|e| e.get("message").or(Some(e)))
+                .and_then(|m| m.as_str())
+                .unwrap_or("the turn failed");
             out.push(format!(
-                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"{}\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                json_escape(msg),
                 json_escape(&tid)
             ));
         }
@@ -1674,8 +1732,16 @@ fn adapt_codex_appserver_frame(sess: &Arc<ChatSession>, line: &str) -> Vec<Strin
                 .unwrap_or(false);
             if !will_retry {
                 let tid = sess.thread_id.lock().clone().unwrap_or_default();
+                let msg = params
+                    .and_then(|p| {
+                        p.get("message")
+                            .or_else(|| p.get("error").and_then(|e| e.get("message")))
+                    })
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("the engine reported a non-retryable error");
                 out.push(format!(
-                    "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                    "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"{}\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                    json_escape(msg),
                     json_escape(&tid)
                 ));
             }
@@ -1922,8 +1988,15 @@ fn adapt_codex_line(sess: &Arc<ChatSession>, line: &str) -> Vec<String> {
         }
         "turn.failed" | "error" => {
             let tid = sess.thread_id.lock().clone().unwrap_or_default();
+            let msg = v
+                .get("error")
+                .and_then(|e| e.get("message").or(Some(e)))
+                .or_else(|| v.get("message"))
+                .and_then(|m| m.as_str())
+                .unwrap_or("the turn failed");
             out.push(format!(
-                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"{}\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+                json_escape(msg),
                 json_escape(&tid)
             ));
         }
