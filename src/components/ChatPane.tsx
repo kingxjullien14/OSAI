@@ -82,6 +82,7 @@ import {
   recordChatSession,
   CHAT_MODELS,
   baseModelId,
+  defaultAiForProvider,
   EFFORTS,
   PERMISSION_MODES,
   type ApprovalDecision,
@@ -95,7 +96,7 @@ import { detectAvailableEngines } from "../lib/providerDetect";
 import { saveMoneyAgentChatSession } from "../lib/moneyAgents";
 import { fileSrc, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { loadSettings, saveSettings } from "../lib/settings";
-import { chord } from "../lib/platform";
+import { SHIFT, chord } from "../lib/platform";
 import { idleRate, codexRate, resetIn } from "../lib/dashboard";
 import {
   composerContextChips,
@@ -788,6 +789,9 @@ export function ChatPane({
   const [streaming, setStreaming] = useState(false);
   const [backendBusy, setBackendBusy] = useState(false);
   const [started, setStarted] = useState(false);
+  // transient pre-session status shown inline in the hero (queued-send notice,
+  // startup failure) — never a transcript turn, so the empty state stays calm.
+  const [startupNote, setStartupNote] = useState<string | null>(null);
   // claude's init event arrived (session_id known) — gates the seed auto-send
   const [claudeReady, setClaudeReady] = useState(false);
 
@@ -806,10 +810,16 @@ export function ChatPane({
       if (byEngine) return byEngine;
     }
     // base = explicit prop → else the user's chosen-provider base (NOT a
-    // hardcoded codex default; see baseModelId / PLAN §13).
+    // hardcoded codex default; see baseModelId / PLAN §13). A stale saved id
+    // falls back to the provider's own first model, never CHAT_MODELS[0]
+    // (which is codex) — a claude user must not silently boot into codex.
     const s = loadSettings();
     const preferred = modelId ?? baseModelId(s.chatProvider, s.chatModel);
-    return CHAT_MODELS.find((m) => m.id === preferred) ?? CHAT_MODELS[0];
+    return (
+      CHAT_MODELS.find((m) => m.id === preferred) ??
+      CHAT_MODELS.find((m) => m.id === baseModelId(s.chatProvider, null)) ??
+      CHAT_MODELS[0]
+    );
   });
   // detect installed engine CLIs → gray out models whose engine isn't present
   // (so a user can't pick a CLI they don't have). null = not yet probed.
@@ -984,6 +994,9 @@ export function ChatPane({
   const thinkingTurnId = useRef<string | null>(null);
   // last user prompt text actually sent to claude (for regenerate)
   const lastSentRef = useRef<string | null>(null);
+  // true between a user stop() and the backend's synthetic stop result — used
+  // to keep an intentional stop from rendering as a failure card.
+  const stoppingRef = useRef(false);
   const stopChatRef = useRef<() => void>(() => {});
   // ── composer autocomplete (copilot-style) ──────────────────────────────────
   // Past sent messages, newest first — the source for inline ghost completion.
@@ -1398,7 +1411,22 @@ export function ChatPane({
             ? u.cache_creation_input_tokens
             : 0);
         if (ctx > 0) setCtxTokens(ctx);
-        const resultText = typeof ev.text === "string" ? ev.text.trim() : "";
+        // claude passthrough results carry the human message in ev.result, the
+        // synthesized engine failures in ev.text — read both so a failure card
+        // never loses its diagnostic.
+        const resultText =
+          typeof ev.text === "string" && ev.text.trim()
+            ? ev.text.trim()
+            : typeof ev.result === "string"
+              ? ev.result.trim()
+              : "";
+        // a user-initiated stop fans out a synthetic is_error result — stop()
+        // already posted its calm "stopped by user" note; don't double up with
+        // a contradictory red failure card.
+        if (stoppingRef.current && Boolean(ev.is_error)) {
+          stoppingRef.current = false;
+          return;
+        }
         // cost intentionally omitted — firaz runs on subs, $ figures are noise.
         const foot = [resultText, dur, tokStr].filter(Boolean).join(" · ");
         // always emit a result turn (carries durationMs for the activity line),
@@ -1608,13 +1636,20 @@ export function ChatPane({
           setNow(t0);
         }
         setStarted(true);
+        setStartupNote(null);
       })
       .catch((err) => {
         if (!disposed) {
-          setTurns((prev) => [
-            ...prev,
-            { kind: "result", id: uid(), text: `failed to start: ${err}`, ok: false },
-          ]);
+          // pre-session failure: keep the hero standing and surface the error
+          // INLINE (a transcript turn would tear the empty state down into a
+          // one-footnote conversation). Mid-conversation restarts still get a
+          // visible turn so the failure isn't lost in scrollback.
+          setStartupNote(`failed to start: ${err}`);
+          setTurns((prev) =>
+            prev.length === 0
+              ? prev
+              : [...prev, { kind: "result", id: uid(), text: `failed to start: ${err}`, ok: false }],
+          );
         }
       });
 
@@ -2066,28 +2101,16 @@ export function ChatPane({
       if (!text && imgPaths.length === 0) return;
       if (streaming) return;
       if (sessionIdRef.current == null) {
+        // pre-session sends must not tear down the hero with a transcript turn
+        // — queue the text and say so inline, right under the composer.
         if (imgPaths.length === 0) {
           enqueue(text);
           setInput("");
           setOverlay(null);
-          setTurns((prev) => [
-            ...prev,
-            {
-              kind: "result",
-              id: uid(),
-              text: "chat is still starting — queued message will send automatically.",
-            },
-          ]);
+          setStartupNote("still starting — your message is queued and will send automatically");
           return;
         }
-        setTurns((prev) => [
-          ...prev,
-          {
-            kind: "result",
-            id: uid(),
-            text: "chat session isn't ready yet. retry this message after startup and attachments will be included.",
-          },
-        ]);
+        setStartupNote("session isn't ready yet — retry after startup and attachments will be included");
         return;
       }
       // Claude keeps its original first-message labels. Codex starts with a
@@ -2206,11 +2229,26 @@ export function ChatPane({
   }, [seed]);
 
   // regenerate: replay the last user turn (no extra user bubble)
-  const regenerate = useCallback(() => {
-    const last = lastSentRef.current;
-    if (!last || streaming || sessionIdRef.current == null) return;
-    dispatch(last, { skipUserBubble: true });
-  }, [streaming, dispatch]);
+  const regenerate = useCallback(
+    (text?: string) => {
+      // prefer the caller's text (the visible bubble) so a rehydrated/resumed
+      // transcript regenerates what's on screen, not a stale lastSent ref.
+      const last = text ?? lastSentRef.current;
+      if (!last || streaming || sessionIdRef.current == null) return;
+      dispatch(last, { skipUserBubble: true });
+    },
+    [streaming, dispatch],
+  );
+
+  // the failure card's retry: pre-session (startup failed) a resend has nothing
+  // to land in — re-spin the session instead of dead-clicking regenerate.
+  const retryTurn = useCallback(() => {
+    if (sessionIdRef.current == null) {
+      setRestartKey((k) => k + 1);
+      return;
+    }
+    regenerate();
+  }, [regenerate]);
 
   // edit-and-resend: load a past message back into the composer to tweak + send.
   const editMessage = useCallback((text: string) => {
@@ -2271,6 +2309,7 @@ export function ChatPane({
   // true interrupt of the in-flight turn (process survives)
   const stop = useCallback(() => {
     if (sessionIdRef.current == null) return;
+    stoppingRef.current = true;
     const strategy = stopStrategy(model.engine);
     finalizeStreaming(
       strategy === "kill-and-restart"
@@ -2820,9 +2859,12 @@ export function ChatPane({
   const composer = useMemo(
     () => (
       <div className="relative">
-        {/* context contract: what this send will use, before the user fires it. */}
-        {contextChips.length > 0 && (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {/* context contract: what this send will use, before the user fires it.
+            On a fresh hero the telemetry stays hidden until the first keystroke
+            — the rows BLOOM in as a response to typing (plan §4's critical row:
+            no machine readout before the user has said anything). */}
+        {(!empty || hasDraft) && contextChips.length > 0 && (
+          <div className={`mb-2 flex flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
             {contextChips.map((chip) => (
               <span
                 key={chip.id}
@@ -2873,23 +2915,24 @@ export function ChatPane({
             ))}
             {runEventCount > 0 && (
               <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]">
-                <Waypoints size={12} className="shrink-0 text-[var(--color-accent)]" />
+                <Waypoints size={12} className="shrink-0 text-[var(--color-muted)]" />
                 <span className="truncate">run: {runPhase}</span>
               </span>
             )}
             {attachedMemories.length > 0 && (
-              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)]">
-                <Brain size={12} className="shrink-0 text-[var(--color-accent)]" />
+              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]">
+                <Brain size={12} className="shrink-0 text-[var(--color-muted)]" />
                 <span className="truncate">{attachedMemories.length} memories attached</span>
               </span>
             )}
           </div>
         )}
 
+        {(!empty || hasDraft) && (
         <div
           className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[10px] ${
-            contextLedgerWarning ? "text-[var(--color-warning)]" : "text-[var(--color-faint)]"
-          }`}
+            empty ? "fade-in-up " : ""
+          }${contextLedgerWarning ? "text-[var(--color-warning)]" : "text-[var(--color-faint)]"}`}
           title="estimated tokens added by the next send; exact billing comes from provider usage"
         >
           <span>{estimatedContextTokens.toLocaleString()} est tok</span>
@@ -2902,6 +2945,7 @@ export function ChatPane({
             </span>
           ))}
         </div>
+        )}
 
         {memoryPanelOpen && (
           <div className="mb-2 flex max-h-36 flex-col gap-1 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel)]/80 p-1.5">
@@ -3181,7 +3225,7 @@ export function ChatPane({
                   <button
                     type="button"
                     onClick={() => removeImage(im.id)}
-                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-[var(--color-bg)]/80 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] group-hover:opacity-100"
+                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-[var(--color-bg)]/80 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <X size={11} />
                   </button>
@@ -3287,6 +3331,7 @@ export function ChatPane({
               align="right"
               triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
               trigger={<Wrench size={15} />}
+              label="tools & session controls"
             >
               <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 tools
@@ -3410,9 +3455,13 @@ export function ChatPane({
                     setModel(m);
                     // picking a model sets it as the global default (sticks
                     // across panes + restarts). engine omitted = claude.
+                    // defaultAi is derived from the provider so "send to AI"
+                    // routing can never drift onto a different engine.
+                    const provider = `${m.engine ?? "claude"}-cli`;
                     saveSettings({
                       chatModel: m.id,
-                      chatProvider: `${m.engine ?? "claude"}-cli`,
+                      chatProvider: provider,
+                      defaultAi: defaultAiForProvider(provider),
                     });
                     setOpenMenu(null);
                   }}
@@ -3504,6 +3553,7 @@ export function ChatPane({
       attachedMemories,
       handoffPanelOpen,
       hasDraft,
+      empty,
       send,
       stop,
       enqueue,
@@ -3610,12 +3660,15 @@ export function ChatPane({
   // ── render ──────────────────────────────────────────────────────────────────
 
   if (empty) {
+    const startupFailed = Boolean(startupNote?.startsWith("failed to start"));
     return (
       <ChatFileOpenContext.Provider value={openChatFile}>
       <PaneDropZone onPath={insertPath} onFiles={onDropFiles} label="drop image or path">
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center bg-[var(--color-bg)] px-6">
-        <div className="w-full max-w-2xl">
-          <h1 className="mb-7 text-center font-sans text-3xl font-medium tracking-tight text-[var(--color-text)]">
+      {/* anchored (not centered): supplementary rows grow DOWNWARD so the
+          title never jumps as chips/ledger/status bloom in. */}
+      <div className="flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto bg-[var(--color-bg)] px-6 pt-[16vh]">
+        <div className="fade-in-up w-full max-w-2xl">
+          <h1 className="hero-title mb-7 text-center">
             {resumedTitle ? "picking up where we left off" : "what should we work on?"}
           </h1>
           {resumedTitle && (
@@ -3624,8 +3677,39 @@ export function ChatPane({
             </div>
           )}
           {composer}
-          <div className="mt-3 flex items-center justify-center gap-3 font-mono text-[11px] text-[var(--color-faint)]">
-            <span>{started ? `${model.engine ?? "claude"} · ready` : `starting ${model.engine ?? "claude"}…`}</span>
+          {startupNote && (
+            <div
+              className={`fade-in-up mt-3 flex items-center justify-center gap-2 text-[12px] ${
+                startupFailed ? "text-[var(--color-danger)]" : "text-[var(--color-muted)]"
+              }`}
+            >
+              {startupFailed && <AlertTriangle size={12} className="shrink-0" />}
+              <span className="min-w-0 truncate" title={startupNote}>{startupNote}</span>
+              {startupFailed && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStartupNote(null);
+                    setRestartKey((k) => k + 1);
+                  }}
+                  className="press inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border-strong)] px-2 py-0.5 font-sans text-[11px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-text)] hover:text-[var(--color-text)]"
+                >
+                  <RefreshCw size={10} /> retry
+                </button>
+              )}
+            </div>
+          )}
+          <div className="helper-line mt-3 flex items-center justify-center gap-3">
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className={`status-dot ${started ? "status-dot--active" : "status-dot--idle"}`}
+                style={{ width: 6, height: 6 }}
+              />
+              {started ? `${model.engine ?? "claude"} · ready` : `starting ${model.engine ?? "claude"}…`}
+            </span>
+            <span className="text-[var(--color-border-strong)]">·</span>
+            <span>⏎ send</span>
+            <span>{SHIFT}⏎ newline</span>
             <span className="text-[var(--color-border-strong)]">·</span>
             <span className="inline-flex items-center gap-1">
               <Slash size={10} /> commands
@@ -3683,7 +3767,7 @@ export function ChatPane({
                 turn={b.turn}
                 streaming={streaming}
                 isLast={b.id === lastUserId}
-                onRegenerate={regenerate}
+                onRegenerate={() => regenerate(b.turn.text)}
                 onEdit={editMessage}
               />
             ) : b.kind === "assistant" ? (
@@ -3705,7 +3789,7 @@ export function ChatPane({
                 onResolve={resolveApproval}
               />
             ) : (
-              <ResultFooter key={b.id} turn={b.turn} onRetry={regenerate} />
+              <ResultFooter key={b.id} turn={b.turn} onRetry={retryTurn} />
             ),
           )}
           {/* turn in flight with neither streamed text nor a live activity group
@@ -4464,7 +4548,7 @@ function UserBubble({
       <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--color-accent-soft)] px-4 py-2.5 font-sans text-[14px] leading-relaxed text-[var(--color-text)]">
         {turn.text}
       </div>
-      <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         {turn.createdAt != null && (
           <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]">
             {new Date(turn.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -4624,7 +4708,7 @@ function AssistantBubble({
         </div>
       )}
       {!turn.streaming && body.trim() && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <CopyButton text={body} title="copy response" />
         </div>
       )}
@@ -5177,6 +5261,7 @@ function Dropdown({
   children,
   align = "left",
   triggerClassName,
+  label,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -5185,12 +5270,36 @@ function Dropdown({
   align?: "left" | "right";
   /** Override the trigger pill styling (e.g. the ultracode gradient). */
   triggerClassName?: string;
+  /** Accessible name for icon-only triggers (the wrench). */
+  label?: string;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  // outside-click + Escape close — a pinned-open menu over the composer was
+  // the old behavior; standard dismissal everywhere else in the app.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onToggle();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onToggle();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open, onToggle]);
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={label}
+        title={label}
         className={
           triggerClassName ??
           "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/50 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
@@ -5200,9 +5309,11 @@ function Dropdown({
       </button>
       {open && (
         <div
-          className={`absolute bottom-full z-30 mb-1.5 min-w-[140px] overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50 ${
+          role="menu"
+          className={`scale-in absolute bottom-full z-30 mb-1.5 min-w-[140px] overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50 ${
             align === "right" ? "right-0" : "left-0"
           }`}
+          style={{ ["--aios-origin" as string]: "bottom center" }}
         >
           {children}
         </div>
