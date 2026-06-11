@@ -64,7 +64,13 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [ ] **Soundscape** (optional, default off)
 
 ## Remaining Wave 2 backlog (next session)
-- [ ] `.pane-header` convergence across NotesPane/PluginsPane/BridgesPane/MoneyAgentsPane/FileViewerPane/PulsePane + shared PaneEmpty/Skeleton/CopyButton primitives + the lint guard
+- [x] **Usage everywhere** (`90c457d`) — Windows feed fixed (USERPROFILE/curl.exe), sidebar-footer mount, honest claude "no feed" row, codex labeled with its chatgpt-sub provenance; chat strip explains itself
+- [x] **Claude statusline hook installed on this machine** — `~/.aios/bin/statusline.ps1` + `statusLine` merged into `~/.claude/settings.json`; writes `~/.aios/state/usage.json` per tick (real 5h/7d light up after the next claude session starts)
+- [x] **Transcript de-dup + redundancy** (`9a0d401`) — footer no longer echoes the reply, thinking dedup (+test), single-bucket ledger collapsed, run pill live-only, block arrival motion
+- [x] **Run-phase rail** (`904995d`) — think→write→act→done spine on live activity groups
+- [x] **Maximize/restore FLIP morph** (`904995d`) — panes expand/shrink instead of teleporting
+- [x] **`.pane-header` convergence complete** (`90c457d`+`904995d`) — pulse/plugins/channels/agents/editor/file-viewer/notes all on the shared header spec
+- [ ] shared PaneEmpty/Skeleton/CopyButton primitives + the lint guard
 - [ ] BrowserPane local occlusion (suggest dropdown/toasts under webview) + remaining superapp-pane §11 polish (menus onto .surface-pop, poll-swap transitions)
 - [ ] xterm/Monaco themes from live tokens; voice waveform + whisper URL setting; editor/terminal skeletons; density+font-scale CSS consumers (the boot plumbing exists, App.css consumers don't)
 - [ ] dead-code deletion batch (bento CSS verified unreferenced; hotkeys field; reportUsage loop)
