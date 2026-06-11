@@ -51,14 +51,23 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 
 ## Wave 3 — signature features (the fun part)
 
+- [x] **Focus Spotlight** (`d1743a3`) — Ctrl+./Cmd+. dims every pane but the active one (45%, eased); auto-suspends maximized/single-pane
+- [x] **Starter deck on the empty hero** (`d1743a3`) — quiet pills prefill the composer, vanish on first keystroke
 - [ ] **Workspaces** — save/restore named layouts, morph transition, palette commands
-- [ ] **Focus Spotlight** — dim everything but the focused pane (chord-toggled)
 - [ ] **Activity Glow** — chrome breathes while agents run
-- [ ] **Smart starter chips + resume rail** on the empty chat hero
+- [ ] **Resume rail** on the empty chat hero (recent sessions one click away)
 - [ ] **Run timeline rail** — live phase spine from runEvents beside the transcript
 - [ ] **Living Pet** — pet reacts to terminal/agent activity (build green = celebrate, stack trace = wince)
 - [ ] **Repeat-last + action ring** in the palette
 - [ ] **Soundscape** (optional, default off)
+
+## Remaining Wave 2 backlog (next session)
+- [ ] `.pane-header` convergence across NotesPane/PluginsPane/BridgesPane/MoneyAgentsPane/FileViewerPane/PulsePane + shared PaneEmpty/Skeleton/CopyButton primitives + the lint guard
+- [ ] BrowserPane local occlusion (suggest dropdown/toasts under webview) + remaining superapp-pane §11 polish (menus onto .surface-pop, poll-swap transitions)
+- [ ] xterm/Monaco themes from live tokens; voice waveform + whisper URL setting; editor/terminal skeletons; density+font-scale CSS consumers (the boot plumbing exists, App.css consumers don't)
+- [ ] dead-code deletion batch (bento CSS verified unreferenced; hotkeys field; reportUsage loop)
+- [ ] palette trust items (disabled/danger styling, matcher cap) + modal focus traps/ARIA mirror in FileFinder/GlobalSearch
+- [ ] maximize/restore FLIP morph + grid-reflow transition + smoothed autoscroll + `.disclose` adoption in chat tool cards
 
 ## Verification gates (every batch)
 `npx tsc --noEmit` · `npm run test:chatpane` · `cargo check` (Rust batches) · `npm run build` (per wave) · manual run at the end
