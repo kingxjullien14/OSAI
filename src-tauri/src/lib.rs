@@ -42,6 +42,7 @@ fn read_telemetry() -> telemetry::Telemetry {
 /// NOT hijack the shortcut system-wide across other apps. So every menu item below
 /// emits a `menu-action` event the React side listens for and routes into the
 /// SAME handlers the in-React keydown fallback already calls.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     // App submenu (the "AIOS" menu) — keep the standard about/quit so ⌘Q works.
     let app_menu = SubmenuBuilder::new(app, "AIOS")
@@ -220,8 +221,13 @@ pub fn run() {
                 browser_store::init(dir);
             }
 
-            // Install the native macOS menu so cockpit accelerators (⌘F/⌘W/⌘1-9/…)
+            // Install the native menu so cockpit accelerators (⌘F/⌘W/⌘1-9/…)
             // fire even when a child webview holds focus (R2a urgent fix).
+            // macOS ONLY: there the menu lives in the system menu bar for free;
+            // on Windows it rendered as an in-window "AIOS Edit Pane" strip that
+            // ate a row of chrome (user-reported). The in-React keydown handler
+            // covers every chord when the main webview has focus.
+            #[cfg(target_os = "macos")]
             if let Err(e) = build_app_menu(app.handle()) {
                 eprintln!("[aios menu] failed to install app menu: {e}");
             }

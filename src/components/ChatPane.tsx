@@ -30,7 +30,6 @@ import {
   ArrowUp,
   ArrowDown,
   PackageOpen,
-  AtSign,
   Brain,
   Check,
   CheckCheck,
@@ -56,7 +55,6 @@ import {
   RotateCcw,
   Search,
   ShieldQuestion,
-  Slash,
   Sparkles,
   Square,
   Target,
@@ -64,6 +62,10 @@ import {
   Waypoints,
   Wrench,
   X,
+  Bug,
+  Compass,
+  Map as MapIcon,
+  type LucideIcon,
 } from "lucide-react";
 import {
   buildApprovalLine,
@@ -95,7 +97,7 @@ import {
 import { detectAvailableEngines } from "../lib/providerDetect";
 import { saveMoneyAgentChatSession } from "../lib/moneyAgents";
 import { fileSrc, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
-import { loadSettings, saveSettings } from "../lib/settings";
+import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { SHIFT, chord } from "../lib/platform";
 import { idleRate, codexRate, resetIn } from "../lib/dashboard";
 import {
@@ -347,6 +349,23 @@ function baseName(p: string): string {
   const clean = p.replace(/[\\/]+$/, "");
   return clean.split(/[\\/]/).filter(Boolean).pop() ?? p;
 }
+
+/** Time-of-day kicker for the empty hero ("good evening, jullien"). */
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return "up late";
+  if (h < 12) return "good morning";
+  if (h < 17) return "good afternoon";
+  return "good evening";
+}
+
+/** The empty hero's starter deck — icon cards that prefill the composer. */
+const STARTER_DECK: { icon: LucideIcon; label: string; sub: string; prompt: string }[] = [
+  { icon: Compass, label: "explore", sub: "explain this codebase", prompt: "explain this codebase" },
+  { icon: MapIcon, label: "plan", sub: "sketch a feature", prompt: "plan a feature with me — ask me what we're building first" },
+  { icon: Bug, label: "fix", sub: "hunt down a bug", prompt: "find and fix a bug" },
+  { icon: Sparkles, label: "discover", sub: "what can you do?", prompt: "what can you do?" },
+];
 
 // ── tool presentation (Codex-style activity steps) ───────────────────────────
 
@@ -3666,10 +3685,31 @@ export function ChatPane({
       <PaneDropZone onPath={insertPath} onFiles={onDropFiles} label="drop image or path">
       {/* anchored (not centered): supplementary rows grow DOWNWARD so the
           title never jumps as chips/ledger/status bloom in. */}
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto overflow-x-hidden bg-[var(--color-bg)] px-6 pt-[16vh]">
-        <div className="fade-in-up w-full max-w-2xl">
-          <h1 className="hero-title mb-7 text-center">
-            {resumedTitle ? "picking up where we left off" : "what should we work on?"}
+      <div className="relative flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto overflow-x-hidden bg-[var(--color-bg)] px-6 pt-[14vh]">
+        {/* ambient aurora — two slow accent blobs whispering behind the hero
+            (drift keyframes die under reduce-motion; the static wash stays). */}
+        <div
+          aria-hidden
+          className="aios-drift-a pointer-events-none absolute h-[40vh] w-[40vh] rounded-full opacity-[0.07]"
+          style={{ background: "radial-gradient(circle, var(--color-accent), transparent 65%)", filter: "blur(48px)" }}
+        />
+        <div
+          aria-hidden
+          className="aios-drift-b pointer-events-none absolute h-[34vh] w-[34vh] rounded-full opacity-[0.05]"
+          style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 65%)", filter: "blur(56px)" }}
+        />
+        <div className="fade-in-up relative w-full max-w-2xl">
+          <div className="helper-line mb-2.5 text-center" style={{ animationDelay: "60ms" }}>
+            {timeGreeting()}, {displayName()}
+          </div>
+          <h1 className="hero-title mb-6 text-center">
+            {resumedTitle ? (
+              "picking up where we left off"
+            ) : (
+              <>
+                what should we <span className="aios-greet-name">work</span> on?
+              </>
+            )}
           </h1>
           {resumedTitle && (
             <div className="mb-4 flex justify-center">
@@ -3710,34 +3750,30 @@ export function ChatPane({
             <span className="text-[var(--color-border-strong)]">·</span>
             <span>⏎ send</span>
             <span>{SHIFT}⏎ newline</span>
-            <span className="text-[var(--color-border-strong)]">·</span>
-            <span className="inline-flex items-center gap-1">
-              <Slash size={10} /> commands
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <AtSign size={10} /> files
-            </span>
           </div>
-          {/* starter deck: the hero hands you somewhere to go instead of a
-              blank box. Quiet pills, gone the moment you start typing. */}
-          {!hasDraft && started && (
-            <div className="stagger mt-6 flex flex-wrap items-center justify-center gap-2">
-              {[
-                "explain this codebase",
-                "plan a feature",
-                "find and fix a bug",
-                "what can you do?",
-              ].map((prompt) => (
+          {/* starter deck: the hero hands you somewhere to GO instead of a
+              blank box — four lift-on-hover cards, gone on the first keystroke. */}
+          {!hasDraft && (
+            <div className="stagger mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {STARTER_DECK.map(({ icon: Icon, label, sub, prompt }) => (
                 <button
-                  key={prompt}
+                  key={label}
                   type="button"
-                  className="pill press"
+                  disabled={!started}
                   onClick={() => {
                     setInput(prompt);
                     taRef.current?.focus();
                   }}
+                  className="surface-card lift group flex flex-col items-start gap-2 px-3.5 py-3 text-left disabled:opacity-50"
                 >
-                  {prompt}
+                  <Icon
+                    size={16}
+                    className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
+                  />
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[12.5px] font-medium text-[var(--color-text)]">{label}</span>
+                    <span className="text-[11px] text-[var(--color-faint)]">{sub}</span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -5312,12 +5348,17 @@ function Dropdown({
     }
     const r = rootRef.current?.getBoundingClientRect();
     if (r) {
-      const openUp = r.top > Math.min(360, window.innerHeight * 0.5);
+      // open toward the LARGER side and never exceed it — the wrench/model
+      // lists used to clip at the window edge on short panes.
+      const spaceAbove = r.top - 10;
+      const spaceBelow = window.innerHeight - r.bottom - 10;
+      const openUp = spaceAbove >= spaceBelow;
       const pos: React.CSSProperties = {};
       if (align === "right") pos.right = Math.max(8, window.innerWidth - r.right);
       else pos.left = Math.max(8, r.left);
       if (openUp) pos.bottom = window.innerHeight - r.top + 6;
       else pos.top = r.bottom + 6;
+      pos.maxHeight = Math.max(140, openUp ? spaceAbove : spaceBelow);
       (pos as Record<string, string | number>)["--aios-origin"] = openUp
         ? "bottom center"
         : "top center";
