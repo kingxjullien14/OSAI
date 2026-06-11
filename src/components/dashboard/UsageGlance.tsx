@@ -211,11 +211,11 @@ export function UsageGlance() {
         // (user-reported) — say explicitly why claude has no bars yet.
         <div
           className="flex flex-col gap-0.5"
-          title={"claude only reports its 5h/7d windows through the aios statusline hook,\nwhich writes ~/.aios/state/usage.json on every claude-code tick.\nthat hook isn't set up on this machine yet."}
+          title={"claude reports its 5h/7d windows through the aios statusline hook,\nwhich writes ~/.aios/state/usage.json on every claude-code tick.\nsnapshots older than 3h are ignored — run an interactive claude\nsession (e.g. the claude code terminal pane) to refresh."}
         >
           <span className="text-[10px] font-medium lowercase tracking-wide text-[var(--color-text-2)]">claude</span>
           <span className="text-[10.5px] leading-snug text-[var(--color-faint)]">
-            no usage feed yet — statusline hook not set up
+            no recent usage report — start a claude session to refresh
           </span>
         </div>
       )}
