@@ -1,0 +1,523 @@
+{
+  "scoreboard": [
+    {
+      "item": "platform.ts + glyph sweep + Windows homescreen CmdK",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "platform.ts (src/lib/platform.ts:1-44) consumed across 9 files and homescreen kbd fixed (IdleControlCenter.tsx:356), but TerminalComposer.tsx:1164 still ships literal 'dictate (⌘J)' and ${MOD}${MOD} renders 'CtrlCtrl' (App.tsx:2216/2258, appCommands.ts:217)."
+    },
+    {
+      "item": "Single-source identity (displayName/monogram, kill faeez/firaz/adletic chrome)",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "settings.ts:85,178-186 single source; greeting (IdleControlCenter.tsx:247-260), AccountMenu (60-72,113,131-132), Settings name field all subscribe; residual 'firaz' lives only in moneyAgents/OracleRoster surfaces tracked as separate defects."
+    },
+    {
+      "item": "Flip provider base off codex + delete downgrade migration",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "Migration deleted (settings.ts:138-140); base selectors at chat.ts:256-290; ChatPane boots baseModelId (ChatPane.tsx:810-812); boot self-heal at App.tsx:671-685; agents boot via agentChatModelId (App.tsx:394-397). Residual defaultAi drift is a tracked defect."
+    },
+    {
+      "item": "Fluidity baseline: boot-apply appearance + motion tokens",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "applyAppearance at boot (App.tsx:661) and motion tokens consumed, but density and --app-font-scale have ZERO consumers anywhere in src and xterm hardcodes fontSize:13 (TerminalRuntime.tsx:180) — only the reduce-motion third does anything (verified)."
+    },
+    {
+      "item": "Default flashLevel to calm (new + existing users)",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "DEFAULT_SETTINGS.flashLevel:'calm' (settings.ts:95) applied at boot, but no migration exists — installs that ever saved under the old lush default reload flashLevel:'lush' verbatim (settings.ts:126-168)."
+    },
+    {
+      "item": "Chat empty-state engine-aware copy + placeholder submit/discovery cue",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "Engine label (ChatPane.tsx:3628) and '/ for commands, @ for files' placeholder (3261) landed; the ⏎ send / ⇧⏎ newline / ⏎ queue submit cue never did, and hero (model.engine) vs docked (usageLabel) disagree for spark."
+    },
+    {
+      "item": "Swap native window.prompt for themed /goal + platform-correct path placeholder",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "GoalEditorOverlay (ChatPane.tsx:4753-4812) wired in both empty/docked branches; zero window.prompt calls remain in src; Settings.tsx:914 isApple-aware path example."
+    },
+    {
+      "item": "Tokenize strays: #a855f7 sparkle, frozen .hero-title/.helper-line, text-white CTAs",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "--color-spark token done (App.css:66, ChatPane.tsx:3364/3384) and .hero-title adopted by Onboarding, but the chat hero itself still hardcodes the frozen values (ChatPane.tsx:3618,3627), 8+ text-white/text-black CTAs persist, and raw #a855f7 remains in .aios-ultra (App.css:526-538)."
+    },
+    {
+      "item": "Accent discipline on resting context chips",
+      "tier": "P0",
+      "status": "partial",
+      "evidence": "Six core chips demoted to muted (ChatPane.tsx:2837-2849); the run-event Waypoints pill (2876) and attached-memories pill (2881-2882) the plan explicitly named still wear resting accent."
+    },
+    {
+      "item": "Splash respects splashOnLaunch + fade exit",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "Gated at mount (App.tsx:410 loadSettings().splashOnLaunch); two-phase token-driven fade (App.tsx:635-643, 4182-4196). Minor: under reduce-motion the invisible splash blocks input ~300ms (low)."
+    },
+    {
+      "item": "Delete dead bento CSS + dead hotkeys field + reportUsage telemetry loop",
+      "tier": "P0",
+      "status": "open",
+      "evidence": "All three still ship: .aios-tile/.aios-omni/aios-idle-glow (App.css:390-488, zero references), commands.ts hotkeys declared/set but never read, diag.ts:163-182 reportUsage still a write-only loop fired from App.tsx:762 and CommandPalette.tsx:40."
+    },
+    {
+      "item": "Accent discipline: strip generic border-hovers on the four superapp panes",
+      "tier": "P0",
+      "status": "open",
+      "evidence": "Every plan-cited hover:border-[var(--color-accent)]/50 is present verbatim: AppCastPane.tsx:330/400/493, AppAttachPane.tsx:109, AttachAppsPane.tsx:132, MirrorViewer.tsx:222."
+    },
+    {
+      "item": "Motion-token layer in App.css @theme (§2.1)",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "App.css:118-131 — all five durations + four easings with exact §2.1 values; only optional composite shorthands omitted."
+    },
+    {
+      "item": "Global transition baseline + single reduce-motion guard (§2.2)",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "Baseline App.css:236-244; master guard App.css:552-559 + OS mirror 560-567, boot-applied via App.tsx:661. Caveat tracked as defect: the unlayered baseline silently overrides Tailwind transition utilities."
+    },
+    {
+      "item": "Opt-in motion utilities (§2.3)",
+      "tier": "P0",
+      "status": "done",
+      "evidence": "All six utilities exist verbatim (App.css:261-299: .lift/.press/.btn-glow/.fade-in-up/.scale-in/.stagger); adoption is near-zero (.lift/.scale-in/.stagger have no call sites) — tracked under the P2 choreography item."
+    },
+    {
+      "item": "detect_providers + GUI-PATH-aware resolvers + onboarding engine step",
+      "tier": "P1",
+      "status": "done",
+      "evidence": "Rust command chat.rs:403-409 with install-dir resolvers + Windows .exe/.cmd scan; providerDetect.ts wrapper with cache; onboarding live status dots + no-CLI state; ChatPane grays unavailable engines; App self-heal consumes it. (HOME-vs-USERPROFILE resolver gap tracked as defect.)"
+    },
+    {
+      "item": "Base sweep: budget copy, spark seed, codex-everywhere",
+      "tier": "P1",
+      "status": "partial",
+      "evidence": "Engine-neutral budget copy (ChatPane.tsx:284) and agents on agentChatModelId landed; App.tsx:1389 + apps.ts:68 still hardcode 'codex --model gpt-5.3-codex-spark --dangerously-bypass-approvals-and-sandbox', moneyAgents AGENT_CHAT_MODEL feeds seed text, and bundleBoundaries.test.ts:300 pins the stale literal."
+    },
+    {
+      "item": "Onboarding: flags/back-fill, live handshake, reusable controls + MCP review, skippable, real first chat",
+      "tier": "P1",
+      "status": "partial",
+      "evidence": "~70% landed (flags, veteran back-fill, replay entry, detect_providers wiring, MCP step with dots, calm skip); never landed: lifting Settings controls (re-implemented instead), shared McpChips (PluginsPane untouched), and the first-chat handoff (finish() just closes, Onboarding.tsx:78-88)."
+    },
+    {
+      "item": "Homescreen decision: day-aware greeting, .surface-pop command line w/ provider hint, focus rings, glance skeletons, resume-last, stop seeding stranger fleet",
+      "tier": "P1",
+      "status": "partial",
+      "evidence": "Done: focus-visible rings, resume-last, chord labels, empty default fleet. Open: command line still shadow-2xl with no provider hint and never receives focus (IdleControlCenter.tsx:308,331,343), home glance ignores the loaded skeleton flag (129,178), greeting has no day data, seeded chat still titled 'jarvis' (App.tsx:1969)."
+    },
+    {
+      "item": "Shell focus + drag: focused-pane indicator, token chrome strip, real AccountMenu, drag-to-cell, discoverable Mission Control",
+      "tier": "P1",
+      "status": "done",
+      "evidence": "All five in code: accent focus border (App.tsx:3942-3947), --aios-h-chrome strip (3951), settings-driven AccountMenu, pointer drag-to-swap (500-550, 3952-3957), MC disabled-at-zero + 'N panes' pill (2249-2255, 3716-3726). New drag defects over browser panes tracked separately."
+    },
+    {
+      "item": "Palette/discovery: platform labels, ARIA + focus trap, live MRU, no-dead-end no-results, backtracking matcher",
+      "tier": "P1",
+      "status": "partial",
+      "evidence": "Labels, MRU 'recent' group, AI-intent escape hatch, DP matcher, and full ARIA on CommandPalette all real; focus trap absent on all three overlays, FileFinder/GlobalSearch have zero ARIA, matcher lacks the plan-prescribed cost cap, MRU can be one-run stale."
+    },
+    {
+      "item": "Chat safety + affordances: failure distinction, approval un-truncate, regenerate fix, edit-and-resend, copy buttons, timestamps",
+      "tier": "P1",
+      "status": "partial",
+      "evidence": "Approval fullArgs+copy, last-turn regenerate gating, edit-and-resend, copy set, user timestamps landed; failure distinction is void for codex/opencode (no is_error on synthesized results), claude error text read from wrong field, retry/regenerate no-op after startup failure/resume, assistant timestamps and Write/Diff copy missing."
+    },
+    {
+      "item": "Design-system convergence sweep: secondary panes onto .pane-header/.surface-pop/tokens + lint guard",
+      "tier": "P2",
+      "status": "partial",
+      "evidence": "CSS primitives all landed (.pane-header, .pill, .surface-pop, .focus-accent, --aios-shadow-pop in App.css) but ZERO panes adopted them — 7+ hand-rolled headers at divergent heights, 55 hex/text-white/bg-black literals across 18 files, PaneEmpty/Skeleton/CopyButton/toast/uiHooks don't exist, no lint guard."
+    },
+    {
+      "item": "Superapp-pane polish: Windows-gate cast/attach, native-layer fade-in, live mirroring indicator, .surface-pop menus, transitioned polls",
+      "tier": "P2",
+      "status": "open",
+      "evidence": "Byte-for-byte where the plan left it: no OS gating (apps.ts:73-76), raw Rust/OS errors rendered on Windows, static danger-dot mirror indicator (AppCastPane.tsx:534), shadow-2xl menus, full-array poll swaps with no animation."
+    },
+    {
+      "item": "Interactive surfaces: terminalFontSize wiring, token-driven xterm/Monaco themes, voice waveform, pet status, skeletons, wave dedupe",
+      "tier": "P2",
+      "status": "partial",
+      "evidence": "Only the reduce-motion gating sub-part landed (App.css:552-567 + boot apply). Open: xterm/Monaco hardcode fontSize:13 and frozen hex themes, VoiceButton still animate-ping dot, PetPane debug spec dump (PetPane.tsx:277), bare-spinner loading states, aios-wave duplicated inline in two components."
+    },
+    {
+      "item": "Full motion choreography",
+      "tier": "P2",
+      "status": "partial",
+      "evidence": "Splash fade, streaming caret, clock-colon blink, onboarding/MC entrances shipped; ~90% unwired — no hero bloom, no transcript/pane/modal/toast enter-exit, hard autoscroll, maximize teleports, §2.4 support classes (.overlay-backdrop/.toast-in/out/.disclose/.skeleton) never authored, hardcoded duration literals never retuned."
+    },
+    {
+      "item": "Hero starter deck (starter-prompt chips / resume rail on the empty chat)",
+      "tier": "P3",
+      "status": "open",
+      "evidence": "Nothing landed — empty hero is still headline → composer → helper only (ChatPane.tsx:3617-3637); attach/dictate/resume stay buried in the unlabeled Wrench menu."
+    }
+  ],
+  "defects": [
+    {
+      "title": "Every user-created money agent is rooted at /Users/firazfhansurie with macOS log paths",
+      "severity": "high",
+      "file": "src/lib/moneyAgents.ts:55",
+      "detail": "CONFIRMED by two independent verifiers. const home=\"/Users/firazfhansurie\" feeds createMoneyAgent (187-191) and loadCustomMoneyAgents defaults (128-132): every new agent gets statePath/queuePath under a nonexistent macOS tree, stdout/stderr under macOS-only ~/Library/Logs, and the chat seed instructs the model to inspect those paths (272-274). On Windows readJson/tailText fail silently (379-386, 401-408) so health is perpetually 'unknown' and log tails empty — the monitoring loop is dead for every created agent. Fix: resolve home via the home_dir Tauri command (pattern at dashboard.ts:33) with platform separators + platform log dirs. (Verifier correction: agent chat panes do NOT inherit the invalid cwd — PaneCard falls back to runtime homeDir — but the agent.cwd is still leaked as seed text.)"
+    },
+    {
+      "title": "Any agent whose id normalizes to 'firaz' is force-reported as running with a stranger's job copy",
+      "severity": "high",
+      "file": "src/lib/moneyAgents.ts:334",
+      "detail": "CONFIRMED; the plan's critical §6 item, untouched. summarizeMoneyAgentState special-cases agent.id==='firaz': health 'unknown'→'running' plus fabricated currentJob 'personal goals and shell control' and nextAction 'open the existing firaz chatpane agent' (334-345) even with no state file. normalizeAgentId lowercases/strips 'aios-' (104-112), so a user-created 'Firaz' collides; the fake green agent is counted active in the home StatusFooter (IdleControlCenter.tsx:116-118, 536). Gate behind actual state-file existence and neutralize the firaz-addressed role/guardrail copy (240-261)."
+    },
+    {
+      "title": "Settings 'text size' and 'density' controls are complete no-ops disguised as live by the preview",
+      "severity": "high",
+      "file": "src/lib/appearance.ts:26",
+      "detail": "CONFIRMED by three audits. applyFontScale writes --app-font-scale and applyDensity sets data-density, but grep across all src/CSS finds ZERO consumers of either; xterm hardcodes fontSize:13 (TerminalRuntime.tsx:180), Monaco hardcodes fontSize:13 (EditorPane.tsx:114), and neither imports settings. Settings.tsx:1222/1250 promise 'scales the cockpit' / 'how tight the cockpit packs', and the in-panel AppearancePreview reacts, making the dead controls look live. PLAN-uiux-polish.md even marks density as completed. Fix: add [data-density='compact'] rules + var(--app-font-scale) consumers in App.css; subscribe xterm (term.options.fontSize) and Monaco (updateOptions) to terminalFontSize; fold density into AppSettings."
+    },
+    {
+      "title": "POSIX-only path handling breaks Windows features across six surfaces (one shared root cause)",
+      "severity": "high",
+      "file": "src/lib/paneOpenActions.ts:16",
+      "detail": "CONFIRMED independently on five surfaces; merge of: (1) containingDir splits on '/' only — revealFile spawns files panes rooted at '/', finderRoot degrades to '/', pane labels show full backslash paths (App.tsx:779,996-1002,1019,1205,2591,2598); (2) FileFinder.basename '/'-only — 2x basename ranking defeated, dir column never renders, recents list permanently empty because MRU absolutes never match root+'/' (FileFinder.tsx:16-19,84-93,104-112,135-139); (3) ChatPane.baseName — activity steps/FileCards/resume picker show full C:\\ paths; isPaneFileTarget rejects paths with spaces (ChatPane.tsx:345-348, paneRouting.ts:32-43,68-71); (4) FilesPane — git M/A/D/U decorations never render (mixed-separator map keys from files.rs:42,106,173-176), 'open terminal here' resolves the wrong dir, goUp/rootName broken (FilesPane.tsx:200,232,266); (5) BrowserPane — file-drop builds invalid file://C:%5C URLs, 'open folder in files pane' roots at the FILE path (BrowserPane.tsx:601-609,772-776); (6) TerminalComposer baseName + POSIX quotePath invalid for PowerShell (TerminalComposer.tsx:86-88,109-113). Fix: one separator-agnostic basename/dirname/normalize helper (chatPaneState.ts:81-84 already does it right) + normalize backend-emitted paths in files.rs."
+    },
+    {
+      "title": "FileFinder, GlobalSearch, and the busy-chat close prompt are occluded by native browser webviews",
+      "severity": "high",
+      "file": "src/App.tsx:632",
+      "detail": "CONFIRMED. overlayOpen includes only settingsOpen||paletteOpen||pinSiteSpace||overviewOpen; fileFinderOpen, globalSearchOpen, and closePrompt are missing. Native browser webviews composite above all HTML (BrowserPane.tsx:302-316), so with a visible browser pane Ctrl+P/Ctrl+Shift+F open an invisible z-50 modal that steals keyboard focus, and the busy-chat confirm dialog hides behind the page. One-line fix: add the three flags (plus splash/onboardingOpen for completeness) to overlayOpen."
+    },
+    {
+      "title": "Browser address-bar autocomplete renders behind the native webview — invisible while a page is showing",
+      "severity": "high",
+      "file": "src/components/BrowserPane.tsx:308",
+      "detail": "CONFIRMED. overlayMenuOpen covers bookmarks/downloads/profile/options/send but omits suggestOpen, so the history-suggestions dropdown (1189-1235, absolute over the slot) opens while the webview is still composited on top — typing in the address bar produces an autocomplete the user cannot see (only blind ArrowDown+Enter works). Add suggestOpen to overlayMenuOpen at line 308-309."
+    },
+    {
+      "title": "Cast & Attach panes fully reachable on Windows; both dead-end in raw Rust/OS errors under macOS-only copy",
+      "severity": "high",
+      "file": "src/lib/apps.ts:73",
+      "detail": "CONFIRMED. Catalog/palette expose 'apps' and 'app cast' with no OS gate (apps.ts:73-76, appCommands.ts:68-79). AppCastPane renders the raw Rust reject 'app-cast is macOS-only' (appcast.rs:936) under 'couldn't mirror window' with a futile accent retry (AppCastPane.tsx:498-513); AttachAppsPane's ungated mac_list_apps spawns /usr/bin/osascript (mac_apps.rs:22-27,62-69), rendering the raw io error in a danger box re-fired every 10s (AttachAppsPane.tsx:35-39,74-78). Gate both entries behind isApple (platform.ts:21) or render an honest 'not available on Windows yet' empty state."
+    },
+    {
+      "title": "Windows terminals silently drop their cwd — every shell opens in the home dir",
+      "severity": "high",
+      "file": "src-tauri/src/pty.rs:245",
+      "detail": "CONFIRMED. The frontend always passes cwd (pty.ts:84-93, TerminalRuntime.tsx:437-439) but the Windows pty_spawn_terminal signature has no cwd parameter (Tauri ignores the extra arg) and unconditionally cwd's to USERPROFILE (pty.rs:280-282); the error fallback also passes null despite cwd in scope (TerminalRuntime.tsx:443). 'Open terminal here' and restored layouts always land in home while the composer context chip displays the directory the shell is NOT in. Add cwd: Option<String> to the Windows command + pass it in the fallback."
+    },
+    {
+      "title": "Codex/opencode turn failures render as benign success footers",
+      "severity": "high",
+      "file": "src/components/ChatPane.tsx:1413",
+      "detail": "CONFIRMED end-to-end — the engine-scoped remnant of the original P1-critical defect. chat.rs synthesizes failure results with subtype 'error_during_execution' but NO is_error and no text (chat.rs:1646-1654, 1668-1682, 1923-1929, 1363-1371), while ChatPane keys ok solely off ev.is_error and runEvents.ts:242 does the same, so codex failures render as a faint 'Xs' footer and the run chip says 'completed'. Verifier addition: opencode crashes hit the run_per_turn EOF fallback which synthesizes subtype 'success' (chat.rs:1029-1039), so the backend must add is_error:true (+ the engine's message) to its synthesized failure lines — a frontend subtype check alone misses opencode."
+    },
+    {
+      "title": "Empty chat hero floods with telemetry chips and a never-empty token ledger before the first keystroke",
+      "severity": "high",
+      "file": "src/components/ChatPane.tsx:2824",
+      "detail": "CONFIRMED — the plan's only critical §4 row, untouched. composerContextChips unconditionally emits engine/model/effort/permission/budget chips (chatPaneState.ts:261-265) and contextLedger always seeds a budget bucket (291-303); the composer memo renders both rows unconditionally and the hero renders {composer} verbatim (3626), so a brand-new chat shows 5-6 chips plus an 'N est tok' mono line before any input. Fix: gate both rows on !empty || hasDraft (both already in scope; add hasDraft to the memo deps)."
+    },
+    {
+      "title": "Enter while the session is starting destroys the hero; startup failures land as transcript turns",
+      "severity": "high",
+      "file": "src/components/ChatPane.tsx:2068",
+      "detail": "CONFIRMED including reachability (Enter calls send() unconditionally; sendContract only disables the button). sendText with null sessionIdRef appends a 'chat is still starting — queued…' result turn (2073-2090), flipping empty=false and hard-swapping the hero for a transcript containing one system footnote; real startup failures append 'failed to start: …' the same way (1612-1618). Aggravator: the queue-flush effect re-runs only on [streaming] (1689-1698), so the promised auto-send may not fire promptly. Keep empty=true pre-session and render a calm inline status/error line in the hero."
+    },
+    {
+      "title": "NotesPane deletes a note from disk on a single click — no confirm, no undo, no trash",
+      "severity": "high",
+      "file": "src/components/NotesPane.tsx:258",
+      "detail": "CONFIRMED. Trash2 → onDelete → deleteNote → delete_path → std::fs::remove_file (bypasses OS trash), errors swallowed (156-158). The 24px delete button sits adjacent to the frequently-used 'send to oracle' button. Inconsistent with the app's own two-click confirm convention (OracleRoster.tsx:497-513, 585-601). Add the same two-click-to-confirm pattern."
+    },
+    {
+      "title": "Claude failure text read from the wrong field — danger card shows metadata but no error message",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:1401",
+      "detail": "Verified, downgraded from high: the failure is still loudly signaled (danger card + retry); only the diagnostic text is lost. resultText reads ev.text but passthrough claude results carry the message in ev.result (chat.ts:164; runEvents.ts:250 reads the right field). Fix: prefer ev.result when string, at least for is_error results."
+    },
+    {
+      "title": "Retry/regenerate are silent no-ops after startup failure and on resumed transcripts",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:2209",
+      "detail": "Verified, downgraded: the common mid-session retry works; edit-and-resend remains a working recovery. (a) The 'failed to start' card's retry calls regenerate while lastSentRef and sessionIdRef are both null — dead click; startup failure needs a session re-spin (restartKey) not a resend. (b) resumeSession nulls lastSentRef (2358) while the rehydrated last user bubble still shows an enabled regenerate button. Pass the bubble's own turn.text into the handler and route startup retry to restartKey."
+    },
+    {
+      "title": "Onboarding replay silently clobbers the saved engine and wipes chatModel/defaultAi",
+      "severity": "medium",
+      "file": "src/components/Onboarding.tsx:55",
+      "detail": "Verified, downgraded (replay-path only; first-run auto-pick is intended; skip persists nothing): the detection effect unconditionally setProvider(`${firstAvail.id}-cli`) despite the comment claiming a guard, so a codex/opencode veteran replaying setup gets flipped to claude-cli and finish() persists it — and finish() always writes chatModel:null + a derived defaultAi (79-86), discarding explicit picks even when nothing changed. Guard the auto-pick on chatProvider still being the untouched default ('codex-cli', settings.ts:107) / no step-2 interaction, and only null chatModel when the engine actually changed."
+    },
+    {
+      "title": "Appshot is a dead chord on Windows: labeled 'CtrlCtrl', bound to Win-key double-tap, backend macOS-only",
+      "severity": "medium",
+      "file": "src/App.tsx:1481",
+      "detail": "Verified, downgraded (toolbar buttons + palette still reach it; the backend shells /usr/sbin/screencapture+tmux, oracles.rs:352-391, so even a fixed binding only yields an error toast on Windows). The trigger is e.key==='Meta' double-tap while every label renders ${MOD}${MOD} = 'CtrlCtrl' with no separator (appCommands.ts:217, App.tsx:2216/2258, Settings.tsx:627). Either implement Ctrl-double-tap + a Windows capture backend, or gate/label honestly."
+    },
+    {
+      "title": "Browser toasts/annotate badge and the AppCast mirroring indicator render under native layers",
+      "severity": "medium",
+      "file": "src/components/BrowserPane.tsx:1692",
+      "detail": "Verified, downgraded (feedback loss, not broken functionality — actions complete; some toasts fire while a menu still hides the webview). BrowserPane's toast + 'annotating…' pill are absolutely positioned inside the slot the webview composites over (1692-1702 vs the rule at 302-307); AppCast's trust-critical 'mirroring' badge + stop button + toast sit under the capture NSWindow ordered above the slot (AppCastPane.tsx:526-549, appcast.rs:696-714). Move feedback into React chrome (toolbar row / strip below it), never over the slot."
+    },
+    {
+      "title": "Hardcoded 'codex --model gpt-5.3-codex-spark --dangerously-bypass-approvals-and-sandbox' shell launcher survives the base sweep",
+      "severity": "medium",
+      "file": "src/App.tsx:1389",
+      "detail": "Reported by two audits. sendToAi's codex route and apps.ts:68's sidebar codex app both hardcode the spark launcher with sandbox bypass regardless of saved provider/model (claude-code likewise hardcodes --dangerously-skip-permissions at 1396); bundleBoundaries.test.ts:300 pins the stale literal so the fix requires a test update. Route through baseModelId()/baseProvider()."
+    },
+    {
+      "title": "defaultAi drifts from chatProvider — composer model pick doesn't update it",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:3413",
+      "detail": "The composer picker saves {chatModel, chatProvider} but not defaultAi, while settings.ts:110 persists defaultAi:'codex-code' as a second copy — 'send to AI' (App.tsx:1328) then routes a claude user into a codex shell. Also: a stale saved chatModel falls back to CHAT_MODELS[0] (gpt-5.3-codex-spark) instead of firstModelForEngine (ChatPane.tsx:812). Derive defaultAi at read time (defaultAiForProvider exists, chat.ts:285) or write it in the picker."
+    },
+    {
+      "title": "Stranger-identity residue: firaz seeds, OracleRoster persona, mirror room prefix, adletic socket",
+      "severity": "medium",
+      "file": "src/lib/moneyAgents.ts:279",
+      "detail": "Merged from four audits: (1) every custom agent's seed says 'do not ask firaz…' (moneyAgents.ts:279,301) and claims model gpt-5.3-codex-spark (270) when agents boot on the user's base model; (2) OracleRoster PRIMARY_ORACLE_IDENTITY='firaz' drives 'spawn your oracle (aios-firaz)' / 'firaz · offline' / delete warnings (OracleRoster.tsx:52,263,272-274,520); (3) mirror rooms are still `firaz-${token}` on a personal workers.dev endpoint (mirrorTransport.ts:56,28) — the plan claimed this was neutralized; (4) defaultSocketName defaults to 'adletic' (settings.ts:101). Route all through displayName()/settings/config."
+    },
+    {
+      "title": "Windows codex/opencode home-dir installs invisible: resolvers read HOME, not USERPROFILE",
+      "severity": "medium",
+      "file": "src-tauri/src/chat.rs:257",
+      "detail": "Reported by two audits. resolve_bin (chat.rs:257) and opencode_bin (331-335) read only HOME (unset for GUI Windows processes), so ~/.local/bin, nvm-dir, and %USERPROFILE%\\.opencode\\bin probes never fire — detection falls back to PATH-only and an opencode installed in its default location shows 'not found' in onboarding/picker. claude_bin already does HOME.or(USERPROFILE) (192); mirror it with Windows paths/extensions."
+    },
+    {
+      "title": "No focus traps or dialog semantics across the app's modals",
+      "severity": "medium",
+      "file": "src/components/Settings.tsx:1047",
+      "detail": "Merged from four audits: Settings overlay has no role/aria-modal/label/focus management at all (1047-1054); Onboarding declares role=dialog aria-modal but moves focus only on the name step — Tab walks the occluded app on steps 0/2/3/4 (Onboarding.tsx:120, the plan's continue-button-focus spec unbuilt); CommandPalette/FileFinder/GlobalSearch have no inert/focusout guard (GlobalSearch doesn't even intercept Tab) and FileFinder/GlobalSearch have ZERO ARIA despite the palette's full pattern existing to mirror (CommandPalette.tsx:358-393); GoalEditorOverlay lacks role/aria-modal/trap (ChatPane.tsx:4770). One shared trap utility + ARIA mirror fixes all six."
+    },
+    {
+      "title": "Over-broad window-level key handlers: exited-Enter restart, double Ctrl+S save conflict, composer key stealing",
+      "severity": "medium",
+      "file": "src/components/TerminalRuntime.tsx:545",
+      "detail": "Merged class of three: (1) while a terminal is exited, a window keydown treats ANY bare Enter as restart + preventDefault — Enter in the chat composer/palette respawns the pane and can silently eat a composer send (TerminalRuntime.tsx:545-555,570-571); (2) EditorPane registers both a Monaco CtrlCmd+S command and a window keydown, so one Ctrl+S runs save() twice with the same mtimeRef — the second write trips the SaveConflictError guard (fs.ts:121-141) into a false 'file changed on disk' banner, and every open editor pane saves regardless of focus (EditorPane.tsx:169,185-194); (3) every mounted TerminalComposer installs a capture-phase window keydown using stopPropagation (not stopImmediatePropagation), so printable keys duplicate into multiple open composers (TerminalComposer.tsx:280-331). Scope all three to the focused/visible pane."
+    },
+    {
+      "title": "No keyboard paste path into the raw terminal on Windows (Cmd-only bindings)",
+      "severity": "medium",
+      "file": "src/components/TerminalRuntime.tsx:278",
+      "detail": "Verified, downgraded: xterm's native paste event means Ctrl+Shift+V and Shift+Insert DO paste text, and the composer textarea handles image paste — but Ctrl+V in the raw terminal sends a literal ^V (platform-inappropriate and undiscoverable) and keyboard image-paste is unavailable there because the custom handler binds paste/copy to metaKey only (278,284). Add an isApple-gated Ctrl+V/Ctrl+Shift+V binding via the existing platform.ts."
+    },
+    {
+      "title": "Pane drag-reorder degrades over browser panes and paints the wrong affordance",
+      "severity": "medium",
+      "file": "src/App.tsx:3929",
+      "detail": "Merged: target acquisition relies on per-pane React pointer events with no pointer capture, but native webviews are OS surfaces above the DOM — dragging over a browser pane's body never highlights it and releasing there leaves dragActiveKey/cursor:grabbing stuck until the next click (514-542); and dropTargetKey is shared with OS file-drops, so reorder-dragging onto a terminal shows the dashed 'drop to insert path' overlay while the gesture actually swaps panes (4171-4176). Fix: setPointerCapture on the strip + hit-test via paneKeyAtPoint from the registry; suppress the path overlay when dragActiveKey != null."
+    },
+    {
+      "title": "Hidden 20px window-drag strip eats the top of first-row pane chrome buttons",
+      "severity": "medium",
+      "file": "src/App.tsx:2293",
+      "detail": "With topBarMode force-hidden, the absolute z-40 h-5 drag strip overlays y 0-20 while the grid's 28px chrome strip starts at y 8 — the top ~6px of close/maximize/move on any top-row pane starts a window drag instead of clicking. The sidebar compensates with pt-8; the grid doesn't. Shrink the strip or pad the grid top when topBarHidden."
+    },
+    {
+      "title": "Collapsed sidebar leaves zero chrome — no palette, bell, badge, or Mission Control entry",
+      "severity": "medium",
+      "file": "src/App.tsx:2312",
+      "detail": "sidebarActions render only inside the aside gated on sidebarOpen; topBarMode is force-migrated to 'hidden' (settings.ts:144-145). After Ctrl+B everything is keyboard-only and unread notifications become invisible. The plan's minimal fixed-corner palette+bell cluster when !sidebarOpen was never built."
+    },
+    {
+      "title": "text-white/text-black on accent/danger surfaces fail contrast under non-default accents",
+      "severity": "medium",
+      "file": "src/App.tsx:2232",
+      "detail": "Merged from two audits: unread badges (App.tsx:2232,2274), keep-running CTA (2532), pin CTA (3450), MobileBottomNav badge text-black (2700), PaneErrorBoundary.tsx:59, BrowserPane.tsx:1675, AppCastPane.tsx:390/483/509. The runtime-computed --color-accent-fg token exists for exactly this (App.css:56). Part of the unfinished P0 tokenize item."
+    },
+    {
+      "title": "Stopping an opencode run paints a contradictory red failure card with a retry button",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:2247",
+      "detail": "stop() pushes a neutral 'stopped by user' note, then chat_stop fan_outs {result, is_error:true} (chat.rs:2434-2437) into the still-attached channel — handleEvent renders a second danger card + retry for an intentional user action. Suppress the synthetic stop result via a stopping flag (or skip the fan_out on user-initiated kills)."
+    },
+    {
+      "title": "Composer Wrench/model dropdowns: no outside-click/Escape close, unlabeled trigger, inert chips",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:5173",
+      "detail": "Merged: Dropdown has no backdrop, no document pointerdown listener, no Escape — the menu stays pinned while typing (5173-5211); the Wrench trigger hiding ALL real controls (resume/attach/dictate/permission/budget/effort) is a bare icon with no title/aria-label/aria-expanded (3284-3289 vs Dropdown's button 5191-5200); and the six context chips render as pills with no onClick while their controls hide in that menu."
+    },
+    {
+      "title": "Windows never finds ripgrep — global search always full-reads every file with no backend cancellation",
+      "severity": "medium",
+      "file": "src-tauri/src/files.rs:1202",
+      "detail": "ripgrep_bin() probes only macOS/Linux paths, so every GlobalSearch keystroke (post-180ms debounce) triggers search_with_ignore, which std::fs::read()s every file under the root (1347-1350); the frontend 'alive' flag only discards results, so rapid typing queues multiple full-tree scans. Add Windows candidates ('where rg', scoop/cargo paths) + a generation check or cancellation token."
+    },
+    {
+      "title": "Disabled palette commands silently no-op; CommandResult errors and the danger flag are never surfaced",
+      "severity": "medium",
+      "file": "src/lib/commands.ts:91",
+      "detail": "commandToPaletteCommand discards runCommand's {ok:false,error} — e.g. 'show all panes' at zero panes closes the palette and does nothing — and danger:'external' (appCommands.ts:218) never reaches the row since Command has no danger field. Filter/visually-disable !enabled entries and thread danger + failure toasts through. Related: the DP matcher has no title-length/state cap (CommandPalette.tsx:87-106; FileFinder calls it 2x per file for up to 20k files), and the MRU 'recent' group can be one-run stale on reopen (loadMru read inside a memo whose deps miss it, 235/269)."
+    },
+    {
+      "title": "Unlayered transition baseline overrides Tailwind utilities; .press/.lift/.btn-glow shorthand cancels color easing",
+      "severity": "medium",
+      "file": "src/App.css:236",
+      "detail": "Two structural motion defects: (1) the global baseline is unlayered author CSS, beating Tailwind's @layer utilities regardless of specificity — transition-opacity/transition-all on interactive elements is silently dead (e.g. ChatPane.tsx:3181-3187 hover-reveal now hard-snaps); (2) .press/.lift/.btn-glow set the transition SHORTHAND (transform only), resetting transition-property and killing the color baseline they claim to pair with (App.css:261-280). Move the baseline into @layer components and use longhands (or include color/border/shadow in the utility lists). Fix BEFORE adopting the motion utilities widely."
+    },
+    {
+      "title": "Settings dead chrome: four unconsumed controls, dead github/docs buttons, hardcoded version, 'macos' copy",
+      "severity": "medium",
+      "file": "src/components/Settings.tsx:1427",
+      "detail": "Merged: defaultSocketName/autoRefreshSeconds/showNonAiosSessions/graphPhysicsStrength have zero consumers (OracleRoster polls a hardcoded 5000ms and always shows non-aios sessions); 'github'/'docs' buttons have no onClick (1515-1520); version is hardcoded 'v0.1.0' while diagInfo() returns the real app_version (719-721); 'native alerts' sub says 'macos notifications outside the shell' on Windows (1395, isApple already imported) and AppearancePreview draws macOS traffic-light dots (515-517). Also: the redundant boot-time appearance effect at 1020-1026 duplicates App.tsx's applyAppearance — delete it."
+    },
+    {
+      "title": "Hover-only action rows are invisible to keyboard focus across the transcript",
+      "severity": "medium",
+      "file": "src/components/ChatPane.tsx:4467",
+      "detail": "Copy/edit/regenerate on UserBubble, the assistant copy row (4627), ActivityStep open-in-pane (4027), FileCard cluster (4326), and image-chip remove (3184) all use opacity-0 group-hover:opacity-100 with no group-focus-within reveal — tab focus lands on fully invisible controls. Add focus-within reveal to each group."
+    },
+    {
+      "title": "Whisper endpoint hardcoded to localhost:9000 — dictation always fails only AFTER the user records",
+      "severity": "medium",
+      "file": "src/lib/voice.ts:17",
+      "detail": "WHISPER_URL is a frozen literal with no Settings entry, no pre-flight, no Windows provisioning story: the user clicks the mic, speaks, waits, then gets 'is the whisper server running on :9000?'. Pre-flight on first mic interaction, disable/explain affordances when absent, make the URL a setting."
+    },
+    {
+      "title": "Honest-state gaps in secondary panes: blank PulsePane, lying error/empty states",
+      "severity": "medium",
+      "file": "src/components/PulsePane.tsx:52",
+      "detail": "Merged: PulsePane renders permanently blank on slow/failed fetch (no skeleton/error, failures only reportDiag); PluginsPane misreports backend failure as '0 skills · no skills match' (PluginsPane.tsx:17-19); FilesPane project picker shows fake 'scanning…' forever on empty/failed listProjects (FilesPane.tsx:259-263,346); BridgesPane disconnected copy promises 'press connect to turn it back on' while the button is a 'not wired yet' toast (BridgesPane.tsx:416-419). Each needs a real loading/empty/error triple."
+    },
+    {
+      "title": "Destructive/permission affordances off-pattern: window.confirm agent removal, undisclosed --dangerously-skip-permissions",
+      "severity": "medium",
+      "file": "src/components/MoneyAgentsSection.tsx:307",
+      "detail": "Merged: AgentRow removal uses the blocking native confirm() (the P0 roadmap already purged window.prompt for the same reason) — replace with the in-place two-click pattern; and CreateOracleForm's checkbox labeled only 'launch claude on start' hardcodes 'claude --dangerously-skip-permissions' (OracleRoster.tsx:242,647) — disclose the flag and derive the engine from the detected provider."
+    },
+    {
+      "title": "AppCast picked window never persists; mirror/attach panes leak smaller defects",
+      "severity": "medium",
+      "file": "src/App.tsx:4110",
+      "detail": "Merged superapp mediums: App.tsx passes neither onWindowChange nor onNotify to AppCastPane, so a picked cast window is lost on layout restore and the notify branch is dead (AppCastPane.tsx:77,108); AttachAppsPane.focus() has no catch — failures are silent unhandled rejections (46-53); mac_capture_app screenshots the ENTIRE screen, not the target window (mac_apps.rs:124-128, privacy-leaky); accent sits on 'capture' instead of the primary 'focus' verb (AppAttachPane.tsx:105-124); MirrorViewer keeps the off-scale 26px heading + dead-end 'pixel streaming' note (118,136-138); BrowserPane's reload is titled 'Stop' while loading but always reloads (1132-1137) and 'Reveal in Finder' is hardcoded on Windows (1325)."
+    },
+    {
+      "title": "Mission Control: clicking empty gallery space doesn't close; card close-X is a span",
+      "severity": "medium",
+      "file": "src/App.tsx:3571",
+      "detail": "The gallery container stopPropagation's mousedown so the documented click-scrim close only works in the thin top bar, and the per-card close is a <span onMouseDown> — keyboard-unreachable. Move stopPropagation to the inner flex-wrap div, make the X a button. Related cheap fix: Ctrl+` and the menu 'overview' still silently no-op at 0 panes (1448, 2563) — add a flash('no open panes')."
+    },
+    {
+      "title": "NotesPane advertises Ctrl+N 'new note within pane' but the chord is globally bound to new-terminal",
+      "severity": "medium",
+      "file": "src/components/NotesPane.tsx:199",
+      "detail": "The + button title promises chord('N') 'within pane', but NotesPane registers no handler and App.tsx:1429 binds mod+N globally with preventDefault to spawn a terminal — the advertised shortcut opens a terminal over your notes. Add a focused-pane-aware handler or drop the claim. Related: the Settings cheat-sheet lists 6 of ~18 live bindings (Settings.tsx:625-630) and the unread hotkeys metadata diverges from the real switch."
+    },
+    {
+      "title": "Existing users never migrated off flashLevel 'lush'",
+      "severity": "medium",
+      "file": "src/lib/settings.ts:95",
+      "detail": "DEFAULT_SETTINGS is calm, but saveSettings persists the full merged object, so any install that saved under the old lush default carries flashLevel:'lush' forever; migrations exist for onboardingComplete and topBarMode but not flashLevel (135-146). Add the equivalent back-fill — the 'existing users' half of the P0 item."
+    },
+    {
+      "title": "Settings close X stacks on top of embedded pane refresh buttons",
+      "severity": "medium",
+      "file": "src/components/Settings.tsx:1082",
+      "detail": "Verified, downgraded (panes auto-fetch on mount/poll, worst case is a recoverable accidental modal close): the absolute right-3 top-3 z-10 close X geometrically covers BridgesPane/PluginsPane's header refresh buttons when those sections render full-bleed (1090-1097 vs BridgesPane.tsx:209-215, PluginsPane.tsx:56-62) — a refresh-aimed click closes Settings. Inset the embedded pane or move the X."
+    }
+  ],
+  "remainingWork": [
+    {
+      "title": "Windows path-correctness sweep (one shared helper + backend normalization)",
+      "why": "Single root cause behind 6 confirmed-high breakages: file finder ranking/recents, files-pane git decorations and 'open terminal here', transcript labels/clickability, revealFile/finderRoot, browser file-drop and open-folder, composer chips/quoting. Highest-leverage fix in the whole inventory.",
+      "scope": "New basename/dirname/normalize/quote helpers in src/lib (copy chatPaneState.ts:81-84's split(/[\\\\/]/)); sweep call sites in paneOpenActions.ts, paneRouting.ts, appCommands.ts, FileFinder.tsx, FilesPane.tsx, ChatPane.tsx, BrowserPane.tsx, TerminalComposer.tsx, EditorPane.tsx, App.tsx; normalize emitted paths in src-tauri/src/files.rs (read_dir_tree, git_status, find_files, home_dir). ~10 files, 1-2 sessions."
+    },
+    {
+      "title": "Money-agents platform rebase + firaz scrub",
+      "why": "Two confirmed-high defects (stranger's macOS home baked into every created agent; id 'firaz' force-reported running into the home StatusFooter) make the feature non-functional and identity-leaky on the shipping platform.",
+      "scope": "src/lib/moneyAgents.ts (~150 lines): runtime home via invoke('home_dir') with platform separators + log dirs, gate the firaz branch on state-file existence, replace firaz/AGENT_CHAT_MODEL seed copy with displayName()/agentChatModelId(); touch MoneyAgentsSection.tsx (inline confirm instead of window.confirm)."
+    },
+    {
+      "title": "Wire text-size + density for real",
+      "why": "Confirmed-high: two advertised, persisted Settings controls do nothing while the preview pretends they work; also closes the inert two-thirds of the P0 fluidity baseline.",
+      "scope": "App.css ([data-density='compact'] overrides + var(--app-font-scale) consumers on the text tokens); TerminalRuntime.tsx + EditorPane.tsx (subscribe terminalFontSize → xterm/Monaco fontSize); settings.ts (fold density into AppSettings); delete the duplicate boot effect in Settings.tsx:1020. ~5 files, half a session."
+    },
+    {
+      "title": "Native-webview occlusion pass",
+      "why": "Three confirmed-high/medium defects from one compositing rule: invisible FileFinder/GlobalSearch/close-prompt, invisible address-bar autocomplete, occluded browser toasts/annotate badge and the trust-critical AppCast mirroring indicator.",
+      "scope": "App.tsx:632 (extend overlayOpen with fileFinderOpen/globalSearchOpen/closePrompt/splash/onboardingOpen); BrowserPane.tsx:308 (add suggestOpen) + relocate toast/badge into toolbar chrome; AppCastPane.tsx (badge into toolbar row). ~3 files, small."
+    },
+    {
+      "title": "Windows terminal correctness: pty cwd + paste binding",
+      "why": "Confirmed-high: every Windows shell silently opens in the home dir while the UI claims otherwise; Ctrl+V sends a literal ^V into TUIs.",
+      "scope": "src-tauri/src/pty.rs (add cwd: Option<String> to the Windows command, honor it); TerminalRuntime.tsx:278-299,443 (isApple-gated Ctrl+V/Ctrl+Shift+V paste incl. clipboard-image path; pass cwd in the spawnShell fallback). 2 files."
+    },
+    {
+      "title": "Chat failure-truth completion (P1 finish)",
+      "why": "The P1-critical failure-distinction item is still void for codex/opencode, claude's error text is dropped, retry is a dead click in two states, and user-stop paints a failure card — the safety story is half-true.",
+      "scope": "src-tauri/src/chat.rs (is_error:true + message on all synthesized failure lines incl. the opencode EOF 'success' path; skip/flag the stop fan_out); ChatPane.tsx (read ev.result, route startup-failure retry to restartKey, pass bubble text to regenerate, stopping flag); runEvents.ts (subtype check). ~3 files."
+    },
+    {
+      "title": "Empty-hero rescue (plan §4 critical + cohesion fixes)",
+      "why": "The plan's single critical §4 item is untouched: telemetry floods the first-run surface, and Enter during startup tears the hero into a one-footnote transcript. The same pass cheaply lands the hero's entrance fade, anchored layout, .surface-pop/.hero-title/.helper-line adoption, the ⏎ submit cue, and the shared docked helper line.",
+      "scope": "ChatPane.tsx only (~100 lines): gate chips/ledger on !empty||hasDraft, keep empty=true pre-session with an inline status/error line, fix queue-flush deps, justify-start + fade-in-up, swap the bespoke shell for surface-pop/focus-accent, use usageLabel in the helper, render the helper when docked."
+    },
+    {
+      "title": "Quick safety/correctness batch",
+      "why": "Cheap, high-trust fixes: data-loss (one-click note delete), misleading destructive affordances, replay clobbering settings, dead chrome.",
+      "scope": "NotesPane.tsx (two-click delete confirm, ~20 lines); Onboarding.tsx (guard auto-pick + conditional chatModel wipe, ~15 lines); OracleRoster.tsx (disclose/derive the bypass flag); Settings.tsx (wire or remove 4 dead controls, real version from diagInfo, opener-wired github/docs, platform-aware notifications copy); settings.ts (flashLevel lush back-fill); TerminalComposer.tsx:1164 (chord('J')); MOD-MOD label separator."
+    },
+    {
+      "title": "Gate cast/attach on platform + honest empty states",
+      "why": "Confirmed-high: two palette-reachable apps are broken dead-ends on Windows rendering raw Rust/OS errors every 10s under macOS copy.",
+      "scope": "apps.ts + appCommands.ts (isApple gate or capability flag); AppCastPane.tsx + AttachAppsPane.tsx ('not available on Windows yet' empty state, catch on focus()); optionally cfg-gate mac_list_apps in mac_apps.rs. Small."
+    },
+    {
+      "title": "Scope the three over-broad window key handlers",
+      "why": "Each produces surprising cross-pane behavior: Enter anywhere restarts exited terminals and eats composer sends; Ctrl+S double-saves into a false conflict banner across all editor panes; printable keys duplicate into multiple composers.",
+      "scope": "TerminalRuntime.tsx:545-555 (scope to pane host/activeElement); EditorPane.tsx:169-194 (single save path, in-flight guard, focused-pane check); TerminalComposer.tsx:280-331 (gate on focused/visible pane). 3 files."
+    },
+    {
+      "title": "Base-provider sweep completion",
+      "why": "Closes the P1 base-sweep remainder: hardcoded spark launcher with sandbox bypass, defaultAi drift, stale-model fallback to codex.",
+      "scope": "App.tsx:1389-1396 + apps.ts:68 (route through baseModelId/baseProvider); ChatPane.tsx:812 (firstModelForEngine fallback) + composer picker writes defaultAiForProvider; moneyAgents.ts:60 seed model line; update bundleBoundaries.test.ts:300 pin."
+    },
+    {
+      "title": "Modal a11y + focus-trap pass",
+      "why": "Six overlays declare or imply modality without delivering it; two of three discovery overlays are invisible to screen readers; hover-only rows are invisible to keyboard focus. One shared utility fixes the class.",
+      "scope": "Shared trap hook + ARIA mirror: Settings.tsx, Onboarding.tsx, CommandPalette.tsx (trap only), FileFinder.tsx, GlobalSearch.tsx (full ARIA mirror + Tab handling), ChatPane.tsx GoalEditorOverlay; group-focus-within reveals on ~5 transcript hover rows. ~7 files, one session."
+    },
+    {
+      "title": "P0 dead-code deletion batch",
+      "why": "The only fully-open P0 (homescreen surface): dead bento CSS, unread hotkeys metadata, write-only reportUsage loop — plus dead modules the audits found (controlCenter.ts, idleFocus, IdleDashboard's six unused props).",
+      "scope": "App.css:390-488; commands.ts/appCommands.ts hotkeys field; diag.ts:163-182 + call sites; delete src/lib/controlCenter.ts + its test; dashboard.ts idleFocus; prune IdleDashboard.tsx props + App.tsx wiring. Pure deletion, ~250 lines."
+    },
+    {
+      "title": "Homescreen P1 completion",
+      "why": "Half-landed P1: command line off-token, silent about provider, never focused; glance pops in shifting the centered hero; greeting knows nothing about the day; the seeded chat is still 'jarvis'.",
+      "scope": "IdleControlCenter.tsx (surface-pop shadow, provider helper line from settings, focus-on-mount or type-to-focus, consume UsageGlance's loaded flag with a min-height shimmer, day-aware greeting clause, dirty-count button, platform-correct projects empty state); App.tsx:1969 + IdleDashboard prop rename (jarvis → provider/chat)."
+    },
+    {
+      "title": "Palette/discovery completion",
+      "why": "Remaining P1 gaps degrade trust in the flagship surfaces: silent no-op commands, unmarked danger, staleness, an uncapped matcher, slow Windows search, and a dead appshot chord.",
+      "scope": "commands.ts/CommandPalette.tsx (disabled styling + failure toast + danger marker, matcher length/state cap, mruVersion bump, clamped Page jumps, deep-search row in no-results); files.rs ripgrep Windows candidates + scan generation check; Settings cheat-sheet generated from the real keymap; appshot: Ctrl-double-tap binding + honest Windows gating (backend is macOS-only)."
+    },
+    {
+      "title": "Design-system adoption sweep + lint guard (P2)",
+      "why": "All primitives exist with zero adoption; without the lint guard the 55 remaining literals and 7 divergent headers will keep drifting.",
+      "scope": "Convert headers in FilesPane/NotesPane/PluginsPane/BridgesPane/MoneyAgentsPane/FileViewerPane/PulsePane to .pane-header; tokenize GIT_COLOR/scrims/shadows/text-white→--color-accent-fg; build PaneEmpty/Skeleton/CopyButton/toast/uiHooks and wire honest loading/empty/error states (PulsePane, PluginsPane, FilesPane picker, BridgesPane copy); add a lintTokens test banning text-white/bg-black/literal-hex in src/components. 1-2 sessions."
+    },
+    {
+      "title": "Motion choreography wave 1 (fix substrate defects first, then adopt)",
+      "why": "The P0 substrate landed but two structural defects (unlayered baseline killing Tailwind transitions; shorthand utilities cancelling color easing) must be fixed before adoption, after which each entrance is a one-line className.",
+      "scope": "App.css (move baseline into @layer, longhand transitions in .press/.lift/.btn-glow, author §2.4 .overlay-backdrop/.toast-in/out/.disclose/.skeleton, hoist aios-wave keyframe, retune the ~9 hardcoded duration literals, reduce-motion transform:none companions); adopt .scale-in on composer Dropdown + palette backdrop, .fade-in-up on pane mount/toasts; splash unmount on transitionend."
+    },
+    {
+      "title": "Interactive-surfaces P2 + remaining chat affordances",
+      "why": "Rounds out the still-mostly-open P2s: frozen xterm/Monaco themes ignore theme/accent, voice gives no recording feedback, loading states pop, and the transcript lacks find/copy/timestamps completions.",
+      "scope": "TerminalRuntime.tsx + monaco.ts (derive themes from computed tokens/accent); voice.ts/VoiceButton.tsx (AnalyserNode waveform, whisper URL setting + pre-flight); EditorPane/TerminalPane skeletons; PetPane.tsx:277 charming status (+ accent-driven glow, lazy ticker); ChatPane.tsx (CopyButton on Write preview/DiffBlock, assistant createdAt + render, Cmd/Ctrl-F find-in-chat with mounted collapsed blocks, approval verdict echo)."
+    },
+    {
+      "title": "P3 feasible signature features: hero starter chips + AccountMenu live status",
+      "why": "Only after broken/partial work: the empty hero's discovery story still ends at a blank box, and the AccountMenu subtitle is dead chrome — both plan-sanctioned, small, and high-visibility.",
+      "scope": "ChatPane.tsx (quiet starter-chip row + surfaced attach/dictate/resume on the empty hero); AccountMenu.tsx:132 (computed base-provider name + live status dot, optional quick-switcher). ~2 files."
+    }
+  ]
+}
