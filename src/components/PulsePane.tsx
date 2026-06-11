@@ -18,13 +18,18 @@ export function PulsePane() {
   const [extras, setExtras] = useState<UsageExtras | null>(null);
   const [rate, setRate] = useState<IdleRate | null>(null);
   const [focus, setFocus] = useState<MemoryFocus | null>(null);
+  // distinguish "still fetching" from "fetched, nothing there" so the pane
+  // never renders as a silent blank sheet.
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     let alive = true;
     const load = () => {
-      usageExtras().then((v) => alive && setExtras(v)).catch((e) => reportDiag("pulse.load", e, { action: "usageExtras" }));
-      idleRate().then((v) => alive && setRate(v)).catch((e) => reportDiag("pulse.load", e, { action: "idleRate" }));
-      memoryFocus().then((v) => alive && setFocus(v)).catch((e) => reportDiag("pulse.load", e, { action: "memoryFocus" }));
+      Promise.allSettled([
+        usageExtras().then((v) => alive && setExtras(v)).catch((e) => reportDiag("pulse.load", e, { action: "usageExtras" })),
+        idleRate().then((v) => alive && setRate(v)).catch((e) => reportDiag("pulse.load", e, { action: "idleRate" })),
+        memoryFocus().then((v) => alive && setFocus(v)).catch((e) => reportDiag("pulse.load", e, { action: "memoryFocus" })),
+      ]).then(() => alive && setSettled(true));
     };
     load();
     const t = setInterval(load, 30_000);
@@ -50,6 +55,19 @@ export function PulsePane() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {!extras && !rate && !focus && (
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 text-center">
+            <Zap size={28} className="text-[var(--color-faint)]" />
+            <p className="text-[12.5px] text-[var(--color-muted)]">
+              {settled ? "no activity data yet" : "reading your activity…"}
+            </p>
+            {settled && (
+              <p className="max-w-[260px] font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
+                pulse fills in as you run chats and terminals — streaks, usage windows, and a heatmap land here
+              </p>
+            )}
+          </div>
+        )}
         {/* streak hero */}
         {extras && (
           <div className="mb-6 flex items-center gap-3">

@@ -144,6 +144,13 @@ export function loadSettings(): AppSettings {
       if (parsed.topBarMode === "full" || parsed.topBarMode === "compact") {
         parsed.topBarMode = "hidden";
       }
+      // One-time calm migration: installs that saved under the old loud
+      // `lush` DEFAULT come down to calm; re-choosing lush afterwards sticks
+      // (the marker records that the migration already ran).
+      if (parsed.flashLevel === "lush" && !(parsed as Record<string, unknown>).flashMigrated) {
+        parsed.flashLevel = "calm";
+      }
+      (parsed as Record<string, unknown>).flashMigrated = true;
       cache = { ...DEFAULT_SETTINGS, ...parsed };
     } else {
       cache = { ...DEFAULT_SETTINGS };

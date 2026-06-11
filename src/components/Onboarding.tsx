@@ -53,8 +53,11 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     detectProviders().then((s) => {
       setStatuses(s);
       const firstAvail = s.find((x) => x.available);
-      // only auto-pick if the user hasn't already got a saved non-default choice
-      if (firstAvail) setProvider(`${firstAvail.id}-cli`);
+      // auto-pick ONLY on a true first run still sitting on the shipped
+      // default — a veteran replaying setup keeps their saved engine choice.
+      const saved = loadSettings();
+      const untouched = !saved.onboardingComplete && saved.chatProvider === "codex-cli";
+      if (firstAvail && untouched) setProvider(`${firstAvail.id}-cli`);
     });
     refreshMcps();
   }, []);
@@ -76,10 +79,13 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     statuses?.find((s) => s.id === id)?.available ?? null;
 
   function finish() {
+    // only null the pinned model when the ENGINE actually changed — finishing
+    // a replay without touching step 3 must not discard an explicit pick.
+    const engineChanged = loadSettings().chatProvider !== provider;
     saveSettings({
       userName: name.trim(),
       chatProvider: provider,
-      chatModel: null, // base derives from the chosen provider (PLAN §13)
+      ...(engineChanged ? { chatModel: null } : {}),
       defaultAi: defaultAiForProvider(provider),
       onboardingComplete: true,
       onboardedAt: Date.now(),

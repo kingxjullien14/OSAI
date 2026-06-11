@@ -11,8 +11,24 @@ import {
 
 import { fileSrc } from "../lib/fs";
 import { captureMacApp, focusMacApp, listMacApps, type MacAppInfo } from "../lib/macApps";
+import { isApple } from "../lib/platform";
 
-export function AppAttachPane({
+export function AppAttachPane(props: { name: string; bundleId?: string | null }) {
+  if (!isApple) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2.5 bg-[var(--color-pane)] px-6 text-center">
+        <MonitorUp size={28} className="text-[var(--color-faint)]" />
+        <p className="text-[12.5px] text-[var(--color-muted)]">app attach isn't available on windows yet</p>
+        <p className="max-w-[280px] font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
+          this pane controls native macOS apps — a windows sibling is on the roadmap
+        </p>
+      </div>
+    );
+  }
+  return <AppAttachPaneInner {...props} />;
+}
+
+function AppAttachPaneInner({
   name,
   bundleId,
 }: {

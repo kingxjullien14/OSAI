@@ -10,7 +10,6 @@ import {
   type Note,
 } from "../lib/notes";
 import { reportDiag } from "../lib/diag";
-import { chord } from "../lib/platform";
 
 /** Relative "edited" stamp — apple-notes-ish (Today / Yesterday / date). */
 function relTime(unixSec: number): string {
@@ -40,6 +39,15 @@ export function NotesPane({ onSend }: { onSend?: (text: string) => void }) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // two-click delete: deleteNote removes the file from disk permanently (no
+  // OS trash), so the first click only ARMS the button; it auto-disarms.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+  useEffect(() => setConfirmDelete(false), [selected]);
 
   const dirtyRef = useRef(false);
   const selectedRef = useRef<string | null>(null);
@@ -196,7 +204,7 @@ export function NotesPane({ onSend }: { onSend?: (text: string) => void }) {
           </div>
           <button
             onClick={onNew}
-            title={`new note (${chord("N")} within pane)`}
+            title="new note"
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]"
           >
             <Plus size={14} />
@@ -256,11 +264,22 @@ export function NotesPane({ onSend }: { onSend?: (text: string) => void }) {
                   </button>
                 )}
                 <button
-                  onClick={onDelete}
-                  title="delete note"
-                  className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+                  onClick={() => {
+                    if (confirmDelete) {
+                      setConfirmDelete(false);
+                      onDelete();
+                    } else {
+                      setConfirmDelete(true);
+                    }
+                  }}
+                  title={confirmDelete ? "click again to permanently delete this note" : "delete note"}
+                  className={`grid h-6 place-items-center rounded-md transition-all ${
+                    confirmDelete
+                      ? "w-auto bg-[var(--color-danger)]/15 px-2 font-mono text-[10px] text-[var(--color-danger)]"
+                      : "w-6 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+                  }`}
                 >
-                  <Trash2 size={12} />
+                  {confirmDelete ? "sure?" : <Trash2 size={12} />}
                 </button>
               </div>
             </div>

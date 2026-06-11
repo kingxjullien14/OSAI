@@ -10,13 +10,17 @@ export function PluginsPane() {
   const [data, setData] = useState<Plugins | null>(null);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       setData(await listPlugins());
-    } catch {
+    } catch (e) {
+      // a real failure must not masquerade as "no skills match".
       setData(null);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -115,7 +119,19 @@ export function PluginsPane() {
           </div>
         ))}
 
-        {!loading && groups.length === 0 && (
+        {!loading && error && (
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/[0.06] px-4 py-5 text-center">
+            <p className="text-[12px] text-[var(--color-text-2)]">couldn't read plugins: {error}</p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-strong)] px-2.5 py-1 text-[11.5px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-text)] hover:text-[var(--color-text)]"
+            >
+              <RefreshCw size={11} /> retry
+            </button>
+          </div>
+        )}
+        {!loading && !error && groups.length === 0 && (
           <p className="text-center text-[12px] text-[var(--color-muted)]/60">no skills match.</p>
         )}
       </div>
