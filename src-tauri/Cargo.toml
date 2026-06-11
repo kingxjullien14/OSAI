@@ -1,0 +1,99 @@
+[package]
+name = "aios-shell"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "aios_shell_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `devtools`: keep the WKWebView Web Inspector available in RELEASE builds too
+# (not just debug) — firaz uses this app as his dev browser, so `open_devtools`
+# must compile in the shipped binary, hence the explicit feature (the API is
+# otherwise gated behind `debug_assertions`).
+tauri = { version = "2", features = ["unstable", "protocol-asset", "devtools"] }
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+walkdir = "2"
+ignore = "0.4"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+portable-pty = "0.8"
+parking_lot = "0.12"
+sysinfo = { version = "0.32", default-features = false, features = ["system", "disk"] }
+sqlx = { version = "0.8", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "postgres",
+  "mysql",
+  "chrono",
+  "json",
+  "bigdecimal",
+  "uuid",
+] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# macOS-only: flip the WKWebView element-fullscreen preference (off by default)
+# so YouTube/video fullscreen works inside browser panes. Pinned to the same
+# objc2-web-kit version tauri 2.11 uses so the WKWebView types unify.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSDate", "NSSet", "NSArray", "NSError"] }
+objc2-web-kit = { version = "0.3", features = ["WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKFindConfiguration", "WKFindResult", "WKWebsiteDataStore", "WKWebsiteDataRecord", "block2"] }
+
+# ── ScreenCaptureKit "native app as a pane" spike (appcast.rs) ───────────────
+# Live-mirror a single foreign macOS window into an AIOS pane: SCK captures the
+# window's backing store as GPU-resident IOSurface frames, which we assign to a
+# CALayer-backed NSView child of the main window (zero-copy, frames never touch
+# JS). Lower-level objc2-* bindings (NOT the high-level `screencapturekit`
+# crate) are used so every type unifies with the objc2 0.6 / objc2-* 0.3 stack
+# objc2-web-kit already pins — a divergent objc2 version would make the WKWebView
+# and SCK NSObject worlds incompatible. Requires macOS 12.3+. See SPIKE-screencapturekit.md.
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSGraphics", "NSColor", "NSEvent"] }
+objc2-screen-capture-kit = { version = "0.3", features = ["SCStream", "SCShareableContent", "SCError", "objc2-core-media", "objc2-core-graphics", "block2", "dispatch2"] }
+objc2-core-media = { version = "0.3", features = ["CMSampleBuffer", "CMTime"] }
+objc2-core-video = { version = "0.3", features = ["CVImageBuffer", "CVPixelBuffer", "CVPixelBufferIOSurface", "CVBuffer", "objc2-io-surface"] }
+objc2-io-surface = { version = "0.3", features = ["IOSurface", "IOSurfaceRef", "objc2"] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer", "objc2-core-foundation"] }
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
+dispatch2 = "0.3"
+# Phase B input forwarding (appcast.rs): synthesize + post CGEvents to the
+# captured app's process. Already in the tree transitively (via web-kit/ICU);
+# pulled in directly so we can enable the `elcapitan` feature (CGEventPostToPid /
+# `post_to_pid`) and `highsierra` (CGEventCreateScrollWheelEvent2 / scroll). The
+# high-level `CGEvent` wrapper is its own foreign_type — we only touch its
+# geometry::CGPoint at the post boundary, everything else stays objc2.
+core-graphics = { version = "0.25", features = ["elcapitan", "highsierra"] }
+
+# ── Windows-only: native WebView2 (Chromium) control for the embedded browser ──
+# Reach the real ICoreWebView2 via Tauri's `with_webview` → PlatformWebview::controller()
+# to drive eval-with-result (ExecuteScript), real Back/Forward/Reload/nav-state, and
+# NavigationCompleted load-errors — replacing the fire-and-forget `eval` stubs that
+# only walked the page's own SPA history. Pinned to the EXACT webview2-com/windows
+# versions wry 0.55 uses so `PlatformWebview::controller()`'s type unifies (a divergent
+# version would make the ICoreWebView2Controller worlds incompatible — same reasoning
+# as the objc2 pin above).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+# Win32_System_Com (IStream) + Win32_UI_Shell (SHCreateMemStream) back the native
+# WebView2 CapturePreview screenshot — captures the webview's own content buffer
+# (correct resolution, DPI-immune) instead of a screen-region grab that broke under
+# Windows display scaling.
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+] }
