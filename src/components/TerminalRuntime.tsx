@@ -24,6 +24,7 @@ import {
 } from "../lib/pty";
 import { homeDir, saveImageTemp } from "../lib/fs";
 import { chord, isApple } from "../lib/platform";
+import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { paneWriters, paneSubmitters, openUrlInPane, spawnPane } from "../lib/paneBus";
 import { isTauriRuntime } from "../lib/tauri";
 
@@ -182,7 +183,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
 
     const term = new Xterm({
       fontFamily: FONT_FAMILY,
-      fontSize: 13,
+      fontSize: loadSettings().terminalFontSize || 13,
       // Alacritty ships a slightly tighter leading + weight than xterm's defaults.
       lineHeight: 1.2,
       letterSpacing: 0,
@@ -276,17 +277,27 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
         if (sid != null) ptyWrite(sid, "\x1b\r").catch((e) => reportDiag("terminal.write", e, { action: "altEnter" }));
         return false;
       }
-      // Cmd+V → paste from the system clipboard into the PTY (Ctrl+V stays
-      // literal-quote in the shell, matching Alacritty on macOS). If the
-      // clipboard holds an IMAGE (not text), save it to a temp file and insert
-      // its shell-quoted path instead — so claude code can read it for vision.
-      if (e.key === "v" && e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Cmd+V (mac) / Ctrl+V + Ctrl+Shift+V (windows) → paste from the system
+      // clipboard into the PTY. On macOS Ctrl+V stays literal-quote in the
+      // shell (Alacritty convention); on Windows Ctrl+V IS the paste key —
+      // without it there is no keyboard paste path at all. If the clipboard
+      // holds an IMAGE (not text), save it to a temp file and insert its
+      // shell-quoted path instead — so claude code can read it for vision.
+      const pasteChord = isApple
+        ? e.key === "v" && e.metaKey && !e.ctrlKey && !e.altKey
+        : e.key.toLowerCase() === "v" && e.ctrlKey && !e.metaKey && !e.altKey;
+      if (pasteChord) {
         void pasteClipboard(sid);
         return false;
       }
-      // Cmd+C → copy the selection. We never intercept Ctrl+C, so it always
-      // reaches the PTY as SIGINT (^C) — matching Alacritty on macOS.
-      if (e.key === "c" && e.metaKey && !e.ctrlKey && term.hasSelection()) {
+      // Copy the selection: Cmd+C (mac) / Ctrl+C-with-selection + Ctrl+Shift+C
+      // (windows). Plain Ctrl+C with NO selection always reaches the PTY as
+      // SIGINT (^C) — the terminal convention every TUI relies on.
+      const copyChord = isApple
+        ? e.key === "c" && e.metaKey && !e.ctrlKey
+        : (e.key.toLowerCase() === "c" && e.ctrlKey && !e.metaKey && !e.altKey && term.hasSelection()) ||
+          (e.key.toLowerCase() === "c" && e.ctrlKey && e.shiftKey);
+      if (copyChord && term.hasSelection()) {
         const sel = term.getSelection();
         if (sel) navigator.clipboard.writeText(sel).catch((e) => reportDiag("terminal.clipboard", e, { action: "copySelection" }));
         return false;
@@ -445,7 +456,8 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
             persisted = true;
           } catch {
             // no tmux (Windows / non-AIOS box) → ephemeral shell fallback.
-            sessionId = await spawnShell(onData, null, cols, rows);
+            // still honor the requested cwd ("open terminal here").
+            sessionId = await spawnShell(onData, cwd, cols, rows);
           }
         }
       } catch (e) {
@@ -521,12 +533,23 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     const ro = new ResizeObserver(onResize);
     ro.observe(host);
 
+    // live settings: the appearance slider drives xterm's font size (refit +
+    // SIGWINCH ride the same debounce as a divider drag).
+    const unsubSettings = subscribeSettings((s) => {
+      const px = s.terminalFontSize || 13;
+      if (term.options.fontSize !== px) {
+        term.options.fontSize = px;
+        onResize();
+      }
+    });
+
     return () => {
       disposed = true;
       if (paneKey) paneWriters.delete(paneKey);
       host.removeEventListener("auxclick", onAuxClick);
       ro.disconnect();
       if (resizeTimer != null) clearTimeout(resizeTimer);
+      unsubSettings();
       unlistenExit?.();
       inputDisposer?.dispose();
       if (sessionId != null) ptyKill(sessionId).catch((e) => reportDiag("terminal.kill", e, { action: "cleanup" }));
@@ -545,15 +568,17 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     setRestartNonce((n) => n + 1);
   }, []);
 
-  // While exited, ⏎ restarts (mirrors the overlay hint). Scoped to keydown on
-  // the host so it doesn't fight global shortcuts; ⌘W (close) is App's job.
+  // While exited, ⏎ restarts (mirrors the overlay hint) — but ONLY when the
+  // press happens inside THIS pane. A window-wide listener used to hijack
+  // Enter from chat composers and restart every exited terminal at once.
   useEffect(() => {
     if (!exited) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        restartSession();
-      }
+      if (e.key !== "Enter" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const root = hostRef.current?.closest("[data-pane-key]") ?? hostRef.current;
+      if (!root || !(e.target instanceof Node) || !root.contains(e.target)) return;
+      e.preventDefault();
+      restartSession();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -741,6 +766,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
                 press ⏎ to restart · {chord("W")} to close
               </span>
               <button
+                autoFocus
                 onClick={restartSession}
                 className="flex items-center gap-1.5 rounded-md border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-accent)] hover:text-[var(--color-bg)]"
               >

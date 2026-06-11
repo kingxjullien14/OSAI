@@ -9,6 +9,7 @@ import { AlertTriangle, Check, Circle, ExternalLink, Loader2 } from "lucide-reac
 
 import { fileMtime, readTextFile, SaveConflictError, writeTextFile } from "../lib/fs";
 import { chord } from "../lib/platform";
+import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { languageForPath } from "../lib/editorLanguage";
 import { openFileInPane, registerPaneDropSink } from "../lib/paneBus";
 import { PaneDropZone } from "./PaneDropZone";
@@ -75,6 +76,7 @@ export function EditorPane({
   const mtimeRef = useRef<number>(0);
   // keep the latest save fn reachable from the monaco keybinding closure
   const saveRef = useRef<() => void>(() => {});
+  const savingRef = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -111,7 +113,8 @@ export function EditorPane({
         model,
         theme: "aios-dark",
         automaticLayout: true,
-        fontSize: 13,
+        // the appearance "text size" slider drives editors + terminals alike.
+        fontSize: loadSettings().terminalFontSize || 13,
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
         fontLigatures: true,
         minimap: { enabled: true },
@@ -139,6 +142,11 @@ export function EditorPane({
       const save = async () => {
         const ed = editorRef.current;
         if (!ed) return;
+        // in-flight guard: Monaco's chord + the pane-level listener can both
+        // fire on one Ctrl+S — a second concurrent write raced the first's
+        // mtime update into a false "changed on disk" conflict banner.
+        if (savingRef.current) return;
+        savingRef.current = true;
         try {
           const newMtime = await writeTextFile(path, ed.getValue(), mtimeRef.current || undefined);
           if (disposed) return;
@@ -155,6 +163,8 @@ export function EditorPane({
           } else {
             setError(String(e));
           }
+        } finally {
+          savingRef.current = false;
         }
       };
       saveRef.current = save;
@@ -181,17 +191,28 @@ export function EditorPane({
     };
   }, [path, line, col]);
 
-  // a tiny ⌘S affordance that also works when focus is in the header
+  // a tiny ⌘S affordance that also works when focus is in the header — scoped
+  // to THIS pane (a window-wide listener made every open editor save at once).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        saveRef.current();
-      }
+      if (!((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s")) return;
+      const root = hostRef.current?.closest("[data-pane-key]") ?? hostRef.current;
+      if (!root || !(e.target instanceof Node) || !root.contains(e.target)) return;
+      e.preventDefault();
+      saveRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // live settings → Monaco font size (matches the terminal's behavior).
+  useEffect(
+    () =>
+      subscribeSettings((s) => {
+        editorRef.current?.updateOptions({ fontSize: s.terminalFontSize || 13 });
+      }),
+    [],
+  );
 
   // Reload the file from disk, discarding local edits (conflict → "reload").
   const reloadFromDisk = useCallback(async () => {
