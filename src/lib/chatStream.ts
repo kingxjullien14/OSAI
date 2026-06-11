@@ -158,7 +158,16 @@ function reduceAssistantEvent(
     if (block.type === "thinking") {
       const full = (block.thinking ?? "").trim();
       if (full && next.thinkingTurnId == null) {
-        turns.push({ kind: "thinking", id: options.uid(), text: full, streaming: false });
+        // same content-level dedup as assistant text above: the cumulative
+        // re-emit otherwise renders a second identical "thought" block.
+        const lastThinking = [...turns]
+          .reverse()
+          .find((t) => t.kind === "thinking");
+        const isDuplicate =
+          lastThinking?.kind === "thinking" && lastThinking.text.trim() === full;
+        if (!isDuplicate) {
+          turns.push({ kind: "thinking", id: options.uid(), text: full, streaming: false });
+        }
       }
     }
     if (block.type === "tool_use") {

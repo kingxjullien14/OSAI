@@ -1431,13 +1431,14 @@ export function ChatPane({
             ? u.cache_creation_input_tokens
             : 0);
         if (ctx > 0) setCtxTokens(ctx);
-        // claude passthrough results carry the human message in ev.result, the
-        // synthesized engine failures in ev.text — read both so a failure card
-        // never loses its diagnostic.
+        // synthesized engine failures carry their message in ev.text; claude
+        // passthrough ERRORS carry it in ev.result. On SUCCESS ev.result holds
+        // the full assistant reply — reading it unconditionally duplicated the
+        // whole message into the footer (user-reported), so error-only.
         const resultText =
           typeof ev.text === "string" && ev.text.trim()
             ? ev.text.trim()
-            : typeof ev.result === "string"
+            : Boolean(ev.is_error) && typeof ev.result === "string"
               ? ev.result.trim()
               : "";
         // a user-initiated stop fans out a synthetic is_error result — stop()
@@ -2933,9 +2934,10 @@ export function ChatPane({
                 )}
               </span>
             ))}
-            {runEventCount > 0 && (
+            {/* live runs only — a resting "run: completed" pill was stale noise */}
+            {activeRun && runEventCount > 0 && (
               <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]">
-                <Waypoints size={12} className="shrink-0 text-[var(--color-muted)]" />
+                <Waypoints size={12} className="shrink-0 animate-pulse text-[var(--color-muted)]" />
                 <span className="truncate">run: {runPhase}</span>
               </span>
             )}
@@ -2956,14 +2958,16 @@ export function ChatPane({
           title="estimated tokens added by the next send; exact billing comes from provider usage"
         >
           <span>{estimatedContextTokens.toLocaleString()} est tok</span>
-          {contextBuckets.map((bucket) => (
-            <span
-              key={bucket.id}
-              className={bucket.level === "warning" ? "text-[var(--color-warning)]" : undefined}
-            >
-              {bucket.label}:{bucket.tokens.toLocaleString()}
-            </span>
-          ))}
+          {/* a single bucket equals the total — listing it was pure noise */}
+          {contextBuckets.length > 1 &&
+            contextBuckets.map((bucket) => (
+              <span
+                key={bucket.id}
+                className={bucket.level === "warning" ? "text-[var(--color-warning)]" : undefined}
+              >
+                {bucket.label}:{bucket.tokens.toLocaleString()}
+              </span>
+            ))}
         </div>
         )}
 
@@ -3823,14 +3827,17 @@ export function ChatPane({
                 elapsedMs={liveStart != null ? now - liveStart : 0}
               />
             ) : b.kind === "user" ? (
-              <UserBubble
-                key={b.id}
-                turn={b.turn}
-                streaming={streaming}
-                isLast={b.id === lastUserId}
-                onRegenerate={() => regenerate(b.turn.text)}
-                onEdit={editMessage}
-              />
+              // non-streaming blocks ARRIVE (fade-in-up) — streaming surfaces
+              // stay unwrapped so token appends never retrigger an entrance.
+              <div key={b.id} className="fade-in-up">
+                <UserBubble
+                  turn={b.turn}
+                  streaming={streaming}
+                  isLast={b.id === lastUserId}
+                  onRegenerate={() => regenerate(b.turn.text)}
+                  onEdit={editMessage}
+                />
+              </div>
             ) : b.kind === "assistant" ? (
               <AssistantBubble
                 key={b.id}
@@ -3844,13 +3851,13 @@ export function ChatPane({
             ) : b.kind === "thinking" ? (
               <ThinkingBlock key={b.id} turn={b.turn} />
             ) : b.kind === "approval" ? (
-              <ApprovalCard
-                key={b.id}
-                turn={b.turn}
-                onResolve={resolveApproval}
-              />
+              <div key={b.id} className="fade-in-up">
+                <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
+              </div>
             ) : (
-              <ResultFooter key={b.id} turn={b.turn} onRetry={retryTurn} />
+              <div key={b.id} className="fade-in-up">
+                <ResultFooter turn={b.turn} onRetry={retryTurn} />
+              </div>
             ),
           )}
           {/* turn in flight with neither streamed text nor a live activity group

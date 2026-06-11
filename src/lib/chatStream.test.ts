@@ -126,3 +126,25 @@ test("reduceChatStreamEvent dedupes a re-emitted whole-message assistant event",
     "the identical re-emitted reply must not create a second bubble",
   );
 });
+
+test("reduceChatStreamEvent dedupes a re-emitted thinking block the same way", () => {
+  n = 0;
+  // the cumulative re-emit carries the thinking block too — without the same
+  // dedup the transcript shows two identical "thought" cards (reported bug).
+  const msg = {
+    type: "assistant",
+    message: { content: [{ type: "thinking", thinking: "The user wants an overview." }] },
+  };
+  const first = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    msg,
+    { now: 100, uid },
+  ).state;
+  const second = reduceChatStreamEvent(first, msg, { now: 110, uid }).state;
+
+  assert.equal(
+    second.turns.filter((t) => t.kind === "thinking").length,
+    1,
+    "the identical re-emitted thinking must not create a second thought card",
+  );
+});
