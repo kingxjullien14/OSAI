@@ -49,7 +49,7 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
   return (
     <PaneDropZone onPath={onDropFile} label="drop file to open">
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-8 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+      <div className="pane-header justify-between">
         <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]">
           {preview?.name ?? path.split("/").pop()}
         </span>

@@ -247,7 +247,7 @@ export function NotesPane({ onSend }: { onSend?: (text: string) => void }) {
       <div className="flex min-w-0 flex-1 flex-col">
         {selected ? (
           <>
-            <div className="flex h-8 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+            <div className="pane-header justify-between">
               <span className="truncate text-[11px] text-[var(--color-muted)]">{liveTitle}</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-[var(--color-faint)]">

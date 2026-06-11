@@ -267,7 +267,7 @@ export function EditorPane({
   return (
     <PaneDropZone onPath={onDropFile} label="drop file to open">
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)]">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3">
+      <div className="pane-header gap-2">
         {dirty ? (
           <Circle size={8} className="shrink-0 fill-[var(--color-accent)] text-[var(--color-accent)]" />
         ) : savedAt ? (

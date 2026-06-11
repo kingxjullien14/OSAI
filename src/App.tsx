@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -3997,6 +3998,53 @@ function PaneCard({
   // target it without `elementFromPoint` (which fails over native webviews). The
   // wrapper ref gives a live rect; canAccept lets a pane opt a payload out.
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // ── maximize/restore FLIP morph ──────────────────────────────────────────
+  // The class swap (grid cell ↔ fixed inset-0) used to TELEPORT the pane —
+  // the most jarring cut in the app. We morph instead: a recorder effect
+  // (below, runs last) stores the rect after every render; when `maximized`
+  // flips, this effect plays a transform from that pre-flip rect to the new
+  // layout. Transform-only (GPU), one-shot, master reduce-motion respected.
+  const flipRectRef = useRef<DOMRect | null>(null);
+  const flipWasMaxRef = useRef(maximized);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    const was = flipWasMaxRef.current;
+    flipWasMaxRef.current = maximized;
+    if (!el || was === maximized) return;
+    const from = flipRectRef.current;
+    if (!from || !from.width || !from.height) return;
+    if (
+      document.documentElement.dataset.reduceMotion === "true" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const to = el.getBoundingClientRect();
+    if (!to.width || !to.height) return;
+    el.style.zIndex = "60";
+    el.style.transformOrigin = "0 0";
+    const anim = el.animate(
+      [
+        {
+          transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`,
+        },
+        { transform: "none" },
+      ],
+      { duration: 280, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+    );
+    const done = () => {
+      el.style.zIndex = "";
+      el.style.transformOrigin = "";
+    };
+    anim.onfinish = done;
+    anim.oncancel = done;
+  }, [maximized]);
+  // record the post-render rect — the morph source for the NEXT flip. Defined
+  // after the FLIP effect so it runs after it on the flip render.
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (el && !hidden) flipRectRef.current = el.getBoundingClientRect();
+  });
   useEffect(() => {
     const canAccept = (_kind: PayloadKind): boolean => {
       // pet/clock-style decorative panes accept nothing; everything else does.

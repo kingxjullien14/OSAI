@@ -139,6 +139,7 @@ import {
   reduceRunEvents,
   serializeRunEventState,
   type RunEventState,
+  type RunPhase,
 } from "../lib/runEvents";
 import {
   finalizeStreamingTurns,
@@ -3825,6 +3826,7 @@ export function ChatPane({
                 // flight and it hasn't been closed by a result yet
                 live={streaming && b.durationMs == null && i === lastActivityIdx}
                 elapsedMs={liveStart != null ? now - liveStart : 0}
+                phase={runEventState.phase}
               />
             ) : b.kind === "user" ? (
               // non-streaming blocks ARRIVE (fade-in-up) — streaming surfaces
@@ -4059,16 +4061,64 @@ function UsageStrip({
  * each step is one line (icon + verb + truncated target). Any files the steps
  * wrote (Write/Edit/NotebookEdit) surface as artifact cards beneath the list.
  */
+/** The live run's phase spine: think → write → act → done. */
+const RUN_RAIL = ["think", "write", "act", "done"] as const;
+function runPhaseIndex(p: RunPhase): number {
+  switch (p) {
+    case "thinking":
+      return 0;
+    case "writing":
+      return 1;
+    case "acting":
+    case "waiting":
+      return 2;
+    default:
+      return 3; // completed / failed / interrupted
+  }
+}
+
+function RunRail({ phase }: { phase: RunPhase }) {
+  const idx = runPhaseIndex(phase);
+  return (
+    <span className="ml-2 inline-flex items-center gap-1" title={`run phase: ${phase}`}>
+      {RUN_RAIL.map((step, i) => (
+        <span key={step} className="inline-flex items-center gap-1">
+          {i > 0 && (
+            <span
+              className={`h-px w-3 transition-colors duration-300 ${
+                i <= idx ? "bg-[var(--color-accent)]/40" : "bg-[var(--color-border)]"
+              }`}
+            />
+          )}
+          <span
+            className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
+              i === idx
+                ? "aios-node-live bg-[var(--color-accent)]"
+                : i < idx
+                  ? "bg-[var(--color-accent)]/45"
+                  : "border border-[var(--color-border-strong)]"
+            }`}
+          />
+        </span>
+      ))}
+      <span className="ml-1.5 font-mono text-[10px] lowercase text-[var(--color-faint)]">{phase}</span>
+    </span>
+  );
+}
+
 function ActivityGroup({
   tools,
   durationMs,
   live,
   elapsedMs,
+  phase,
 }: {
   tools: ToolTurn[];
   durationMs?: number;
   live: boolean;
   elapsedMs: number;
+  /** live run phase — drives the think→write→act→done spine in the header. */
+  phase?: RunPhase;
 }) {
   // expanded while the turn is live (so you watch tools run in real time), then
   // auto-collapses to "Worked for Xs ›" when done — unless the user toggled it.
@@ -4108,6 +4158,7 @@ function ActivityGroup({
           />
         )}
         <span className={live ? "animate-pulse" : undefined}>{label}</span>
+        {live && phase && <RunRail phase={phase} />}
         {!live && n > 0 && (
           <span className="text-[var(--color-faint)]">
             · {n} step{n === 1 ? "" : "s"}
