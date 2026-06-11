@@ -168,7 +168,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
                 title={`run ${agent.label} now`}
               >
                 <Target size={13} />
-                run sales pulse
+                run pulse now
               </button>
 
               <div className="mt-3 grid grid-cols-3 gap-2">

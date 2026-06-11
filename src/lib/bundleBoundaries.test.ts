@@ -287,9 +287,9 @@ test("money agents open as chatpane-backed agents", () => {
   assert.match(section, /chatStateLabel/);
   assert.match(section, /onOpenAgentChat/);
   assert.doesNotMatch(section, /Terminal/);
-  assert.match(pane, /aios sales agents/);
+  assert.match(pane, /aios agents/);
   assert.match(pane, /open chatpane/);
-  assert.match(pane, /run sales pulse/);
+  assert.match(pane, /run pulse now/);
   assert.match(pane, /control update for all agents/);
   assert.match(pane, /state and evidence/);
   assert.match(idle, /onOpenMoneyAgentChat/);
