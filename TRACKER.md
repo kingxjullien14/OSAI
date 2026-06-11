@@ -53,6 +53,8 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 
 - [x] **Focus Spotlight** (`d1743a3`) — Ctrl+./Cmd+. dims every pane but the active one (45%, eased); auto-suspends maximized/single-pane
 - [x] **Starter deck on the empty hero** (`d1743a3`) — quiet pills prefill the composer, vanish on first keystroke
+- [x] **Chat hero redesign** (`235cf69`, user-reported) — time-aware greeting, accent-gradient title word, ambient aurora blobs, starter deck upgraded to four lift-on-hover icon cards, decluttered helper; dropdowns open toward the larger side + cap height (no more clipped selectors)
+- [x] **Windows menu strip removed** (`235cf69`, user-reported) — the native "AIOS Edit Pane" menu is macOS-only now; chords still work via the in-app keydown handler. *Caveat: on Windows, chords don't fire while focus is INSIDE a browser child webview (the menu was the workaround) — click into app chrome first. If that bites, we can add a Rust-side accelerator later.*
 - [ ] **Workspaces** — save/restore named layouts, morph transition, palette commands
 - [ ] **Activity Glow** — chrome breathes while agents run
 - [ ] **Resume rail** on the empty chat hero (recent sessions one click away)
