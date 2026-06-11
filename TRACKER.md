@@ -31,7 +31,9 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 
 ## Wave 2 — pane polish & UI/UX convergence *(user: "all panes need polishing, UIUX improved by a lot")*
 
-- [ ] **CSS substrate fixes first** — the un-layered global transition baseline silently kills Tailwind transition utilities app-wide (move into `@layer base`); `.press/.lift/.btn-glow` shorthand cancels the color easing (longhand transitions)
+- [x] **CSS substrate fixes** (`~6a7ac8a^`) — transition baseline into `@layer base` (Tailwind transitions work again); `.lift/.press/.btn-glow` carry color easing; new `.overlay-backdrop`/`.toast-in/out`/`.disclose`/`.skeleton`/`.aios-wave-bar` utilities
+- [x] **Composer menus un-clipped** (`6a7ac8a`, user-reported) — fixed-position direction-aware dropdowns with internal scroll
+- [x] **Windows drag feedback** (`6a7ac8a`, user-reported) — HTML5 draggable mac-only; pointer drag owns the gesture (ghost, live overlays, hover label, instant drop)
 - [ ] **Design-system convergence, pane by pane** (adopt `.pane-header`, `.surface-pop`, `.pill`, `.status-dot`, tokens; kill hex/`text-white`/`shadow-2xl`/accent-as-decoration):
   - [ ] FilesPane (hex git colors → status tokens, accent folder glyphs → muted, project-picker `shadow-2xl`, "scanning…" forever state)
   - [ ] NotesPane (accent hovers, bespoke focus borders)

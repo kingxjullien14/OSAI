@@ -3479,7 +3479,7 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
     onClose();
   };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
       <div
         className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
@@ -4013,7 +4013,8 @@ function PaneCard({
         maximized
           ? // truly fullscreen — edge-to-edge over the top bar + sidebar, no chrome
             "fixed inset-0 z-40"
-          : `relative rounded-lg border ${
+          : // fade-in-up: panes ARRIVE instead of popping in (one-shot on mount)
+            `fade-in-up relative rounded-lg border ${
               dropTarget
                 ? // the drop destination during a reorder
                   "border-[var(--color-accent)]"

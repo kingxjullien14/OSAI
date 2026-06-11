@@ -187,7 +187,7 @@ export function GlobalSearch({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
+      className="overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

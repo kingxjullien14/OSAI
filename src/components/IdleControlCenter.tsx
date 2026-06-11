@@ -54,8 +54,10 @@ import {
 } from "lucide-react";
 
 import type { AppDef } from "../App";
+import { engineForProvider } from "../lib/chat";
 import type { IdleRate, MemoryFocus } from "../lib/dashboard";
 import type { RepoPulse } from "../lib/fs";
+import { loadSettings } from "../lib/settings";
 import type { MoneyAgentSummary } from "../lib/moneyAgents";
 import type { AiosNotification } from "../lib/notifications";
 import type { ProjectInfo } from "../lib/run";
@@ -307,6 +309,13 @@ function CommandLine({
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // the home's primary affordance receives focus on arrival — type-to-start,
+  // no click required (it never stole focus before).
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 250);
+    return () => clearTimeout(t);
+  }, []);
+
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text) {
@@ -318,6 +327,9 @@ function CommandLine({
   }, [value, onSeedChat, onOpenPalette]);
 
   const hasContent = value.trim().length > 0;
+  // say WHICH agent this line launches — the engine the base provider resolves
+  // to (the same one the seeded chat boots).
+  const engineLabel = engineForProvider(loadSettings().chatProvider) ?? "claude";
 
   return (
     <form
@@ -328,7 +340,7 @@ function CommandLine({
         submit();
       }}
     >
-      <div className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]">
+      <div className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]">
         {/* accent sheen sweeping the top edge when focused — mirrors the composer */}
         <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-[var(--color-accent)] to-transparent opacity-0 transition-opacity duration-500 group-focus-within/cmd:opacity-80" />
         <Search
@@ -356,6 +368,10 @@ function CommandLine({
             {chord("K")}
           </kbd>
         )}
+      </div>
+      {/* which agent this line launches — no more mystery composer */}
+      <div className="mt-2 text-center font-mono text-[11px] text-[var(--color-faint)]">
+        {engineLabel} · enter to start · {chord("K")} for everything
       </div>
     </form>
   );

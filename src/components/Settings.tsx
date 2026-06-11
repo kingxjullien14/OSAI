@@ -1045,7 +1045,7 @@ export function Settings({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
+      className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div

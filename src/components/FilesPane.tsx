@@ -45,11 +45,11 @@ import { isApple } from "../lib/platform";
 import { PaneDropZone } from "./PaneDropZone";
 
 const GIT_COLOR: Record<GitCode, string> = {
-  M: "#e2b341", // modified — amber
-  A: "#73c991", // added (staged) — green
-  U: "#73c991", // untracked — green
-  D: "#e05252", // deleted — red
-  R: "#6cb6ff", // renamed — blue
+  M: "var(--color-warning)", // modified
+  A: "var(--color-success)", // added (staged)
+  U: "var(--color-success)", // untracked
+  D: "var(--color-danger)", // deleted
+  R: "var(--color-info)", // renamed
 };
 
 // Persisted toggles (VS Code-style defaults: both hidden).
@@ -360,7 +360,7 @@ export function FilesPane({
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-[var(--color-text-2)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
                     title={p.root}
                   >
-                    <FolderGit2 size={12} className="shrink-0 text-[var(--color-accent)]/80" />
+                    <FolderGit2 size={12} className="shrink-0 text-[var(--color-muted)]" />
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
                     <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">{p.kind}</span>
                   </button>
@@ -544,9 +544,9 @@ function TreeRow({
       {/* icon */}
       {isDir ? (
         open ? (
-          <FolderOpen size={14} className="shrink-0 text-[var(--color-accent)]/80" />
+          <FolderOpen size={14} className="shrink-0 text-[var(--color-muted)]" />
         ) : (
-          <FolderClosed size={14} className="shrink-0 text-[var(--color-accent)]/80" />
+          <FolderClosed size={14} className="shrink-0 text-[var(--color-muted)]" />
         )
       ) : (
         <Icon size={14} className="shrink-0" style={{ color }} />
@@ -566,7 +566,8 @@ function TreeRow({
           {gitCode}
         </span>
       ) : folderDirty ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+        // status semantics, not accent: a changed folder is a warning-tier signal
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />
       ) : null}
 
       {loading && <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">…</span>}
