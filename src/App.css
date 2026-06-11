@@ -233,14 +233,20 @@ html, body, #root {
    scroll-driven transforms); opt into those via .lift/.press/.fade-in-up.
    The master reduce-motion guard below kills ALL of it in one place.
    ════════════════════════════════════════════════════════════════════════ */
-a, button, [role="button"], [role="menuitem"], [role="tab"], summary,
-input, textarea, select, .pill, .surface-card, .surface-pop, [data-pane-key] {
-  transition:
-    color            var(--aios-dur-fast) var(--aios-ease-out),
-    background-color var(--aios-dur-fast) var(--aios-ease-out),
-    border-color     var(--aios-dur-fast) var(--aios-ease-out),
-    box-shadow       var(--aios-dur-fast) var(--aios-ease-out),
-    outline-color    var(--aios-dur-fast) var(--aios-ease-out);
+/* IN @layer base so Tailwind's transition utilities (@layer utilities) and
+   un-layered component classes still win the cascade — un-layered, this rule
+   silently overrode every `transition-*` utility in the app (hover scales,
+   opacity fades, the send button's lift all died). */
+@layer base {
+  a, button, [role="button"], [role="menuitem"], [role="tab"], summary,
+  input, textarea, select, .pill, .surface-card, .surface-pop, [data-pane-key] {
+    transition:
+      color            var(--aios-dur-fast) var(--aios-ease-out),
+      background-color var(--aios-dur-fast) var(--aios-ease-out),
+      border-color     var(--aios-dur-fast) var(--aios-ease-out),
+      box-shadow       var(--aios-dur-fast) var(--aios-ease-out),
+      outline-color    var(--aios-dur-fast) var(--aios-ease-out);
+  }
 }
 
 /* Visible keyboard focus — a restrained accent ring on :focus-visible ONLY, so
@@ -257,27 +263,95 @@ select:focus-visible,
   outline: none;
 }
 
-/* .lift — hover elevation for cards/tiles/rows. Transform+shadow only (GPU). */
+/* .lift — hover elevation for cards/tiles/rows. The transition list REPEATS
+   the color baseline: a transform-only shorthand here would cancel the base
+   rule's color/border easing on the same element. */
 .lift {
   transition: transform var(--aios-dur-base) var(--aios-ease-out),
-              box-shadow var(--aios-dur-base) var(--aios-ease-out);
+              box-shadow var(--aios-dur-base) var(--aios-ease-out),
+              color var(--aios-dur-fast) var(--aios-ease-out),
+              background-color var(--aios-dur-fast) var(--aios-ease-out),
+              border-color var(--aios-dur-fast) var(--aios-ease-out);
   will-change: transform;
 }
 .lift:hover { transform: translateY(-2px); box-shadow: var(--aios-shadow-pop); }
 .lift:active { transform: translateY(0); transition-duration: var(--aios-dur-instant); }
 
-/* .press — tactile push for buttons. Pairs with the global color baseline. */
-.press { transition: transform var(--aios-dur-instant) var(--aios-ease-out); }
+/* .press — tactile push for buttons. Carries the color baseline (see .lift). */
+.press {
+  transition: transform var(--aios-dur-instant) var(--aios-ease-out),
+              color var(--aios-dur-fast) var(--aios-ease-out),
+              background-color var(--aios-dur-fast) var(--aios-ease-out),
+              border-color var(--aios-dur-fast) var(--aios-ease-out);
+}
 .press:active { transform: scale(0.96); }
 
 /* .btn-glow — the ONE primary action (send). Accent ring breathes on hover.
    Accent-only per DESIGN.md §6; never put this on a neutral control. */
 .btn-glow { position: relative;
   transition: transform var(--aios-dur-base) var(--aios-ease-spring),
-              box-shadow var(--aios-dur-base) var(--aios-ease-out); }
+              box-shadow var(--aios-dur-base) var(--aios-ease-out),
+              color var(--aios-dur-fast) var(--aios-ease-out),
+              background-color var(--aios-dur-fast) var(--aios-ease-out),
+              border-color var(--aios-dur-fast) var(--aios-ease-out); }
 .btn-glow:hover { transform: translateY(-1px);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent); }
 .btn-glow:active { transform: translateY(0) scale(0.97); }
+
+/* .overlay-backdrop — modal dims fade in instead of slamming on; flip
+   data-closing="true" before unmount for a fast ease-in exit. */
+@keyframes aios-fade-plain { from { opacity: 0; } to { opacity: 1; } }
+@keyframes aios-overlay-out { to { opacity: 0; } }
+.overlay-backdrop { animation: aios-fade-plain var(--aios-dur-base) ease both; }
+.overlay-backdrop[data-closing="true"] {
+  animation: aios-overlay-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
+}
+
+/* .toast-in/.toast-out — bottom-anchored toast motion. The -50% X rides every
+   keyframe because toasts sit on left-1/2 -translate-x-1/2. */
+@keyframes aios-toast-in  { from { opacity: 0; transform: translate(-50%, 16px) scale(0.96); }
+                            to   { opacity: 1; transform: translate(-50%, 0)    scale(1); } }
+@keyframes aios-toast-out { to   { opacity: 0; transform: translate(-50%, 8px); } }
+.toast-in  { animation: aios-toast-in  var(--aios-dur-base) var(--aios-ease-spring) both; }
+.toast-out { animation: aios-toast-out var(--aios-dur-fast) var(--aios-ease-in) forwards; }
+
+/* .disclose — animate auto-height disclosure (tool cards, diff expands)
+   without measuring: the grid-rows 0fr→1fr technique. */
+.disclose {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--aios-dur-base) var(--aios-ease-out);
+}
+.disclose[data-open="true"] { grid-template-rows: 1fr; }
+.disclose > * { overflow: hidden; min-height: 0; }
+
+/* .skeleton — loading blocks in the brand's shimmer language. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-panel) 60%, transparent);
+  border-radius: var(--aios-radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--color-text) 6%, transparent), transparent);
+  animation: aios-skeleton 1.4s var(--aios-ease-in-out) infinite;
+}
+@keyframes aios-skeleton { to { transform: translateX(100%); } }
+
+/* .aios-wave-bar — the voice equalizer bar, hoisted from per-mount inline
+   <style> strings so every mic shares one keyframe. */
+@keyframes aios-wave { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+.aios-wave-bar {
+  width: 3px;
+  background: var(--color-accent);
+  transform-origin: center;
+  animation: aios-wave 0.9s ease-in-out infinite;
+}
 
 /* .fade-in-up / .scale-in — canonical entrances (token-driven; the existing
    .aios-fade-in stays for the idle cockpit's slower 0.6s reveal). */
