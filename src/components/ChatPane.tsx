@@ -36,6 +36,7 @@ import {
   CheckCheck,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   CornerDownLeft,
   FileCode,
@@ -186,6 +187,26 @@ type RenderBlock =
   | { kind: "approval"; id: string; turn: Extract<Turn, { kind: "approval" }> }
   | { kind: "result"; id: string; turn: Extract<Turn, { kind: "result" }> }
   | { kind: "activity"; id: string; tools: ToolTurn[]; durationMs?: number };
+
+/** Searchable text for find-in-chat — one string per block, covering what the
+ *  eye could find by expanding everything (incl. collapsed thinking + tool
+ *  args/output, which native browser find can never reach once collapsed). */
+function blockSearchText(b: RenderBlock): string {
+  switch (b.kind) {
+    case "user":
+    case "assistant":
+    case "thinking":
+      return b.turn.text;
+    case "result":
+      return b.turn.text ?? "";
+    case "approval":
+      return `${b.turn.toolName} ${JSON.stringify(b.turn.input ?? {})}`;
+    case "activity":
+      return b.tools
+        .map((t) => `${t.name} ${JSON.stringify(t.input ?? {})} ${t.result ?? ""}`)
+        .join("\n");
+  }
+}
 
 let _uid = 0;
 const uid = () => `t${++_uid}`;
@@ -3930,6 +3951,120 @@ export function ChatPane({
     return null;
   }, [blocks]);
 
+  // ── find-in-chat ────────────────────────────────────────────────────────
+  // mod+F routes here via App's handleCmdF → "aios-chat-find" (same context-
+  // aware pattern as the browser pane; before this, ⌘F on a chat pane
+  // FULLSCREENED it). Matching is block-granular: jump + one-shot highlight
+  // wash, with collapsed thinking/activity groups force-opened on their hits —
+  // text the native find could never reach.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findSel, setFindSel] = useState(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  /** block id → its wrapper element (find jumps + minimap geometry). */
+  const blockElsRef = useRef<Map<string, HTMLElement>>(new Map());
+
+  const findMatches = useMemo(() => {
+    const q = findQuery.trim().toLowerCase();
+    if (!findOpen || q.length < 2) return [] as string[];
+    return blocks
+      .filter((b) => blockSearchText(b).toLowerCase().includes(q))
+      .map((b) => b.id);
+  }, [findOpen, findQuery, blocks]);
+  const findMatchSet = useMemo(() => new Set(findMatches), [findMatches]);
+  const findCurrentId = findOpen ? (findMatches[findSel] ?? null) : null;
+
+  const scrollToBlock = useCallback((id: string) => {
+    blockElsRef.current.get(id)?.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  }, []);
+  const gotoFind = useCallback(
+    (dir: 1 | -1) => {
+      setFindSel((s) => {
+        const len = findMatches.length;
+        if (!len) return 0;
+        const next = (((s + dir) % len) + len) % len;
+        const id = findMatches[next];
+        if (id) requestAnimationFrame(() => scrollToBlock(id));
+        return next;
+      });
+    },
+    [findMatches, scrollToBlock],
+  );
+  // fresh query → restart at (and reveal) the first hit
+  useEffect(() => {
+    setFindSel(0);
+    if (!findOpen || findMatches.length === 0) return;
+    const id = findMatches[0];
+    const raf = requestAnimationFrame(() => scrollToBlock(id));
+    return () => cancelAnimationFrame(raf);
+    // findMatches is derived from findQuery/findOpen — keying on those keeps
+    // this from re-firing on every streamed block while the query sits still.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findQuery, findOpen]);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    taRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    const onFind = (e: Event) => {
+      const k = (e as CustomEvent<{ key?: string }>).detail?.key;
+      if (paneKey && k && k !== paneKey) return;
+      setFindOpen(true);
+      requestAnimationFrame(() => {
+        findInputRef.current?.focus();
+        findInputRef.current?.select();
+      });
+    };
+    window.addEventListener("aios-chat-find", onFind);
+    return () => window.removeEventListener("aios-chat-find", onFind);
+  }, [paneKey]);
+
+  // ── conversation minimap — one tick per block, click to jump ───────────
+  const [mapTicks, setMapTicks] = useState<
+    { id: string; kind: RenderBlock["kind"]; frac: number; err: boolean }[]
+  >([]);
+  useEffect(() => {
+    if (blocks.length < 9) {
+      setMapTicks([]);
+      return;
+    }
+    // one rAF batches all the offsetTop reads after layout settles
+    const raf = requestAnimationFrame(() => {
+      const root = scrollRef.current;
+      if (!root) return;
+      const H = Math.max(1, root.scrollHeight);
+      const out: { id: string; kind: RenderBlock["kind"]; frac: number; err: boolean }[] = [];
+      for (const b of blocks) {
+        const el = blockElsRef.current.get(b.id);
+        if (!el) continue;
+        out.push({
+          id: b.id,
+          kind: b.kind,
+          frac: Math.min(1, el.offsetTop / H),
+          err: b.kind === "result" && b.turn.ok === false,
+        });
+      }
+      setMapTicks(out);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [blocks]);
+
+  // ── per-turn token sparkline (last 24 result turns) ─────────────────────
+  const tokenHistory = useMemo(() => {
+    const out: number[] = [];
+    for (const t of turns) {
+      if (t.kind === "result" && typeof t.tokens === "number" && t.tokens > 0) {
+        out.push(t.tokens);
+      }
+    }
+    return out.slice(-24);
+  }, [turns]);
+
   /** Wall-clock for a block (unix ms) — the turn's own createdAt (sends +
    *  resumed transcripts) first, then the arrival stamp; null when unknown
    *  (NaN-seeded resumed turns whose transcript carried no timestamp). */
@@ -4171,10 +4306,9 @@ export function ChatPane({
                 }
                 prevDay = day;
               }
-              out.push(
+              const inner =
                 b.kind === "activity" ? (
                   <ActivityGroup
-                    key={b.id}
                     tools={b.tools}
                     durationMs={b.durationMs}
                     // live only on the final activity group, while a turn is in
@@ -4182,23 +4316,19 @@ export function ChatPane({
                     live={streaming && b.durationMs == null && i === lastActivityIdx}
                     elapsedMs={liveStart != null ? now - liveStart : 0}
                     phase={runEventState.phase}
+                    forceOpen={findOpen && findMatchSet.has(b.id)}
                   />
                 ) : b.kind === "user" ? (
-                  // non-streaming blocks ARRIVE (fade-in-up) — streaming surfaces
-                  // stay unwrapped so token appends never retrigger an entrance.
-                  <div key={b.id} className="fade-in-up">
-                    <UserBubble
-                      turn={b.turn}
-                      at={t}
-                      streaming={streaming}
-                      isLast={b.id === lastUserId}
-                      onRegenerate={() => regenerate(b.turn.text)}
-                      onEdit={editMessage}
-                    />
-                  </div>
+                  <UserBubble
+                    turn={b.turn}
+                    at={t}
+                    streaming={streaming}
+                    isLast={b.id === lastUserId}
+                    onRegenerate={() => regenerate(b.turn.text)}
+                    onEdit={editMessage}
+                  />
                 ) : b.kind === "assistant" ? (
                   <AssistantBubble
-                    key={b.id}
                     turn={b.turn}
                     at={t}
                     onButton={(label) => {
@@ -4208,16 +4338,30 @@ export function ChatPane({
                     onOpenUrl={onOpenUrl}
                   />
                 ) : b.kind === "thinking" ? (
-                  <ThinkingBlock key={b.id} turn={b.turn} />
+                  <ThinkingBlock turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
                 ) : b.kind === "approval" ? (
-                  <div key={b.id} className="fade-in-up">
-                    <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
-                  </div>
+                  <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
                 ) : (
-                  <div key={b.id} className="fade-in-up">
-                    <ResultFooter turn={b.turn} onRetry={retryTurn} />
-                  </div>
-                ),
+                  <ResultFooter turn={b.turn} onRetry={retryTurn} />
+                );
+              // Every block gets a ref'd wrapper (find jumps + minimap geometry).
+              // Entrances (fade-in-up) stay on the NON-streaming kinds only, as
+              // before, so token appends never retrigger an entrance.
+              const entrance =
+                b.kind === "user" || b.kind === "approval" || b.kind === "result"
+                  ? "fade-in-up"
+                  : "";
+              out.push(
+                <div
+                  key={b.id}
+                  ref={(el) => {
+                    if (el) blockElsRef.current.set(b.id, el);
+                    else blockElsRef.current.delete(b.id);
+                  }}
+                  className={`${entrance} ${findCurrentId === b.id ? "find-current" : ""}`}
+                >
+                  {inner}
+                </div>,
               );
             });
             return out;
@@ -4235,6 +4379,89 @@ export function ChatPane({
             )}
         </div>
       </div>
+      {/* find-in-chat bar — opens via mod+F (App routes by focused pane) */}
+      {findOpen && (
+        <div className="surface-pop scale-in absolute right-3 top-2 z-30 flex items-center gap-1.5 px-2 py-1.5">
+          <Search size={12} className="shrink-0 text-[var(--color-muted)]" />
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => setFindQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                gotoFind(e.shiftKey ? -1 : 1);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                closeFind();
+              }
+            }}
+            placeholder="find in chat"
+            spellCheck={false}
+            className="w-44 bg-transparent text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
+          />
+          <span className="min-w-[34px] text-right font-mono text-[10px] tabular-nums text-[var(--color-faint)]">
+            {findMatches.length
+              ? `${findSel + 1}/${findMatches.length}`
+              : findQuery.trim().length >= 2
+                ? "0/0"
+                : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => gotoFind(-1)}
+            disabled={!findMatches.length}
+            className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:opacity-40"
+            title="previous match (shift+enter)"
+          >
+            <ChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => gotoFind(1)}
+            disabled={!findMatches.length}
+            className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:opacity-40"
+            title="next match (enter)"
+          >
+            <ChevronDown size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={closeFind}
+            className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+            title="close (esc)"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      {/* conversation minimap — long chats get a tick rail (same bottom
+          clearance convention as the jump pill); click a tick to jump */}
+      {mapTicks.length > 0 && (
+        <div className="absolute bottom-24 right-1 top-3 z-20 w-2" aria-hidden>
+          {mapTicks.map((mt) => (
+            <button
+              key={mt.id}
+              type="button"
+              tabIndex={-1}
+              onClick={() => scrollToBlock(mt.id)}
+              className={`absolute right-0 rounded-full transition-all hover:scale-y-150 ${
+                mt.err
+                  ? "h-[3px] w-2 bg-[var(--color-danger)]"
+                  : mt.kind === "user"
+                    ? "h-[3px] w-2 bg-[var(--color-accent)]/70"
+                    : mt.kind === "approval"
+                      ? "h-[3px] w-2 bg-[var(--color-warning)]/80"
+                      : mt.kind === "assistant"
+                        ? "h-[2px] w-1.5 bg-[var(--color-text-2)]/45"
+                        : "h-[2px] w-1 bg-[var(--color-border-strong)]"
+              }`}
+              style={{ top: `${mt.frac * 100}%` }}
+            />
+          ))}
+        </div>
+      )}
       {/* jump-to-latest pill — appears when autoscroll is paused or viewport is off-bottom */}
       {showJump && (
         <button
@@ -4250,22 +4477,32 @@ export function ChatPane({
         <div className="chat-col mx-auto">
           {/* context readout — out of the cramped composer, model-aware window
               (opus 4.8 = 1M, sonnet/haiku = 200K, codex = 272K) */}
-          {ctxTokens != null && (
-            <div
-              title={`${ctxTokens.toLocaleString()} tokens of context`}
-              className="mb-1.5 flex justify-end px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]"
-            >
-              {(() => {
-                const win = model.id.startsWith("claude-opus")
-                  ? 1_000_000
-                  : model.engine === "codex"
-                    ? 272_000
-                    : model.engine === "opencode"
-                      ? 256_000
-                      : 200_000;
-                const pct = Math.round((ctxTokens / win) * 100);
-                return `${(ctxTokens / 1000).toFixed(1)}K${pct > 0 ? ` · ${pct}%` : ""} ctx`;
-              })()}
+          {(ctxTokens != null || tokenHistory.length >= 3) && (
+            <div className="mb-1.5 flex items-center justify-between px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]">
+              {/* per-turn token sparkline — the result turns already carry
+                  tokens; this is the session's rhythm at a glance */}
+              {tokenHistory.length >= 3 ? (
+                <TokenSparkline values={tokenHistory} />
+              ) : (
+                <span />
+              )}
+              {ctxTokens != null ? (
+                <span title={`${ctxTokens.toLocaleString()} tokens of context`}>
+                  {(() => {
+                    const win = model.id.startsWith("claude-opus")
+                      ? 1_000_000
+                      : model.engine === "codex"
+                        ? 272_000
+                        : model.engine === "opencode"
+                          ? 256_000
+                          : 200_000;
+                    const pct = Math.round((ctxTokens / win) * 100);
+                    return `${(ctxTokens / 1000).toFixed(1)}K${pct > 0 ? ` · ${pct}%` : ""} ctx`;
+                  })()}
+                </span>
+              ) : (
+                <span />
+              )}
             </div>
           )}
           <UsageStrip
@@ -4316,6 +4553,41 @@ export function ChatPane({
  * cumulative session cost. Ticks AS YOU TALK — codex pushes rate-limit updates,
  * claude re-reads usage.json after each turn (both arrive as `usage` events).
  */
+/** Tiny per-turn token trace (last ≤24 result turns): faint polyline, latest
+ *  point accented. Pure render — the bounded history memo lives in the pane. */
+function TokenSparkline({ values }: { values: number[] }) {
+  const W = 56;
+  const H = 14;
+  const P = 2;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const span = Math.max(1, max - min);
+  const pts = values.map((v, i) => {
+    const x = P + (i * (W - 2 * P)) / Math.max(1, values.length - 1);
+    const y = H - P - ((v - min) / span) * (H - 2 * P);
+    return [x, y] as const;
+  });
+  const last = pts[pts.length - 1];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={`tokens per turn (last ${values.length}) · latest ${values[values.length - 1].toLocaleString()}`}
+    >
+      <svg width={W} height={H} aria-hidden className="shrink-0">
+        <polyline
+          points={pts.map(([x, y]) => `${x},${y}`).join(" ")}
+          fill="none"
+          stroke="var(--color-faint)"
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
+        <circle cx={last[0]} cy={last[1]} r="1.5" fill="var(--color-accent)" />
+      </svg>
+      <span className="text-[var(--color-faint)]/80">tok/turn</span>
+    </span>
+  );
+}
+
 function UsageStrip({
   usage,
   baseline,
@@ -4478,6 +4750,7 @@ function ActivityGroup({
   live,
   elapsedMs,
   phase,
+  forceOpen = false,
 }: {
   tools: ToolTurn[];
   durationMs?: number;
@@ -4485,11 +4758,13 @@ function ActivityGroup({
   elapsedMs: number;
   /** live run phase — drives the think→write→act→done spine in the header. */
   phase?: RunPhase;
+  /** find-in-chat: a hit lives in this group — reveal it regardless of toggle. */
+  forceOpen?: boolean;
 }) {
   // expanded while the turn is live (so you watch tools run in real time), then
   // auto-collapses to "Worked for Xs ›" when done — unless the user toggled it.
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const open = userToggled ?? live;
+  const open = forceOpen || (userToggled ?? live);
 
   // dedup artifacts by path (an Edit + later Write on the same file → one card)
   const artifacts = useMemo(() => {
@@ -5099,9 +5374,16 @@ function parseButtons(text: string): { body: string; buttons: string[] } {
 /** The model's extended-thinking trace — dim + collapsible. Auto-expanded while
  *  the tokens are streaming in (so you read the reasoning live), then collapses
  *  to a faint "Thought ›" line you can re-open. Mirrors claude-code's quiet trace. */
-function ThinkingBlock({ turn }: { turn: Extract<Turn, { kind: "thinking" }> }) {
+function ThinkingBlock({
+  turn,
+  forceOpen = false,
+}: {
+  turn: Extract<Turn, { kind: "thinking" }>;
+  /** find-in-chat: a hit lives in this block — reveal it regardless of toggle. */
+  forceOpen?: boolean;
+}) {
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const open = userToggled ?? turn.streaming;
+  const open = forceOpen || (userToggled ?? turn.streaming);
   return (
     <div className="flex flex-col gap-1">
       <button

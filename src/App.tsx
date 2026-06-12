@@ -668,6 +668,14 @@ function App() {
       );
       return true;
     }
+    if (target?.kind.type === "chat") {
+      // find-in-chat (ChatPane listens, matches its own pane key) — before this,
+      // ⌘F on a chat pane fell through to fullscreen, of all things.
+      window.dispatchEvent(
+        new CustomEvent("aios-chat-find", { detail: { key: target.key } }),
+      );
+      return true;
+    }
     return toggleFullscreenSelected();
   }, [panes, activeKey, toggleFullscreenSelected]);
   // personalizable sidebar — items + order live in lib/sidebar (localStorage).

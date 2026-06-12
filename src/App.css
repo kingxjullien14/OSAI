@@ -522,6 +522,18 @@ select:focus-visible,
   pointer-events: none;
 }
 
+/* .find-current — find-in-chat's active hit: a one-shot highlight wash that
+   plays when the class lands on a block wrapper (selection moved), then
+   settles to transparent so the transcript never stays decorated. */
+@keyframes aios-find-flash {
+  from { background-color: color-mix(in srgb, var(--color-highlight) 16%, transparent); }
+  to { background-color: transparent; }
+}
+.find-current {
+  animation: aios-find-flash 0.9s ease-out both;
+  border-radius: var(--aios-radius-sm, 8px);
+}
+
 /* .clock-tick — the idle hero clock's seconds glyph eases in on each 1Hz swap
    (keyed span remount) instead of hard-cutting. Opacity only: calm, no slide. */
 @keyframes aios-tick-in { from { opacity: 0.25; } to { opacity: 1; } }
