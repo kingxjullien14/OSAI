@@ -37,6 +37,7 @@ import {
   PanelLeft,
   Pencil,
   Pin,
+  SquareStack,
   Plus,
   Radio,
   Search,
@@ -151,7 +152,14 @@ import {
 } from "./lib/agentController";
 import type { AgentAuditEntry } from "./lib/agentActions";
 import { buildMirrorSnapshot, type MirrorSnapshot } from "./lib/mirror";
-import { gridTrackStorageKey, movePane } from "./lib/paneLayout";
+import { gridTrackStorageKey, loadGridTracks, movePane, saveGridTracks } from "./lib/paneLayout";
+import {
+  deleteWorkspace,
+  listWorkspaces,
+  saveWorkspace,
+  subscribeWorkspaces,
+  type Workspace,
+} from "./lib/workspaces";
 import {
   clearAllNotifications,
   clearNotification,
@@ -312,33 +320,39 @@ function persistableKind(kind: PaneContent): PaneContent | null {
   return kind;
 }
 
+/** Rehydrate saved pane rows into live panes — shared by the boot layout AND
+ *  workspace restore so both get the same session-revival semantics. */
+function hydrateSavedPanes(saved: { key?: string; label: string; kind: PaneContent }[]): Pane[] {
+  return saved.map((p) => {
+    // B1: REUSE the persisted key so a restored terminal pane keeps its
+    // original pane key → `termSessionName` derives the SAME `aios-term-<name>`
+    // and reattaches to the session its claude/codex was running in. Minting a
+    // fresh key here (the old bug) computed a brand-new name → `new-session -A`
+    // created an empty session and orphaned the real one. Reserve `seq` past
+    // the restored index so a future nextKey() can't collide.
+    const key = typeof p.key === "string" && p.key ? p.key : nextKey();
+    reserveKeySeq(key);
+    // Session restore (item 4): a browser pane reopens at the LAST url it was
+    // on, not its original landing page. BrowserPane records its live url under
+    // its pane key (the same key persisted here, B1) via browser-mem, so we
+    // read it back and seed the restored pane's url. Falls back to the
+    // persisted url (e.g. a pinned-site deep-link) when there's no memory.
+    if (p.kind.type === "browser") {
+      const last = recallPaneUrl(key) ?? recallPaneUrl(p.kind.memKey);
+      const kind = last ? { ...p.kind, url: last } : p.kind;
+      return { key, label: p.label, kind };
+    }
+    return { key, label: p.label, kind: p.kind };
+  });
+}
+
 function loadLayout(): Pane[] {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
     if (!raw) return [];
     const saved = JSON.parse(raw) as { key?: string; label: string; kind: PaneContent }[];
     if (!Array.isArray(saved)) return [];
-    return saved.map((p) => {
-      // B1: REUSE the persisted key so a restored terminal pane keeps its
-      // original pane key → `termSessionName` derives the SAME `aios-term-<name>`
-      // and reattaches to the session its claude/codex was running in. Minting a
-      // fresh key here (the old bug) computed a brand-new name → `new-session -A`
-      // created an empty session and orphaned the real one. Reserve `seq` past
-      // the restored index so a future nextKey() can't collide.
-      const key = typeof p.key === "string" && p.key ? p.key : nextKey();
-      reserveKeySeq(key);
-      // Session restore (item 4): a browser pane reopens at the LAST url it was
-      // on, not its original landing page. BrowserPane records its live url under
-      // its pane key (the same key persisted here, B1) via browser-mem, so we
-      // read it back and seed the restored pane's url. Falls back to the
-      // persisted url (e.g. a pinned-site deep-link) when there's no memory.
-      if (p.kind.type === "browser") {
-        const last = recallPaneUrl(key) ?? recallPaneUrl(p.kind.memKey);
-        const kind = last ? { ...p.kind, url: last } : p.kind;
-        return { key, label: p.label, kind };
-      }
-      return { key, label: p.label, kind: p.kind };
-    });
+    return hydrateSavedPanes(saved);
   } catch {
     return [];
   }
@@ -667,6 +681,10 @@ function App() {
   // "pin a site" inline prompt.
   // which space the pin-a-site modal targets (null = closed).
   const [pinSiteSpace, setPinSiteSpace] = useState<string | null>(null);
+  // workspaces: saved named layouts + the save-dialog draft (null = closed).
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(listWorkspaces);
+  useEffect(() => subscribeWorkspaces(() => setWorkspaces(listWorkspaces())), []);
+  const [wsDraft, setWsDraft] = useState<string | null>(null);
   // Native browser webviews paint ABOVE html, so any floating overlay (modals,
   // palette, finders, the busy-chat close prompt, splash, onboarding) must hide
   // them or it gets occluded.
@@ -674,6 +692,7 @@ function App() {
     settingsOpen ||
     paletteOpen ||
     pinSiteSpace != null ||
+    wsDraft != null ||
     overviewOpen ||
     fileFinderOpen ||
     globalSearchOpen ||
@@ -1764,6 +1783,75 @@ function App() {
     return { cols: c, rows: Math.ceil(n / c) };
   }, [visibleCount, compactWebLayout]);
 
+  // ── workspaces: named pane layouts (save / restore / delete via palette) ───
+  const saveCurrentWorkspace = useCallback(
+    (name: string) => {
+      const clean = name.trim();
+      if (!clean || panes.length === 0) return;
+      const saved = panes
+        .map((p) => {
+          const kind = persistableKind(p.kind);
+          return kind ? { key: p.key, label: p.label, kind } : null;
+        })
+        .filter((p): p is { key: string; label: string; kind: PaneContent } => p != null);
+      saveWorkspace({
+        name: clean,
+        savedAt: Date.now(),
+        panes: saved,
+        // current fr fractions for THIS grid shape (null = never resized)
+        tracks: loadGridTracks(gridTrackStorageKey(GRID_TRACK_KEY, cols, rows), cols, rows),
+      });
+      flash(`workspace “${clean}” saved`);
+    },
+    [panes, cols, rows, flash],
+  );
+
+  const applyWorkspace = useCallback(
+    (ws: Workspace) => {
+      const hydrated = hydrateSavedPanes(ws.panes);
+      if (hydrated.length === 0) return;
+      // busy chats in panes being swapped out keep running in the background
+      // (the close-prompt's primary path), with the done-notification.
+      const keep = new Set(hydrated.map((p) => p.key));
+      for (const p of panes) {
+        if (keep.has(p.key)) continue;
+        const h = chatHandles.get(p.key);
+        if (h?.busy()) h.detach(true);
+      }
+      // seed the track store for the TARGET grid shape before the panes land,
+      // so ResizableGrid's shape-reset effect reads the workspace's fractions
+      // (and the reflow transition glides the grid there).
+      if (ws.tracks) {
+        const n = hydrated.length;
+        const c = compactWebLayout ? 1 : Math.ceil(Math.sqrt(n));
+        const r = compactWebLayout ? n : Math.ceil(n / c);
+        if (ws.tracks.cols.length === c && ws.tracks.rows.length === r) {
+          saveGridTracks(gridTrackStorageKey(GRID_TRACK_KEY, c, r), ws.tracks.cols, ws.tracks.rows);
+        }
+      }
+      setMaximizedKey((m) => {
+        // a maximized pane may own OS fullscreen — drop it with the maximize
+        if (m) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
+        return null;
+      });
+      setHiddenKeys([]);
+      setPanes(hydrated);
+      const first = hydrated[0]?.key ?? null;
+      focusedPane.current = first;
+      setActiveKey(first);
+      flash(`workspace “${ws.name}” restored`);
+    },
+    [panes, compactWebLayout, flash],
+  );
+
+  const removeWorkspace = useCallback(
+    (name: string) => {
+      deleteWorkspace(name);
+      flash(`workspace “${name}” deleted`);
+    },
+    [flash],
+  );
+
   const commands: Command[] = useMemo(() => {
     return buildAppCommands({
       notify: flash,
@@ -1789,8 +1877,12 @@ function App() {
       setSettingsOpen,
       setHiddenKeys,
       setMaximizedKey,
+      workspaces,
+      openSaveWorkspace: () => setWsDraft(""),
+      applyWorkspace,
+      deleteWorkspace: removeWorkspace,
     });
-  }, [spawn, fireAppshot, chats, oracles, resumeChat, addOracle, runF5, loadProjects, projects, home, runProject, panes.length, activeKey]);
+  }, [spawn, fireAppshot, chats, oracles, resumeChat, addOracle, runF5, loadProjects, projects, home, runProject, panes.length, activeKey, workspaces, applyWorkspace, removeWorkspace]);
   // keep the repeat-last chord's view of the registry fresh without re-binding
   // the global keydown listener on every rebuild.
   commandsRef.current = commands;
@@ -2737,6 +2829,13 @@ function App() {
         onPick={(abs, line, col) => openEditorFile(abs, pathBasename(abs), { line, col })}
       />
       <PinSiteModal spaceId={pinSiteSpace} onClose={() => setPinSiteSpace(null)} />
+      <SaveWorkspaceModal
+        draft={wsDraft}
+        existing={workspaces.map((w) => w.name)}
+        onChange={setWsDraft}
+        onSave={saveCurrentWorkspace}
+        onClose={() => setWsDraft(null)}
+      />
       <PaneOverview
         open={overviewOpen}
         panes={panes}
@@ -3593,6 +3692,97 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
             >
               pin
             </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** Inline modal naming the current layout as a workspace ("save workspace…"
+ *  in the palette). Existing names render as one-click pills; reusing a name
+ *  overwrites that workspace (the button says so). */
+function SaveWorkspaceModal({
+  draft,
+  existing,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  /** Current input value; null = modal closed. */
+  draft: string | null;
+  existing: string[];
+  onChange: (v: string) => void;
+  onSave: (name: string) => void;
+  onClose: () => void;
+}) {
+  if (draft == null) return null;
+  const clean = draft.trim();
+  const overwrites = existing.some((n) => n.toLowerCase() === clean.toLowerCase());
+  const submit = () => {
+    if (!clean) return;
+    onSave(clean);
+    onClose();
+  };
+  return (
+    <div className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="save workspace"
+        className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+        onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => trapTab(e, e.currentTarget)}
+      >
+        <div className="mb-3 flex items-center gap-2 text-[13px] font-medium text-[var(--color-text)]">
+          <SquareStack size={14} className="text-[var(--color-accent)]" />
+          save workspace
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+          className="flex flex-col gap-2"
+        >
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && onClose()}
+            placeholder="e.g. deep work · review · research"
+            spellCheck={false}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+          />
+          {existing.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {existing.map((n) => (
+                <button key={n} type="button" onClick={() => onChange(n)} className="pill press text-[10px]">
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] text-[var(--color-faint)]">
+              {overwrites ? "existing name — saving overwrites it" : "keeps panes + grid sizes"}
+            </span>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-2)] hover:border-[var(--color-border-strong)]"
+              >
+                cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!clean}
+                className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {overwrites ? "overwrite" : "save"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

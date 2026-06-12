@@ -137,6 +137,31 @@ test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
   assert.match(sidebar, /UsageGlance as SidebarUsage/);
 });
 
+test("workspaces: named layouts share the boot-restore hydration + ride the palette", () => {
+  const app = read("src/App.tsx");
+  const ws = read("src/lib/workspaces.ts");
+  const cmds = read("src/lib/appCommands.ts");
+
+  // one hydration path: boot restore AND workspace apply both revive sessions
+  // (terminal reattach by key, browser last-url) through hydrateSavedPanes.
+  assert.match(app, /function hydrateSavedPanes/);
+  assert.match(app, /const hydrated = hydrateSavedPanes\(ws\.panes\)/);
+  // grid fractions restore BEFORE the panes land so the reflow glides there
+  assert.match(app, /saveGridTracks\(gridTrackStorageKey\(GRID_TRACK_KEY, c, r\)/);
+  // busy chats being swapped out detach (keep running) instead of dying silently
+  assert.match(app, /if \(h\?\.busy\(\)\) h\.detach\(true\)/);
+  // the save dialog occludes native webviews like every other overlay
+  assert.match(app, /wsDraft != null \|\|/);
+  // store: upsert by name (case-insensitive) + subscribe for live palette rows
+  assert.match(ws, /export function subscribeWorkspaces/);
+  assert.match(ws, /toLowerCase\(\) !== name\.toLowerCase\(\)/);
+  // palette: save + per-workspace restore + danger-marked delete
+  assert.match(cmds, /id: "workspace\.save"/);
+  assert.match(cmds, /workspace\.open\./);
+  assert.match(cmds, /workspace\.delete\./);
+  assert.match(cmds, /danger: "destructive"/);
+});
+
 test("finder/search modals carry the palette's full dialog+combobox ARIA mirror", () => {
   const finder = read("src/components/FileFinder.tsx");
   const search = read("src/components/GlobalSearch.tsx");

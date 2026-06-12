@@ -10,6 +10,8 @@ import {
   RefreshCw,
   Settings,
   Rows2,
+  SquareStack,
+  Trash2,
 } from "lucide-react";
 
 import type { Command as PaletteCommand } from "../components/CommandPalette.tsx";
@@ -19,6 +21,7 @@ import type { ProjectInfo } from "./run.ts";
 import { SPAWN, type PaneContent } from "./apps.ts";
 import { commandToPaletteCommand, createCommand, type AiosCommand } from "./commands.ts";
 import { MOD, chord } from "./platform.ts";
+import type { Workspace } from "./workspaces.ts";
 
 export interface AppCommandDeps {
   activeKey: string | null;
@@ -40,6 +43,12 @@ export interface AppCommandDeps {
   setSettingsOpen: (open: boolean) => void;
   setHiddenKeys: (keys: string[]) => void;
   setMaximizedKey: (key: string | null) => void;
+  /** Saved named layouts; one restore + one delete command each. */
+  workspaces: Workspace[];
+  /** Opens the name-this-workspace dialog (App owns the modal). */
+  openSaveWorkspace: () => void;
+  applyWorkspace: (ws: Workspace) => void;
+  deleteWorkspace: (name: string) => void;
   /** Surface a command failure to the user (toast) — silent no-ops erode trust. */
   notify?: (message: string) => void;
 }
@@ -54,6 +63,17 @@ function relPath(home: string | null, path: string): string {
   return home && path.startsWith(home)
     ? path.slice(home.length).replace(/^\//, "")
     : path;
+}
+
+/** "2h ago" / "3d ago" for the workspace subtitles. */
+function savedAgo(ts: number): string {
+  if (!ts) return "";
+  const m = Math.floor((Date.now() - ts) / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
@@ -118,6 +138,47 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
       }),
       group: "run",
       actionLabel: "run",
+    })),
+    {
+      command: createCommand({
+        id: "workspace.save",
+        label: "save workspace…",
+        description: "name the current pane layout to restore later",
+        scope: "global",
+        icon: createElement(SquareStack, { size: 14 }),
+        keywords: ["workspace", "layout", "save", "snapshot", "panes", "remember"],
+        enabled: () => deps.panesCount > 0,
+        run: deps.openSaveWorkspace,
+      }),
+      group: "workspaces",
+      actionLabel: "save",
+    },
+    ...deps.workspaces.map((ws) => ({
+      command: createCommand({
+        id: `workspace.open.${ws.name.toLowerCase()}`,
+        label: `workspace: ${ws.name}`,
+        description: `${ws.panes.length} ${ws.panes.length === 1 ? "pane" : "panes"} · saved ${savedAgo(ws.savedAt)} — replaces the current layout`,
+        scope: "global",
+        icon: createElement(SquareStack, { size: 14 }),
+        keywords: ["workspace", "layout", "restore", "open", "switch", ws.name],
+        run: () => deps.applyWorkspace(ws),
+      }),
+      group: "workspaces",
+      actionLabel: "restore",
+    })),
+    ...deps.workspaces.map((ws) => ({
+      command: createCommand({
+        id: `workspace.delete.${ws.name.toLowerCase()}`,
+        label: `delete workspace: ${ws.name}`,
+        description: "forgets the saved layout (open panes are untouched)",
+        scope: "global",
+        danger: "destructive",
+        icon: createElement(Trash2, { size: 14 }),
+        keywords: ["workspace", "layout", "delete", "remove", "forget", ws.name],
+        run: () => deps.deleteWorkspace(ws.name),
+      }),
+      group: "workspaces",
+      actionLabel: "delete",
     })),
     {
       command: createCommand({
