@@ -307,7 +307,14 @@ export function BrowserPane({
   // (the page returns instantly on close — same trick as the drag/loadError hide).
   // Find is excluded: it needs the page visible (it reserves space instead).
   const overlayMenuOpen =
-    bookmarksOpen || downloadsOpen || profileMenuOpen || menuOpen || sendMenuOpen;
+    bookmarksOpen ||
+    downloadsOpen ||
+    profileMenuOpen ||
+    menuOpen ||
+    sendMenuOpen ||
+    // the address-bar autocomplete was the one dropdown MISSING here — it
+    // rendered behind the native page, invisible while browsing.
+    (suggestOpen && suggestions.length > 0);
 
   useEffect(() => {
     if (!active || dragArmed || loadError || overlayMenuOpen) {
@@ -1644,6 +1651,15 @@ export function BrowserPane({
         </div>
       )}
 
+      {toast && (
+        // a reserved strip (find-bar pattern): the native webview paints over
+        // ANY absolutely-positioned toast, so the toast takes real layout space
+        // above the page instead — the rAF bounds-sync follows the shift.
+        <div className="fade-in-up flex h-7 shrink-0 items-center justify-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 text-[11px] text-[var(--color-text-2)]">
+          <span className="truncate">{toast}</span>
+        </div>
+      )}
+
       <div ref={slotRef} className="relative min-h-0 flex-1">
         {/* Thin top progress bar while a navigation is in flight. */}
         {loading && !loadError && (
@@ -1691,11 +1707,6 @@ export function BrowserPane({
           <div className="pointer-events-none absolute left-1/2 top-2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-lg">
             <Crosshair size={12} />
             annotating… click an element, then describe it
-          </div>
-        )}
-        {toast && (
-          <div className="pointer-events-none absolute bottom-2 left-1/2 z-50 -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-lg">
-            {toast}
           </div>
         )}
       </div>
