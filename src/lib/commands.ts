@@ -23,7 +23,6 @@ export interface AiosCommand {
   icon?: ReactNode;
   scope: CommandScope;
   danger: CommandDanger;
-  hotkeys: string[];
   keywords: string[];
   enabled: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, input?: unknown) => CommandResult | Promise<CommandResult>;
@@ -36,7 +35,6 @@ export interface CommandInput {
   icon?: ReactNode;
   scope: CommandScope;
   danger?: CommandDanger;
-  hotkeys?: string[];
   keywords?: string[];
   enabled?: (ctx: CommandContext) => boolean;
   run: (
@@ -49,7 +47,6 @@ export function createCommand(input: CommandInput): AiosCommand {
   return {
     ...input,
     danger: input.danger ?? "none",
-    hotkeys: input.hotkeys ?? [],
     keywords: input.keywords ?? [],
     enabled: input.enabled ?? (() => true),
     run: async (ctx, value) => {
