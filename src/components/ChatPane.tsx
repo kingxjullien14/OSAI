@@ -1902,7 +1902,12 @@ export function ChatPane({
     const el = scrollRef.current;
     if (el) {
       programmaticRef.current = true;
-      el.scrollTop = el.scrollHeight;
+      // user-initiated jump GLIDES to the bottom (the streaming auto-pin
+      // elsewhere stays instant — smooth would lag behind tokens).
+      const reduce =
+        document.documentElement.dataset.reduceMotion === "true" ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
       lastScrollHeightRef.current = el.scrollHeight;
       lastScrollTopRef.current = el.scrollTop;
     }
@@ -4467,39 +4472,50 @@ function DiffBlock({ oldText, newText }: { oldText: string; newText: string }) {
   const [expanded, setExpanded] = useState(false);
   const oldLines = oldText.split("\n");
   const newLines = newText.split("\n");
-  const capped = !expanded && oldLines.length + newLines.length > DIFF_CAP * 2;
-  const showOld = capped ? oldLines.slice(0, DIFF_CAP) : oldLines;
-  const showNew = capped ? newLines.slice(0, DIFF_CAP) : newLines;
-  const hidden =
-    oldLines.length - showOld.length + (newLines.length - showNew.length);
+  const collapsible = oldLines.length + newLines.length > DIFF_CAP * 2;
+  const oldHead = collapsible ? oldLines.slice(0, DIFF_CAP) : oldLines;
+  const oldTail = collapsible ? oldLines.slice(DIFF_CAP) : [];
+  const newHead = collapsible ? newLines.slice(0, DIFF_CAP) : newLines;
+  const newTail = collapsible ? newLines.slice(DIFF_CAP) : [];
+  const hidden = oldTail.length + newTail.length;
+
+  const row = (l: string, key: string, kind: "old" | "new") => (
+    <div
+      key={key}
+      className={
+        kind === "old"
+          ? "whitespace-pre-wrap break-words bg-[var(--color-danger)]/10 px-2.5 text-[var(--color-danger)]"
+          : "whitespace-pre-wrap break-words bg-[var(--color-success,#22c55e)]/10 px-2.5 text-[var(--color-success,#22c55e)]"
+      }
+    >
+      <span className="select-none opacity-60">{kind === "old" ? "- " : "+ "}</span>
+      {l}
+    </div>
+  );
 
   return (
     <pre className="overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] font-mono text-[11px] leading-relaxed">
-      {showOld.map((l, i) => (
-        <div
-          key={`o${i}`}
-          className="whitespace-pre-wrap break-words bg-[var(--color-danger)]/10 px-2.5 text-[var(--color-danger)]"
-        >
-          <span className="select-none opacity-60">- </span>
-          {l}
+      {oldHead.map((l, i) => row(l, `o${i}`, "old"))}
+      {oldTail.length > 0 && (
+        // .disclose: the hidden tail GROWS open (grid-rows 0fr→1fr) instead of
+        // the old instant content swap that jumped the layout.
+        <div className="disclose" data-open={expanded}>
+          <div>{oldTail.map((l, i) => row(l, `ot${i}`, "old"))}</div>
         </div>
-      ))}
-      {showNew.map((l, i) => (
-        <div
-          key={`n${i}`}
-          className="whitespace-pre-wrap break-words bg-[var(--color-success,#22c55e)]/10 px-2.5 text-[var(--color-success,#22c55e)]"
-        >
-          <span className="select-none opacity-60">+ </span>
-          {l}
+      )}
+      {newHead.map((l, i) => row(l, `n${i}`, "new"))}
+      {newTail.length > 0 && (
+        <div className="disclose" data-open={expanded}>
+          <div>{newTail.map((l, i) => row(l, `nt${i}`, "new"))}</div>
         </div>
-      ))}
+      )}
       {hidden > 0 && (
         <button
           type="button"
-          onClick={() => setExpanded(true)}
-          className="block w-full px-2.5 py-0.5 text-left text-[var(--color-faint)] italic hover:text-[var(--color-muted)]"
+          onClick={() => setExpanded((v) => !v)}
+          className="block w-full px-2.5 py-0.5 text-left italic text-[var(--color-faint)] hover:text-[var(--color-muted)]"
         >
-          {`… +${hidden} more line${hidden === 1 ? "" : "s"}`}
+          {expanded ? "show less" : `… +${hidden} more line${hidden === 1 ? "" : "s"}`}
         </button>
       )}
     </pre>
