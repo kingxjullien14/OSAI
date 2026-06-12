@@ -65,9 +65,19 @@ export interface ChatSessionInfo {
   last_user?: string;
 }
 
-/** Lists the chats started in the chat pane (from the chat store) for /resume. */
+import { cleanSessionLabel } from "./sessionLabel";
+export { cleanSessionLabel };
+
+/** Lists the chats started in the chat pane (from the chat store) for /resume.
+ *  Titles/previews are sanitized here so EVERY consumer (resume picker, hero
+ *  rail, palette rows) renders clean labels. */
 export async function listChatSessions(limit = 40): Promise<ChatSessionInfo[]> {
-  return invoke<ChatSessionInfo[]>("list_chat_sessions", { limit });
+  const sessions = await invoke<ChatSessionInfo[]>("list_chat_sessions", { limit });
+  return sessions.map((s) => ({
+    ...s,
+    title: cleanSessionLabel(s.title ?? ""),
+    last_user: s.last_user ? cleanSessionLabel(s.last_user) : s.last_user,
+  }));
 }
 
 /** Records (upserts) a chat-pane session so /resume lists only chats started here.

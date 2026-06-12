@@ -80,6 +80,7 @@ import {
   chatStart,
   chatStop,
   webChatSend,
+  cleanSessionLabel,
   listChatSessions,
   readChatTranscript,
   recordChatSession,
@@ -2541,11 +2542,13 @@ export function ChatPane({
     }
   }, []);
 
-  /** Map saved transcript turns into the live transcript model (static bubbles). */
+  /** Map saved transcript turns into the live transcript model (static bubbles).
+   *  User turns run through the session-label sanitizer so resumed CLI slash
+   *  turns repaint as "/usage", not raw <command-name> XML (user-reported). */
   const transcriptToTurns = useCallback((rows: ChatTurnInfo[]): Turn[] => {
     return rows.map((r) =>
       r.role === "user"
-        ? { kind: "user", id: uid(), text: r.text }
+        ? { kind: "user", id: uid(), text: cleanSessionLabel(r.text) }
         : { kind: "assistant", id: uid(), text: r.text, streaming: false },
     );
   }, []);
