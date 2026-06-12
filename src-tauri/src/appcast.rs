@@ -920,8 +920,12 @@ mod imp {
 #[cfg(target_os = "macos")]
 pub use imp::AppCastState;
 
-/// Non-macOS placeholder state so `.manage()` in lib.rs compiles everywhere.
-#[cfg(not(target_os = "macos"))]
+/// Windows implementation (W4-8b): Windows.Graphics.Capture twin — see wincast.rs.
+#[cfg(target_os = "windows")]
+pub use crate::wincast::AppCastState;
+
+/// Other-OS placeholder state so `.manage()` in lib.rs compiles everywhere.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[derive(Default)]
 pub struct AppCastState;
 
@@ -931,9 +935,13 @@ pub fn appcast_list_windows() -> Result<Vec<WindowInfo>, String> {
     {
         imp::list_windows()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("app-cast is macOS-only".into())
+        crate::wincast::list_windows()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("app-cast needs macOS or Windows".into())
     }
 }
 
@@ -956,10 +964,14 @@ pub fn appcast_start(
     {
         imp::start(&app, label, window_id, x, y, width, height)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        crate::wincast::start(&app, label, window_id, x, y, width, height)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, label, window_id, x, y, width, height);
-        Err("app-cast is macOS-only".into())
+        Err("app-cast needs macOS or Windows".into())
     }
 }
 
@@ -976,7 +988,11 @@ pub fn appcast_set_bounds(
     {
         imp::set_bounds(&app, label, x, y, width, height)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        crate::wincast::set_bounds(&app, label, x, y, width, height)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, label, x, y, width, height);
         Ok(())
@@ -989,7 +1005,11 @@ pub fn appcast_hide(app: tauri::AppHandle, label: String) -> Result<(), String> 
     {
         imp::hide(&app, label)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        crate::wincast::hide(&app, label)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, label);
         Ok(())
@@ -1002,7 +1022,11 @@ pub fn appcast_show(app: tauri::AppHandle, label: String) -> Result<(), String> 
     {
         imp::show(&app, label)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        crate::wincast::show(&app, label)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, label);
         Ok(())
@@ -1015,7 +1039,11 @@ pub fn appcast_close(app: tauri::AppHandle, label: String) -> Result<(), String>
     {
         imp::close(&app, label)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        crate::wincast::close(&app, label)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, label);
         Ok(())

@@ -26,6 +26,9 @@ tauri = { version = "2", features = ["unstable", "protocol-asset", "devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
+# version-neutral HWND extraction for wincast.rs (avoids depending on tauri's
+# internal `windows`-crate version unifying with ours; 0.6 = what tauri 2 impls)
+raw-window-handle = "0.6"
 serde_json = { version = "1", features = ["preserve_order"] }
 walkdir = "2"
 ignore = "0.4"
@@ -96,4 +99,22 @@ windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Com",
   "Win32_UI_Shell",
+  # ── wincast.rs: Windows.Graphics.Capture "native app as a pane" (W4-8b) ──
+  # The Windows twin of appcast.rs: capture a foreign window's frames on the
+  # GPU and present them into a child HWND floated over the React slot.
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_System_WinRT_Direct3D11",
+  "Win32_System_WinRT_Graphics_Capture",
+  "Graphics",
+  "Graphics_Capture",
+  "Graphics_DirectX",
+  "Graphics_DirectX_Direct3D11",
+  "Foundation",
 ] }

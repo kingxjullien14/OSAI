@@ -2,6 +2,8 @@
 //! oracle roster (attach to bridge-managed tmux sessions). No IDE cruft.
 
 mod appcast;
+#[cfg(target_os = "windows")]
+mod wincast;
 mod bridges;
 mod browser;
 mod browser_store;

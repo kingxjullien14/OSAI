@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Loader2, MonitorUp, RefreshCw, Search, ShieldAlert, X } from "lucide-react";
-import { isApple } from "../lib/platform";
+import { isApple, isWindows } from "../lib/platform";
 import { PaneEmpty } from "./ui";
 
 import {
@@ -61,22 +61,23 @@ interface AppGroup {
   windows: WindowInfo[];
 }
 
-/** Honest fallback when the SCK backend doesn't exist on this OS — restored
- *  layouts can still carry a cast pane even though the catalog hides it. */
+/** Honest fallback on OSes with no capture backend — restored layouts can
+ *  still carry a cast pane even though the catalog hides it. (macOS rides
+ *  ScreenCaptureKit; Windows rides Windows.Graphics.Capture since W4-8b.) */
 function CastUnavailable() {
   return (
     <div className="h-full bg-[var(--color-pane)]">
       <PaneEmpty
         icon={MonitorUp}
-        title="app cast isn't available on windows yet"
-        hint="live window mirroring rides macOS ScreenCaptureKit — a windows capture backend is on the roadmap"
+        title="app cast isn't available on this OS"
+        hint="live window mirroring needs the macOS (ScreenCaptureKit) or Windows (Graphics.Capture) backend"
       />
     </div>
   );
 }
 
 export function AppCastPane(props: Parameters<typeof AppCastPaneInner>[0]) {
-  if (!isApple) return <CastUnavailable />;
+  if (!isApple && !isWindows) return <CastUnavailable />;
   return <AppCastPaneInner {...props} />;
 }
 
@@ -152,7 +153,9 @@ function AppCastPaneInner({
         setWindows(rows);
         if (rows.length === 0) {
           setError(
-            "no capturable windows found — grant Screen Recording in System Settings › Privacy & Security, then retry",
+            isApple
+              ? "no capturable windows found — grant Screen Recording in System Settings › Privacy & Security, then retry"
+              : "no capturable windows found — open another app window, then retry",
           );
         }
       })
@@ -331,7 +334,10 @@ function AppCastPaneInner({
   );
 
   const pickedWin = windows.find((w) => w.window_id === picked) ?? null;
-  const tccDeclined = isTccDeclined(error);
+  // the Screen Recording permission rescue UI is a macOS concept — Windows
+  // (Graphics.Capture) needs no grant, so its errors must never deep-link
+  // mac System Settings.
+  const tccDeclined = isApple && isTccDeclined(error);
 
   // Running flat index so each rendered row knows its nav position.
   let flatCursor = -1;

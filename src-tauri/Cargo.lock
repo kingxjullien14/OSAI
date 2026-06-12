@@ -39,6 +39,7 @@ dependencies = [
  "objc2-web-kit",
  "parking_lot",
  "portable-pty",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "sqlx",

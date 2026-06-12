@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import type { PaneKind } from "../components/TerminalPane";
-import { isApple } from "./platform";
+import { isApple, isWindows } from "./platform";
 
 /** A pane's content — terminal-backed (shell/oracle/tmux) or a view. */
 export type PaneContent =
@@ -77,9 +77,15 @@ export const SPAWN: AppDef[] = [
   { id: "browser", kind: { type: "browser" }, icon: Globe, label: "browser", group: "tools", firstClass: true },
   ...(isApple
     ? [
+        // Attach (focus/screenshot another app) is still mac-only (mac_list_apps).
         { id: "apps", kind: { type: "apps" }, icon: MonitorUp, label: "apps", group: "tools" } as AppDef,
-        // App-cast (ScreenCaptureKit spike): live-mirror a native macOS window
-        // in a pane. Hidden by default (not firstClass) — reachable via ⌘K.
+      ]
+    : []),
+  ...(isApple || isWindows
+    ? [
+        // App-cast: live-mirror a native window in a pane. macOS rides
+        // ScreenCaptureKit (appcast.rs); Windows rides Windows.Graphics.Capture
+        // (wincast.rs, W4-8b). Hidden by default (not firstClass) — ⌘K.
         { id: "appcast", kind: { type: "appcast" }, icon: MonitorPlay, label: "app cast", group: "tools" } as AppDef,
       ]
     : []),
