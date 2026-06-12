@@ -7,9 +7,11 @@ import {
   buildMoneyAgentChatSeed,
   buildMoneyAgentRunCommand,
   createMoneyAgent,
+  isMoneyAgentDue,
   loadCustomMoneyAgents,
   loadMoneyAgentChatSession,
   saveMoneyAgentChatSession,
+  scheduleIntervalMs,
   summarizeMoneyAgentState,
 } from "./moneyAgents.ts";
 
@@ -130,4 +132,40 @@ test("run commands speak the agent's own mission, not a stranger's business", ()
   assert.match(cmd, /goal: qualify leads/);
   assert.doesNotMatch(cmd, /firaz/i);
   assert.doesNotMatch(cmd, /sales for aios/);
+});
+
+test("schedule cadences parse: canonical, every-N (5min floor), legacy phrasings, manual=never", () => {
+  const HOUR = 60 * 60_000;
+  const DAY = 24 * HOUR;
+  assert.equal(scheduleIntervalMs("hourly"), HOUR);
+  assert.equal(scheduleIntervalMs("daily"), DAY);
+  assert.equal(scheduleIntervalMs("weekly"), 7 * DAY);
+  assert.equal(scheduleIntervalMs("every 30 min"), 30 * 60_000);
+  assert.equal(scheduleIntervalMs("every 2 hours"), 2 * HOUR);
+  assert.equal(scheduleIntervalMs("every 3 days"), 3 * DAY);
+  // the quota-incident floor: "every 1 min" clamps to 5 minutes
+  assert.equal(scheduleIntervalMs("every 1 min"), 5 * 60_000);
+  // legacy phrasings the old inline scheduler accepted must keep firing
+  assert.equal(scheduleIntervalMs("always"), 6 * HOUR);
+  assert.equal(scheduleIntervalMs("daily work block"), DAY);
+  assert.equal(scheduleIntervalMs("every hour-ish"), HOUR);
+  // never-fire cases
+  assert.equal(scheduleIntervalMs("manual"), null);
+  assert.equal(scheduleIntervalMs(""), null);
+  assert.equal(scheduleIntervalMs(undefined), null);
+  assert.equal(scheduleIntervalMs("when the mood strikes"), null);
+});
+
+test("due-math: never-stamped fires, fresh stamp holds, elapsed cadence re-fires", () => {
+  const HOUR = 60 * 60_000;
+  const now = 1_750_000_000_000;
+  const agent = { id: "scout", schedule: "hourly" };
+  // never stamped → due immediately (the user asked for autonomy)
+  assert.equal(isMoneyAgentDue(agent, now, null), true);
+  // stamped 10 minutes ago → not due
+  assert.equal(isMoneyAgentDue(agent, now, now - 10 * 60_000), false);
+  // stamped over an hour ago → due again
+  assert.equal(isMoneyAgentDue(agent, now, now - HOUR - 1), true);
+  // manual never fires, stamped or not
+  assert.equal(isMoneyAgentDue({ id: "m", schedule: "manual" }, now, null), false);
 });

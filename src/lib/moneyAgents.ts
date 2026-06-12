@@ -245,6 +245,59 @@ export function loadMoneyAgentLastScheduledRun(id: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+export function saveMoneyAgentLastScheduledRun(id: string, at: number): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(lastScheduledRunKey(id), String(at));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Parse the free-text `schedule` into a pulse interval. Supported cadences:
+ *  "hourly" / "daily" / "weekly", "every N min|hours|days", and the legacy
+ *  phrasings the old inline scheduler accepted ("always" → 6h, "work block" →
+ *  daily, any "…hour…" → hourly). "manual"/empty/unknown returns null = the
+ *  scheduler never fires it. */
+export function scheduleIntervalMs(schedule: string | undefined | null): number | null {
+  const HOUR = 60 * 60_000;
+  const DAY = 24 * HOUR;
+  const s = (schedule ?? "").trim().toLowerCase();
+  if (!s || s.includes("manual")) return null;
+  const m = s.match(/^every\s+(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)$/);
+  if (m) {
+    const n = Number(m[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const unit = m[2][0]; // m | h | d
+    const ms = unit === "m" ? n * 60_000 : unit === "h" ? n * HOUR : n * DAY;
+    // floor at 5 minutes — a runaway "every 1 min" agent is a quota incident
+    return Math.max(ms, 5 * 60_000);
+  }
+  if (s.includes("hour")) return HOUR;
+  if (s.includes("always")) return 6 * HOUR;
+  if (s.includes("daily") || s.includes("work block")) return DAY;
+  if (s.includes("week")) return 7 * DAY;
+  return null;
+}
+
+/** True when an agent's cadence says it should pulse now. A never-stamped
+ *  agent with a cadence is due immediately (the user asked for autonomy —
+ *  the first pulse starts the clock). */
+export function isMoneyAgentDue(
+  agent: Pick<MoneyAgentConfig, "id" | "schedule">,
+  now: number,
+  lastRun: number | null = loadMoneyAgentLastScheduledRun(agent.id),
+): boolean {
+  const interval = scheduleIntervalMs(agent.schedule);
+  if (interval == null) return false;
+  return lastRun == null || now - lastRun >= interval;
+}
+
+/** Every configured agent whose schedule is due. */
+export function dueMoneyAgents(now = Date.now()): MoneyAgentConfig[] {
+  return loadConfiguredMoneyAgents().filter((agent) => isMoneyAgentDue(agent, now));
+}
+
 export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
   return [
     `you are the aios ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`,

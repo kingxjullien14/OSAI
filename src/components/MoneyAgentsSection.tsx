@@ -154,7 +154,8 @@ export function MoneyAgentsSection({
           <input
             value={draftSchedule}
             onChange={(event) => setDraftSchedule(event.target.value)}
-            placeholder="schedule"
+            placeholder="manual · hourly · daily · weekly · every 30 min"
+            title="a cadence makes this agent pulse on its own: it runs in a background chat and you get a clickable notification"
             className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           />
           <div className="flex items-center justify-end gap-1">

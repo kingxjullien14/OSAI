@@ -89,9 +89,11 @@ import {
   MONEY_AGENTS,
   buildMoneyAgentChatSeed,
   buildMoneyAgentRunCommand,
+  dueMoneyAgents,
   loadConfiguredMoneyAgents,
   loadMoneyAgentChatSession,
   moneyAgentById,
+  saveMoneyAgentLastScheduledRun,
 } from "./lib/moneyAgents";
 import {
   chatHandles,
@@ -2270,9 +2272,11 @@ function App() {
     spawn({ type: "chat", seed }, "chat");
   }, [spawn]);
   const openMoneyAgentChat = useCallback(
-    (id: string, label: string, command?: string) => {
+    // Returns the pane key it landed in (null if the agent is unknown) so the
+    // scheduler can deep-link its notification at the background pane.
+    (id: string, label: string, command?: string): string | null => {
       const agent = moneyAgentById(id);
-      if (!agent) return;
+      if (!agent) return null;
       const submitWhenReady = (key: string, text: string, reveal = false) => {
         let tries = 0;
         const tick = () => {
@@ -2296,7 +2300,7 @@ function App() {
       if (existingPane) {
         if (command) submitWhenReady(existingPane.key, command);
         else focusPane(existingPane.key);
-        return;
+        return existingPane.key;
       }
       const live = liveChats.find(
         (chat) => chat.title === agent.label || chat.title === agent.shortLabel,
@@ -2316,7 +2320,7 @@ function App() {
           setHiddenKeys((current) => (current.includes(key) ? current : [...current, key]));
           submitWhenReady(key, command);
         }
-        return;
+        return key;
       }
       const saved = loadMoneyAgentChatSession(agent.id);
       if (saved) {
@@ -2334,7 +2338,7 @@ function App() {
           setHiddenKeys((current) => (current.includes(key) ? current : [...current, key]));
           submitWhenReady(key, command);
         }
-        return;
+        return key;
       }
       const key = spawn(
         {
@@ -2349,9 +2353,17 @@ function App() {
       if (command) {
         setHiddenKeys((current) => (current.includes(key) ? current : [...current, key]));
       }
+      return key;
     },
     [focusPane, liveChats, panes, spawn],
   );
+
+  // (the agent scheduler lives below, beside the agent bootstrap — upgraded
+  //  in W4-7 with deep-linked notifications + the lib cadence parser)
+  const openMoneyAgentChatRef = useRef(openMoneyAgentChat);
+  useEffect(() => {
+    openMoneyAgentChatRef.current = openMoneyAgentChat;
+  }, [openMoneyAgentChat]);
   const moneyAgentChatStates = useMemo(() => {
     const out: Partial<Record<(typeof MONEY_AGENTS)[number]["id"], MoneyAgentChatState>> = {};
     for (const agent of loadConfiguredMoneyAgents()) {
@@ -2392,78 +2404,34 @@ function App() {
       setHiddenKeys((current) => (current.includes(key) ? current : [...current, key]));
     }
   }, [nativeRuntime, panes, spawn]);
+  // The agent scheduler (W4-7 upgrade). Each due agent fires its pulse into a
+  // BACKGROUND chat (openMoneyAgentChat hides command-spawned panes — no focus
+  // stealing; its existing-pane path submits without reveal), then a
+  // high-priority notification deep-links at that pane (focusPane un-hides).
+  // The stamp writes BEFORE the fire so a slow spawn can never double-pulse.
+  // Cadences parse via scheduleIntervalMs (hourly/daily/weekly/"every N m|h|d"
+  // + the legacy "always"/"work block" phrasings, 5-min floor). Previously the
+  // tick re-implemented the open-agent-chat dance inline and fired SILENTLY —
+  // autonomy without receipts.
   useEffect(() => {
     if (!nativeRuntime) return;
-    const cadenceMs = (schedule?: string): number | null => {
-      const value = (schedule || "manual").toLowerCase();
-      if (value.includes("manual")) return null;
-      if (value.includes("hour")) return 60 * 60 * 1000;
-      if (value.includes("always")) return 6 * 60 * 60 * 1000;
-      if (value.includes("daily") || value.includes("work block")) return 24 * 60 * 60 * 1000;
-      return null;
-    };
-    const lastRunKey = (id: string) => `aios.chatAgents.lastScheduledRun:${id}`;
-    const submitHidden = (key: string, text: string) => {
-      let tries = 0;
-      const tick = () => {
-        const submit = paneSubmitters.get(key);
-        if (submit) {
-          submit(text);
-          return;
-        }
-        if (tries++ < 60) setTimeout(tick, 150);
-      };
-      tick();
-    };
     const tick = () => {
-      const now = Date.now();
-      for (const agent of loadConfiguredMoneyAgents()) {
-        const cadence = cadenceMs(agent.schedule);
-        if (!cadence) continue;
-        const key = lastRunKey(agent.id);
-        const lastRun = Number(localStorage.getItem(key) || "0");
-        if (lastRun && now - lastRun < cadence) continue;
-        localStorage.setItem(key, String(now));
-        const command = buildMoneyAgentRunCommand(agent, "scheduled");
-        const existingPane = panes.find(
-          (pane) => pane.kind.type === "chat" && pane.kind.agentId === agent.id,
-        );
-        if (existingPane) {
-          submitHidden(existingPane.key, command);
-          continue;
-        }
-        const live = liveChats.find(
-          (chat) => chat.title === agent.label || chat.title === agent.shortLabel,
-        );
-        const saved = loadMoneyAgentChatSession(agent.id);
-        const paneKey = spawn(
-          live
-            ? {
-                type: "chat",
-                reattach: live.id,
-                modelId: agentChatModelId(),
-                agentId: agent.id,
-                agentLabel: agent.label,
-              }
-            : saved
-              ? {
-                  type: "chat",
-                  resume: { id: saved.sessionId, title: saved.title },
-                  modelId: agentChatModelId(),
-                  agentId: agent.id,
-                  agentLabel: agent.label,
-                }
-              : {
-                  type: "chat",
-                  seed: `${buildMoneyAgentChatSeed(agent)}\n\noperator command:\n${command}`,
-                  modelId: agentChatModelId(),
-                  agentId: agent.id,
-                  agentLabel: agent.label,
-                },
+      for (const agent of dueMoneyAgents()) {
+        saveMoneyAgentLastScheduledRun(agent.id, Date.now());
+        const key = openMoneyAgentChatRef.current(
+          agent.id,
           agent.label,
+          buildMoneyAgentRunCommand(agent, "scheduled"),
         );
-        setHiddenKeys((current) => (current.includes(paneKey) ? current : [...current, paneKey]));
-        if (live || saved) submitHidden(paneKey, command);
+        pushNotification({
+          kind: "agent.scheduled",
+          level: "info",
+          priority: "high",
+          sourceLabel: "agents",
+          title: `scheduled pulse: ${agent.label}`,
+          body: `${agent.schedule || "scheduled"} cadence — running in a background chat. click to watch.`,
+          target: key ? { type: "pane", key } : undefined,
+        });
       }
     };
     const start = setTimeout(tick, 5_000);
@@ -2472,7 +2440,7 @@ function App() {
       clearTimeout(start);
       clearInterval(interval);
     };
-  }, [liveChats, nativeRuntime, panes, spawn]);
+  }, [nativeRuntime]);
   const deepSearchFromPalette = useCallback((query: string) => {
     spawn({
       type: "chat",

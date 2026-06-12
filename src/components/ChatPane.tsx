@@ -4083,6 +4083,73 @@ export function ChatPane({
     return out.slice(-24);
   }, [turns]);
 
+  // ── smart starter deck — the hero's cards read the workspace ────────────
+  // One shallow readDir on the empty hero probes what kind of place this is:
+  // a manifest → "explain this codebase" gets specific + "fix" becomes "run
+  // the tests"; a git repo → "plan" becomes "what changed lately?"; an empty
+  // folder → "explore" becomes "start from scratch". Static deck when the
+  // probe fails or there's no cwd.
+  const [deckHints, setDeckHints] = useState<{
+    manifest?: string;
+    hasGit: boolean;
+    hasReadme: boolean;
+    bare: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!empty || !cwd) {
+      setDeckHints(null);
+      return;
+    }
+    let alive = true;
+    readDir(cwd)
+      .then((entries) => {
+        if (!alive) return;
+        const names = new Set(entries.map((e) => e.name.toLowerCase()));
+        const manifest = ["package.json", "cargo.toml", "pyproject.toml", "go.mod"].find((m) =>
+          names.has(m),
+        );
+        setDeckHints({
+          manifest,
+          hasGit: names.has(".git"),
+          hasReadme: names.has("readme.md"),
+          bare: entries.length === 0,
+        });
+      })
+      .catch(() => {
+        if (alive) setDeckHints(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [empty, cwd]);
+  const starterDeck = useMemo(() => {
+    const deck = STARTER_DECK.map((c) => ({ ...c }));
+    if (!deckHints || !cwd) return deck;
+    const projectName = baseName(cwd);
+    if (deckHints.bare) {
+      deck[0].sub = "start from scratch";
+      deck[0].prompt =
+        "this folder is empty — help me scaffold a new project here. ask me what we're building first";
+      return deck;
+    }
+    if (deckHints.manifest) {
+      deck[0].sub = `explain ${projectName}`;
+      deck[0].prompt = `explain this codebase — start from ${deckHints.manifest} and give me the lay of the land`;
+      deck[2].sub = "run the tests";
+      deck[2].prompt = "run the test suite, then fix the first failure you find";
+    } else if (deckHints.hasReadme) {
+      deck[0].sub = `summarize ${projectName}`;
+      deck[0].prompt = "read the README and summarize what this project is and how to work in it";
+    }
+    if (deckHints.hasGit) {
+      deck[1].label = "catch up";
+      deck[1].sub = "what changed lately?";
+      deck[1].prompt =
+        "summarize the recent git history — what's been worked on lately, and what looks unfinished?";
+    }
+    return deck;
+  }, [deckHints, cwd]);
+
   /** Wall-clock for a block (unix ms) — the turn's own createdAt (sends +
    *  resumed transcripts) first, then the arrival stamp; null when unknown
    *  (NaN-seeded resumed turns whose transcript carried no timestamp). */
@@ -4172,10 +4239,12 @@ export function ChatPane({
             <span>{SHIFT}⏎ newline</span>
           </div>
           {/* starter deck: the hero hands you somewhere to GO instead of a
-              blank box — four lift-on-hover cards, gone on the first keystroke. */}
+              blank box — four lift-on-hover cards, gone on the first keystroke.
+              Cards are cwd-aware (starterDeck): manifests, git, README and
+              empty folders each reshape the prompts. */}
           {!hasDraft && (
             <div className="stagger mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {STARTER_DECK.map(({ icon: Icon, label, sub, prompt }) => (
+              {starterDeck.map(({ icon: Icon, label, sub, prompt }) => (
                 <button
                   key={label}
                   type="button"
