@@ -83,19 +83,20 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Activity Glow + repeat-last** (`a1476cf`) — breathing chrome seam on streaming panes; Ctrl+Shift+K re-fires the last command
 
 - [x] **Claude usage live + account-global** (`7e3a953`, user-reported) — OAuth usage endpoint (the /usage panel's own source) replaces the stale statusline file (now fallback); chat strip + sidebar share one global source; verified live (39%/31%)
+- [x] **Per-model usage windows** (`4569765`) — sonnet/opus weekly carve-outs (+codex spark) parsed from the OAuth payload into a `models` map; nested rows in sidebar + idle home; "7d N% left" chips on matching model-picker rows
+- [x] **A11y: ARIA mirror + focus traps** (`f3be886`) — FileFinder/GlobalSearch get the palette's full dialog+combobox+listbox pattern (activedescendant, live counts, aria-busy) + keyboard parity (Home/End/Page/Ctrl-N/P); shared `trapTab` applied across palette/finder/search/Settings/close-prompt/PinSite/Onboarding/goal-editor; Mission Control gains dialog semantics
+- [x] **Grid reflow glides** (`75a4b5f`) — grid-template tracks transition on pane open/close/layout-reset (Chromium interpolation), gated off during gutter drags; gutters end on pointercancel
+- [x] **Token ratchet tightened** (`586fb35`) — text-white 6→0 (accent-fg CTAs, themed avatar scrim), shadow-2xl 16→3 (--aios-shadow-pop; floor = locked TerminalComposer)
+- [x] **Docs reorg committed** (`6fdfb7f`) — user moved secondary plans/notes into misc/; live docs (TRACKER, PLAN-superapp-uiux, README, WINDOWS*) stay at root
 
-## Still open (the long tail)
-- [ ] per-model 7d windows (the endpoint also returns seven_day_sonnet etc.) in the model picker / sidebar
-- [ ] FileFinder/GlobalSearch full ARIA mirror + focus traps across modals
-- [ ] grid-reflow transition (needs a not-while-dragging gate in ResizableGrid)
-- [ ] Workspaces (saved layouts), resume rail on the hero, living pet wiring, soundscape
-- [ ] remaining token ratchet counts → 0 (text-white 6, accent-hover 30, shadow-2xl 16)
-- [ ] per-model usage windows in the model picker ("not installed" reasons)
-- [ ] BrowserPane local occlusion (suggest dropdown/toasts under webview) + remaining superapp-pane §11 polish (menus onto .surface-pop, poll-swap transitions)
-- [ ] xterm/Monaco themes from live tokens; voice waveform + whisper URL setting; editor/terminal skeletons; density+font-scale CSS consumers (the boot plumbing exists, App.css consumers don't)
-- [ ] dead-code deletion batch (bento CSS verified unreferenced; hotkeys field; reportUsage loop)
-- [ ] palette trust items (disabled/danger styling, matcher cap) + modal focus traps/ARIA mirror in FileFinder/GlobalSearch
-- [ ] maximize/restore FLIP morph + grid-reflow transition + smoothed autoscroll + `.disclose` adoption in chat tool cards
+## Still open (the long tail, deduped 2026-06-12)
+- [ ] Resume rail on the empty chat hero (recent sessions one click away — /resume data already wired)
+- [ ] Workspaces (saved layouts + palette commands + morph)
+- [ ] Living pet wiring (react to terminal/agent activity), soundscape (optional, default off)
+- [ ] accent-hover discipline pass — 30 `hover:border-accent` sites, per-spot judgment (primary affordances keep accent, decoration → border-strong)
+- [ ] superapp-pane §11 leftovers — remaining pane menus onto `.surface-pop`, poll-swap transitions (cast/mirror rosters)
+- [ ] "not installed" model rows could explain *why* (which binary is missing + how to get it)
+- [ ] homescreen final touches — command line onto `.surface-pop`, day-aware greeting clause
 
 ## Verification gates (every batch)
 `npx tsc --noEmit` · `npm run test:chatpane` · `cargo check` (Rust batches) · `npm run build` (per wave) · manual run at the end
