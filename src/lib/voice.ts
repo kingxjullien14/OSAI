@@ -24,6 +24,36 @@ const whisperUrl = (): string =>
 /** Target format whisper.cpp wants: 16 kHz mono PCM16. */
 const TARGET_SAMPLE_RATE = 16000;
 
+/** Pre-flight probe budget — localhost answers in single-digit ms; anything
+ *  slower than this is effectively down for push-to-talk purposes. */
+const PREFLIGHT_TIMEOUT_MS = 1500;
+/** A good probe is trusted this long so repeated push-to-talk adds zero
+ *  latency. A FAILED probe is never cached — the next attempt re-checks, so
+ *  starting the server fixes dictation immediately. */
+const PREFLIGHT_OK_TTL_MS = 60_000;
+
+let preflightOkAt = 0;
+
+/** True iff the whisper endpoint answered an HTTP request recently. ANY status
+ *  counts as reachable (whisper.cpp may 404/405 a HEAD on /inference) — the
+ *  pre-flight only screens out connection-refused/timeout, i.e. "server not
+ *  running", which previously surfaced only AFTER you'd finished recording. */
+export async function whisperReachable(): Promise<boolean> {
+  if (Date.now() - preflightOkAt < PREFLIGHT_OK_TTL_MS) return true;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PREFLIGHT_TIMEOUT_MS);
+  try {
+    await window.fetch(whisperUrl(), { method: "HEAD", signal: controller.signal });
+    preflightOkAt = Date.now();
+    return true;
+  } catch {
+    preflightOkAt = 0;
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Hard ceiling so a wedged decode/fetch can never hang the UI forever. */
 const TRANSCRIBE_TIMEOUT_MS = 60_000;
 
@@ -97,6 +127,15 @@ export async function dictateStart(): Promise<void> {
   }
   if (typeof MediaRecorder === "undefined") {
     throw new Error("audio recording (MediaRecorder) unavailable");
+  }
+
+  // Pre-flight the transcription endpoint BEFORE touching the mic. A dead
+  // whisper server used to surface only after you'd finished speaking — the
+  // recording was then thrown away. Fail fast, name the URL, point at the fix.
+  if (!(await whisperReachable())) {
+    throw new Error(
+      `whisper server not reachable at ${whisperUrl()} — start it, or set the endpoint in Settings → general`,
+    );
   }
 
   let stream: MediaStream;

@@ -42,6 +42,7 @@ import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane, startPathDrag } from "../lib/
 import { fileIcon } from "../lib/fileIcons";
 import { basename, dirname, normalizeSlashes } from "../lib/paths.ts";
 import { isApple } from "../lib/platform";
+import { Skeleton } from "./ui";
 import { PaneDropZone } from "./PaneDropZone";
 
 const GIT_COLOR: Record<GitCode, string> = {
@@ -91,6 +92,7 @@ export function FilesPane({
   const [showAll, setShowAll] = useState(() => loadBool(ALL_KEY));
   const [projOpen, setProjOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [projScan, setProjScan] = useState<"idle" | "scanning" | "done" | "error">("idle");
 
   // Read the live toggle values inside callbacks without re-creating loadDir on
   // every toggle (which would otherwise re-run effects). Updated each render.
@@ -258,14 +260,25 @@ export function FilesPane({
     spawnPane("browser", { url: fileSrc(selected) });
   }, [selected, children]);
 
+  const scanProjects = useCallback(() => {
+    setProjScan("scanning");
+    listProjects()
+      .then((p) => {
+        setProjects(p);
+        setProjScan("done");
+      })
+      .catch(() => {
+        setProjects([]);
+        setProjScan("error");
+      });
+  }, []);
+
   const openProjectPicker = useCallback(() => {
     setProjOpen((o) => !o);
-    if (projects.length === 0) {
-      listProjects()
-        .then(setProjects)
-        .catch(() => setProjects([]));
-    }
-  }, [projects.length]);
+    // re-scan on every open while we have nothing — a failed/empty first scan
+    // must not freeze the picker on a stale result forever.
+    if (projects.length === 0) scanProjects();
+  }, [projects.length, scanProjects]);
 
   const rootName = basename(root) || root;
   const f = filter.trim().toLowerCase();
@@ -348,7 +361,25 @@ export function FilesPane({
             <div className="surface-pop absolute right-2 top-9 z-40 max-h-[60vh] w-64 overflow-auto py-1">
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">open project</div>
               {projects.length === 0 ? (
-                <div className="px-3 py-2 text-[12px] text-[var(--color-muted)]">scanning…</div>
+                projScan === "scanning" || projScan === "idle" ? (
+                  <div className="flex flex-col gap-1.5 px-3 py-2">
+                    <Skeleton className="h-3 w-40" />
+                    <Skeleton className="h-3 w-28" />
+                    <span className="pt-0.5 text-[11px] text-[var(--color-faint)]">scanning projects…</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-start gap-1.5 px-3 py-2">
+                    <span className="text-[12px] text-[var(--color-muted)]">
+                      {projScan === "error" ? "couldn't scan for projects" : "no projects found"}
+                    </span>
+                    <button
+                      onClick={scanProjects}
+                      className="rounded-md border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                    >
+                      rescan
+                    </button>
+                  </div>
+                )
               ) : (
                 projects.map((p) => (
                   <button

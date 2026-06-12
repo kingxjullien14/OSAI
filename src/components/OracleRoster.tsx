@@ -33,6 +33,8 @@ import {
   type TmuxSession,
 } from "../lib/pty";
 import { isTauriRuntime } from "../lib/tauri";
+import { isWindows } from "../lib/platform";
+import { loadSettings } from "../lib/settings";
 
 interface Props {
   iconsOnly?: boolean;
@@ -43,12 +45,14 @@ interface Props {
 }
 
 /**
- * firaz's load-bearing primary oracle. NOT the master — but his WhatsApp routes
- * to `aios-firaz`, so deleting it silently breaks routing. Gets a distinct,
- * explicitly-warned confirm path that can't be fat-fingered. Keep in sync with
- * `AIOS_PRIMARY_ORACLE` / `primary_oracle_identity()` in oracles.rs.
+ * The load-bearing primary oracle. NOT the master — but external routing (e.g.
+ * WhatsApp) may point at `aios-<id>`, so deleting it silently breaks routing.
+ * Gets a distinct, explicitly-warned confirm path that can't be fat-fingered.
+ * Configurable via Settings → oracles (`primaryOracleId`); default preserves
+ * the legacy "firaz" session. Keep aligned with `AIOS_PRIMARY_ORACLE` /
+ * `primary_oracle_identity()` in oracles.rs (env override on the Rust side).
  */
-const PRIMARY_ORACLE_IDENTITY = "firaz";
+const primaryOracleIdentity = (): string => loadSettings().primaryOracleId?.trim() || "firaz";
 
 const HIDDEN_KEY = "aios.hiddenOracles";
 const loadHidden = (): Set<string> => {
@@ -131,14 +135,14 @@ export function OracleRoster({
   // Is the primary (firaz) oracle running? If not, offer a one-tap spawn —
   // create_oracle runs the bridge's oracle-spawn.sh to bring up the real
   // aios-firaz working session, then we attach to it.
-  const primaryRunning = oracles.some((o) => o.identity === PRIMARY_ORACLE_IDENTITY);
+  const primaryRunning = oracles.some((o) => o.identity === primaryOracleIdentity());
   const spawnPrimary = async () => {
     setSpawning(true);
     setError(null);
     try {
-      await createOracle(PRIMARY_ORACLE_IDENTITY);
+      await createOracle(primaryOracleIdentity());
       await refresh();
-      onAttachOracle(PRIMARY_ORACLE_IDENTITY);
+      onAttachOracle(primaryOracleIdentity());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -157,7 +161,7 @@ export function OracleRoster({
         >
           <Radio size={14} />
         </button>
-        {!collapsed && nativeReady && !primaryRunning && (
+        {!collapsed && nativeReady && !isWindows && !primaryRunning && (
           <button
             onClick={spawnPrimary}
             disabled={spawning}
@@ -254,12 +258,19 @@ export function OracleRoster({
 
         {!collapsed && (
         <div className="flex flex-col gap-1">
-          {nativeReady && !primaryRunning && !chatpaneAgentsOnly && (
+          {/* tmux doesn't exist on Windows — a one-tap spawn that can never
+              succeed is worse than no affordance. One honest line instead. */}
+          {isWindows && !chatpaneAgentsOnly && oracles.length === 0 && (
+            <p className="px-2 py-1 text-[10px] leading-snug text-[var(--color-faint)]">
+              oracles run as tmux sessions — not available on windows yet
+            </p>
+          )}
+          {nativeReady && !isWindows && !primaryRunning && !chatpaneAgentsOnly && (
             <button
               onClick={spawnPrimary}
               disabled={spawning}
               className="group flex items-center gap-2 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1.5 text-left transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
-              title={`spawn your oracle (aios-${PRIMARY_ORACLE_IDENTITY})`}
+              title={`spawn your oracle (aios-${primaryOracleIdentity()})`}
             >
               {spawning ? (
                 <RefreshCw size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
@@ -268,10 +279,10 @@ export function OracleRoster({
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] text-[var(--color-text)]">
-                  {spawning ? `spawning ${PRIMARY_ORACLE_IDENTITY}…` : "spawn my oracle"}
+                  {spawning ? `spawning ${primaryOracleIdentity()}…` : "spawn my oracle"}
                 </div>
                 <div className="truncate text-[10px] text-[var(--color-faint)]">
-                  {PRIMARY_ORACLE_IDENTITY} · offline
+                  {primaryOracleIdentity()} · offline
                 </div>
               </div>
             </button>
@@ -399,7 +410,7 @@ function OracleRow({
   const [confirmPrimary, setConfirmPrimary] = useState(false);
   const [draft, setDraft] = useState(oracle.identity);
 
-  const isPrimary = oracle.identity === PRIMARY_ORACLE_IDENTITY;
+  const isPrimary = oracle.identity === primaryOracleIdentity();
 
   // Auto-clear the delete confirm if the user moves on.
   useEffect(() => {
@@ -517,7 +528,7 @@ function OracleRow({
       {isPrimary && confirmPrimary && (
         <div className="flex flex-col gap-1.5 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-2 py-1.5">
           <span className="text-[10px] leading-snug text-[var(--color-danger)]">
-            {`deleting aios-${PRIMARY_ORACLE_IDENTITY} breaks your whatsapp routing`}
+            {`deleting aios-${primaryOracleIdentity()} breaks your whatsapp routing`}
           </span>
           <div className="flex items-center gap-1.5">
             <button

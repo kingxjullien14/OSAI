@@ -4471,7 +4471,7 @@ function PaneCard({
               type="button"
               onClick={(e) => (e.stopPropagation(), onToggleMax())}
               className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title={maximized ? "Restore pane" : "Maximize pane"}
+              title={maximized ? "Restore pane (Esc)" : "Maximize pane"}
             >
               {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
             </button>

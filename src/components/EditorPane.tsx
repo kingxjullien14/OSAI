@@ -272,7 +272,7 @@ export function EditorPane({
         {dirty ? (
           <Circle size={8} className="shrink-0 fill-[var(--color-accent)] text-[var(--color-accent)]" />
         ) : savedAt ? (
-          <Check size={11} className="shrink-0 text-[var(--color-success,#22c55e)]" />
+          <Check size={11} className="shrink-0 text-[var(--color-success)]" />
         ) : null}
         <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]" title={path}>
           {name}

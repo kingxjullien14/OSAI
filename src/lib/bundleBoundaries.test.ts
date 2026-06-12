@@ -715,6 +715,20 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
   // floor is 3, not 0: TerminalComposer.tsx is locked (never edited) and
   // carries the last three. Everything editable is on --aios-shadow-pop.
   ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 3);
+
+  // Hex color literals — 0 outside the two legit users: TerminalRuntime.tsx
+  // (xterm's 16-color ANSI palette is hex by contract) and Settings.tsx (the
+  // theme/accent swatch DEFINITIONS are the source the tokens come from).
+  const hexSources = readdirSync(dir, { recursive: true })
+    .filter((f) => String(f).endsWith(".tsx"))
+    .filter((f) => !/TerminalRuntime\.tsx$|Settings\.tsx$/.test(String(f)))
+    .map((f) => readFileSync(join(dir, String(f)), "utf8"))
+    .join("\n");
+  const hexCount = (hexSources.match(/#[0-9a-fA-F]{6}\b/g) ?? []).length;
+  assert.ok(
+    hexCount <= 0,
+    `hex color literals in components: ${hexCount} (ratchet max 0) — use a --color-* token (exempt: TerminalRuntime ANSI palette, Settings swatch definitions)`,
+  );
 });
 
 test("panes are drag-to-move reorderable (pointer-driven, webview-safe)", () => {

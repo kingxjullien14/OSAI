@@ -27,6 +27,7 @@ import { chord, isApple } from "../lib/platform";
 import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { paneWriters, paneSubmitters, openUrlInPane, spawnPane } from "../lib/paneBus";
 import { isTauriRuntime } from "../lib/tauri";
+import { onPetError, onPetUsage, onPetUserMessage } from "../lib/pet";
 
 /** Wrap text in bracketed-paste markers so a TUI (claude code, vim, a shell with
  *  bracketed-paste mode on) treats it as ONE atomic paste — the trailing CR
@@ -182,6 +183,8 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
   const claudeStatusRef = useRef<{ mode?: string; model?: string; ctxPct?: number }>(
     {},
   );
+  // Last time a ctx% change was forwarded to the pet bus (2s throttle).
+  const petUsageAtRef = useRef(0);
   const lastBtnRef = useRef("");
   // When the compose box is open, an "append to box" writer it registers — so
   // global ⌘J dictation (App's single VoiceButton) lands in the box, exactly
@@ -427,6 +430,17 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
         ) {
           claudeStatusRef.current = next;
           setClaudeStatus(next);
+          // Pet bus: the terminal is where the agent actually runs — let the
+          // companion feel the context window draining (ctxPct is "% left";
+          // pet usage wants "% consumed"). Throttled: ctx moves a percent at a
+          // time, but a TUI repaint can re-emit bursts.
+          if (next.ctxPct !== prev.ctxPct && next.ctxPct != null) {
+            const t = Date.now();
+            if (t - petUsageAtRef.current > 2000) {
+              petUsageAtRef.current = t;
+              onPetUsage({ pct: 100 - next.ctxPct });
+            }
+          }
         }
       }
 
@@ -480,6 +494,9 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
         }
       } catch (e) {
         term.write(`\r\n\x1b[31m[aios] spawn failed: ${e}\x1b[0m\r\n`);
+        // A definite failure (unlike pty-exit, which carries no code and may be
+        // a clean `exit`) — the one terminal signal the pet should wince at.
+        onPetError(String(e));
         return;
       }
 
@@ -617,6 +634,9 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
   const composerSend = (text: string) => {
     const id = sessionIdRef.current;
     if (id == null) return;
+    // Pet bus: a deliberate "send to the agent" gesture — same signal ChatPane
+    // emits, so the companion is attentive to terminal-driven work too.
+    onPetUserMessage({ textLength: text.length });
     // auto-correct the "wrong spot": if the terminal is scrolled up (reading
     // backlog / tmux copy-mode), the prompt isn't in view and the sent line gets
     // lost. Snap to the live bottom + refocus first, then write. No-op when

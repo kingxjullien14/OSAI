@@ -39,6 +39,7 @@ import {
   type Bridges,
 } from "../lib/bridges";
 import { type NotificationLevel } from "../lib/notifications";
+import { isWindows } from "../lib/platform";
 // (reportDiag dropped with the inline clipboard handler — CopyButton owns it)
 import { CopyButton } from "./ui";
 
@@ -197,15 +198,19 @@ export function BridgesPane() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={pairPersonal}
-            disabled={pairing}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
-            title="pair your personal WhatsApp (wwebjs) — enables the 'personal' send channel"
-          >
-            {pairing ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
-            pair personal
-          </button>
+          {/* the wwebjs pairing script lives on the macOS bridge host — on
+              Windows the button would spin ~40s and fail. Don't offer it. */}
+          {!isWindows && (
+            <button
+              onClick={pairPersonal}
+              disabled={pairing}
+              className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
+              title="pair your personal WhatsApp (wwebjs) — enables the 'personal' send channel"
+            >
+              {pairing ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
+              pair personal
+            </button>
+          )}
           <button
             onClick={refresh}
             className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
@@ -250,6 +255,12 @@ export function BridgesPane() {
           all the apps AIOS can message people through. a{" "}
           <span className="text-[var(--color-success)]">green dot</span> means it's on and
           working — grey means it's not set up yet.
+          {isWindows && (
+            <span className="mt-1 block text-[var(--color-faint)]">
+              channels are detected on the macOS bridge host (launchd + wwebjs) — on windows
+              everything below reads as offline.
+            </span>
+          )}
         </p>
 
         {error && <p className="text-[12px] text-[var(--color-danger)]">{error}</p>}

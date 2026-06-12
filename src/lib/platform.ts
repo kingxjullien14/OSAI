@@ -20,6 +20,18 @@ const APPLE =
 /** True on macOS / iOS. */
 export const isApple = APPLE;
 
+/** True on Windows. Distinct from `!isApple` — Linux keeps Unix-only surfaces
+ *  (tmux oracles, launchd bridges) that Windows must gate honestly. */
+export const isWindows =
+  typeof navigator !== "undefined" &&
+  /Win/i.test(
+    (navigator as Navigator & { userAgentData?: { platform?: string } })
+      .userAgentData?.platform ||
+      navigator.platform ||
+      navigator.userAgent ||
+      "",
+  );
+
 /** Primary accelerator label — ⌘ (mac) / Ctrl (win+linux). */
 export const MOD = APPLE ? "⌘" : "Ctrl";
 /** Alt/Option label — ⌥ (mac) / Alt (win+linux). */

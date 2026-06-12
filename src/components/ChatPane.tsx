@@ -1402,6 +1402,15 @@ export function ChatPane({
   // the box on stop. Esc cancels.
   type VoicePhase = "idle" | "recording" | "transcribing";
   const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
+  // Transient dictation problem (mic denied, whisper unreachable, transcribe
+  // failed) — rendered as one strip in the composer; mic failures must never
+  // be silent. Auto-clears.
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!voiceNote) return;
+    const t = setTimeout(() => setVoiceNote(null), 8000);
+    return () => clearTimeout(t);
+  }, [voiceNote]);
   const [voiceElapsed, setVoiceElapsed] = useState(0);
   const voicePhaseRef = useRef<VoicePhase>("idle");
   voicePhaseRef.current = voicePhase;
@@ -1418,9 +1427,14 @@ export function ChatPane({
   const micStart = useCallback(async () => {
     if (voicePhaseRef.current !== "idle") return;
     try {
+      setVoiceNote(null);
       await dictateStart();
       setVoicePhase("recording");
-    } catch {
+    } catch (e) {
+      // pre-flight/mic failures were silently swallowed here — the mic just
+      // didn't arm with no explanation. Name the problem (incl. the whisper
+      // endpoint pre-flight from lib/voice.ts).
+      setVoiceNote(String((e as Error)?.message ?? e));
       setVoicePhase("idle");
     }
   }, []);
@@ -1432,8 +1446,8 @@ export function ChatPane({
       if (text) {
         setInput((v) => (v ? v.trimEnd() + " " + text : text));
       }
-    } catch {
-      /* best-effort dictation */
+    } catch (e) {
+      setVoiceNote(String((e as Error)?.message ?? e));
     } finally {
       setVoicePhase("idle");
       taRef.current?.focus();
@@ -3471,6 +3485,17 @@ export function ChatPane({
               e.target.value = "";
             }}
           />
+          {voiceNote && (
+            <button
+              type="button"
+              onClick={() => setVoiceNote(null)}
+              className="flex w-full items-center gap-1.5 px-4 pt-2 text-left font-mono text-[11px] text-[var(--color-danger)]"
+              title="dismiss"
+            >
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="min-w-0 truncate">{voiceNote}</span>
+            </button>
+          )}
           {recording ? (
             <div className="flex items-center gap-3 px-4 pt-4 pb-2">
               <div className="flex h-7 flex-1 items-center gap-[3px] overflow-hidden">
@@ -3787,6 +3812,7 @@ export function ChatPane({
       ctxTokens,
       images,
       voicePhase,
+      voiceNote,
       voiceElapsed,
       streaming,
       backendBusy,
@@ -4722,7 +4748,7 @@ function DiffBlock({ oldText, newText }: { oldText: string; newText: string }) {
       className={
         kind === "old"
           ? "whitespace-pre-wrap break-words bg-[var(--color-danger)]/10 px-2.5 text-[var(--color-danger)]"
-          : "whitespace-pre-wrap break-words bg-[var(--color-success,#22c55e)]/10 px-2.5 text-[var(--color-success,#22c55e)]"
+          : "whitespace-pre-wrap break-words bg-[var(--color-success)]/10 px-2.5 text-[var(--color-success)]"
       }
     >
       <span className="select-none opacity-60">{kind === "old" ? "- " : "+ "}</span>
@@ -4778,7 +4804,7 @@ function TodoList({ todos }: { todos: Array<Record<string, unknown>> }) {
         return (
           <div key={i} className="flex items-start gap-2 font-sans text-[11.5px] leading-relaxed">
             {status === "completed" ? (
-              <Check size={13} className="mt-0.5 shrink-0 text-[var(--color-success,#22c55e)]" />
+              <Check size={13} className="mt-0.5 shrink-0 text-[var(--color-success)]" />
             ) : status === "in_progress" ? (
               <Loader2 size={13} className="mt-0.5 shrink-0 animate-spin text-[var(--color-accent)]" />
             ) : (

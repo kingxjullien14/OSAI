@@ -41,6 +41,11 @@ export interface AppSettings {
   defaultSocketName: string;
   autoRefreshSeconds: number;
   showNonAiosSessions: boolean;
+  // The protected/primary oracle identity (`aios-<id>` tmux session). External
+  // routing (e.g. WhatsApp) may point at this session, so the roster guards it
+  // behind an explicit warning. Mirrors `AIOS_PRIMARY_ORACLE` in oracles.rs —
+  // keep both aligned if you change it. Default preserves legacy routing.
+  primaryOracleId: string;
 
   // voice — local whisper.cpp transcription endpoint (dictation POSTs here).
   whisperUrl: string;
@@ -106,6 +111,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationQuietMode: false,
 
   defaultSocketName: "adletic",
+  primaryOracleId: "firaz",
   whisperUrl: "http://localhost:9000/inference",
   soundscape: false,
   autoRefreshSeconds: 15,

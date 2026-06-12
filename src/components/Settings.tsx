@@ -1103,8 +1103,11 @@ export function Settings({
 
           {section === "channels" || section === "plugins" ? (
             // Channels + plugins are full panes (own header + scroll) — render
-            // them full-bleed instead of inside the padded settings rows.
-            <div className="min-h-0 flex-1">
+            // them full-bleed instead of inside the padded settings rows. Their
+            // header action buttons (refresh / pair) sit top-right where the
+            // settings close-X floats — pad the embedded header so both stay
+            // clickable (the X must never occlude a control).
+            <div className="min-h-0 flex-1 [&_.pane-header]:pr-12">
               <Suspense fallback={<div className="grid h-full place-items-center font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--color-faint)]">loading pane</div>}>
                 {section === "channels" ? <BridgesPane /> : <PluginsPane />}
               </Suspense>
@@ -1148,6 +1151,18 @@ export function Settings({
                     <Toggle
                       checked={s.reopenLastLayout}
                       onChange={(v) => patch({ reopenLastLayout: v })}
+                    />
+                  </Row>
+                  <Row
+                    label="dictation server"
+                    sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
+                  >
+                    <input
+                      value={s.whisperUrl}
+                      onChange={(e) => patch({ whisperUrl: e.target.value })}
+                      placeholder="http://localhost:9000/inference"
+                      spellCheck={false}
+                      className="w-[230px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     />
                   </Row>
                   <Row
@@ -1445,6 +1460,18 @@ export function Settings({
                     <input
                       value={s.defaultSocketName}
                       onChange={(e) => patch({ defaultSocketName: e.target.value })}
+                      spellCheck={false}
+                      className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </Row>
+                  <Row
+                    label="primary oracle"
+                    sub="the protected aios-<id> session external routing points at (delete-guarded)"
+                  >
+                    <input
+                      value={s.primaryOracleId}
+                      onChange={(e) => patch({ primaryOracleId: e.target.value })}
+                      placeholder="firaz"
                       spellCheck={false}
                       className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     />
