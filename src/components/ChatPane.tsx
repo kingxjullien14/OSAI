@@ -898,10 +898,17 @@ export function ChatPane({
   // (off-Tauri / failed) → don't disable anything.
   const pickerModels = useMemo<ChatModel[]>(() => {
     if (!availEngines || availEngines.size === 0) return CHAT_MODELS;
+    // "not installed" alone was a dead end (audit: disabled rows never said
+    // WHY) — the tooltip now names the missing CLI + the one-liner to get it.
+    const hint: Record<string, string> = {
+      claude: "not installed — needs the claude CLI: npm i -g @anthropic-ai/claude-code",
+      codex: "not installed — needs the codex CLI: npm i -g @openai/codex",
+      opencode: "not installed — needs the opencode CLI: npm i -g opencode-ai",
+    };
     return CHAT_MODELS.map((m) =>
       m.disabled || availEngines.has(m.engine ?? "claude")
         ? m
-        : { ...m, disabled: true, note: m.note ?? "not installed" },
+        : { ...m, disabled: true, note: m.note ?? hint[m.engine ?? "claude"] ?? "not installed" },
     );
   }, [availEngines]);
 
@@ -3649,8 +3656,10 @@ export function ChatPane({
                     <span className="flex items-center gap-2">
                       {m.label}
                       {m.disabled && m.note && (
+                        // chip stays terse ("not installed"); the row tooltip
+                        // carries the full why + the install one-liner.
                         <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
-                          {m.note}
+                          {m.note.split(" — ")[0]}
                         </span>
                       )}
                       {win && (

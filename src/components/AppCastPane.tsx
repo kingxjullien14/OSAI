@@ -358,7 +358,7 @@ function AppCastPaneInner({
             {starting && <Loader2 size={12} className="shrink-0 animate-spin text-[var(--color-accent)]" />}
           </button>
           {pickerOpen && (
-            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] text-[12px] shadow-[var(--aios-shadow-pop)]">
+            <div className="surface-pop absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col overflow-hidden text-[12px]">
               {/* search + refresh header (sticky) */}
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
                 <Search size={12} className="shrink-0 text-[var(--color-faint)]" />
