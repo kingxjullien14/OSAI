@@ -223,7 +223,7 @@ export function IdleControlCenter({
       <div className="relative z-10 shrink-0 border-t border-[var(--color-border)] px-6 pb-4 pt-4 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3">
           <div className="grid gap-x-10 gap-y-4 lg:grid-cols-2">
-            <RecentProjects projects={recent} onOpen={onOpenProject} />
+            <RecentProjects projects={recent} pulse={pulse} onOpen={onOpenProject} />
             <QuickActions
               onSpawn={onSpawn}
               onOpenPalette={onOpenPalette}
@@ -331,6 +331,9 @@ function HeroClock() {
 
 // ── command line — composer-grade seed-a-chat input ───────────────────────────
 
+/** Last launched seed (↑ recall in the empty command line, depth 1). */
+const LAST_SEED_KEY = "aios.home.lastSeed";
+
 /**
  * The single primary action. Looks + feels like the chat-pane composer surface:
  * rounded glass (radius-xl), focus glow + accent top-edge sheen, accent caret,
@@ -361,9 +364,25 @@ function CommandLine({
       onOpenPalette();
       return;
     }
+    try {
+      localStorage.setItem(LAST_SEED_KEY, text);
+    } catch {
+      /* quota / unavailable — recall just won't work */
+    }
     onSeedChat(text);
     setValue("");
   }, [value, onSeedChat, onOpenPalette]);
+
+  // ↑ in the empty line recalls what you last launched (chat-style history,
+  // depth 1 — the home is a launcher, not a transcript).
+  const recallLast = useCallback(() => {
+    try {
+      const last = localStorage.getItem(LAST_SEED_KEY);
+      if (last) setValue(last);
+    } catch {
+      /* unavailable */
+    }
+  }, []);
 
   const hasContent = value.trim().length > 0;
   // say WHICH agent this line launches — the engine the base provider resolves
@@ -390,6 +409,12 @@ function CommandLine({
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp" && !value) {
+              e.preventDefault();
+              recallLast();
+            }
+          }}
           spellCheck={false}
           placeholder="start something… ask, launch, or resume"
           className="min-w-0 flex-1 bg-transparent font-sans text-[15px] leading-relaxed text-[var(--color-text)] caret-[var(--color-accent)] placeholder:text-[var(--color-faint)] focus:outline-none"
@@ -410,7 +435,7 @@ function CommandLine({
       </div>
       {/* which agent this line launches — no more mystery composer */}
       <div className="mt-2 text-center font-mono text-[11px] text-[var(--color-faint)]">
-        {engineLabel} · enter to start · {chord("K")} for everything
+        {engineLabel} · enter to start · ↑ last · {chord("K")} for everything
       </div>
     </form>
   );
@@ -486,32 +511,58 @@ function ago(ts: number): string {
 
 function RecentProjects({
   projects,
+  pulse,
   onOpen,
 }: {
   projects: ProjectInfo[];
+  /** git summary for these roots — already polled by IdleDashboard; rows
+   *  surface it as a status dot (it used to be only a footer count). */
+  pulse: RepoPulse[];
   onOpen: (p: ProjectInfo) => void;
 }) {
+  const pulseFor = (root: string) => pulse.find((r) => r.root === root) ?? null;
   return (
     <div className="flex flex-col gap-1">
       <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-muted)]">recent</span>
       {projects.length === 0 ? (
         <div className="px-1 py-1.5 text-[12px] text-[var(--color-faint)]">no projects under ~/Repo</div>
       ) : (
-        projects.map((p) => (
-          <button
-            key={p.root}
-            onClick={() => onOpen(p)}
-            title={`open terminal in ${p.root}`}
-            className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
-          >
-            <FolderGit2 size={13} className="shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-accent)]" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">
-              {p.name}
-            </span>
-            <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--color-faint)]">{p.kind}</span>
-            <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">{ago(p.mtime)}</span>
-          </button>
-        ))
+        projects.map((p) => {
+          const repo = pulseFor(p.root);
+          const drift =
+            repo && (repo.dirty > 0 || repo.ahead > 0 || repo.behind > 0)
+              ? [
+                  repo.branch,
+                  repo.dirty > 0 ? `${repo.dirty} dirty` : "",
+                  repo.ahead > 0 ? `↑${repo.ahead}` : "",
+                  repo.behind > 0 ? `↓${repo.behind}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : null;
+          return (
+            <button
+              key={p.root}
+              onClick={() => onOpen(p)}
+              title={drift ? `open terminal in ${p.root}\n${drift}` : `open terminal in ${p.root}`}
+              className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+            >
+              <FolderGit2 size={13} className="shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-accent)]" />
+              <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">
+                {p.name}
+              </span>
+              {drift && (
+                <span
+                  className={`status-dot shrink-0 ${repo!.dirty > 0 ? "status-dot--idle" : "status-dot--dormant"}`}
+                  style={{ width: 6, height: 6 }}
+                  aria-label={drift}
+                />
+              )}
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--color-faint)]">{p.kind}</span>
+              <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">{ago(p.mtime)}</span>
+            </button>
+          );
+        })
       )}
     </div>
   );

@@ -320,6 +320,15 @@ const GOAL_PREFIX = (goal: string) =>
 const ULTRA_PREFIX =
   "Ultracode mode is ON. Maximize thoroughness and correctness — token cost is not a constraint. For any substantial task, decompose it and fan out parallel sub-agents (Task tool) to cover it, then adversarially verify findings before concluding. Prefer orchestrated multi-agent execution over a single pass; only handle trivially small tasks inline.\n\n";
 
+/** One-line consequences for the access modes — visible in the wrench menu
+ *  rows (a permission choice shouldn't need a hover to understand). */
+const PERMISSION_SUBS: Record<string, string> = {
+  bypassPermissions: "runs everything without asking — trusted repos only",
+  acceptEdits: "file edits auto-approved, commands still ask",
+  default: "every tool call asks first",
+  plan: "read-only: plans, never executes",
+};
+
 const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string }> = [
   { id: "lean", label: "lean", sub: "minimal startup context, explicit only" },
   { id: "agent", label: "agent", sub: "terminal-grade tools and instructions" },
@@ -3336,7 +3345,11 @@ export function ChatPane({
                 ) : (
                   <span className="min-w-0 flex-1 truncate">{q.text}</span>
                 )}
-                <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">queued</span>
+                {/* the head of the queue is a promise — say it ("sends next"),
+                    not just a generic "queued" on every row */}
+                <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
+                  {i === 0 ? "sends next" : `queued #${i + 1}`}
+                </span>
                 {editingQueuedId === q.id ? (
                   <button
                     type="button"
@@ -3388,7 +3401,7 @@ export function ChatPane({
                   type="button"
                   onClick={() => removeQueued(q.id)}
                   className="shrink-0 rounded p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                  title="cancel"
+                  title="remove from queue (won't send)"
                 >
                   <X size={12} />
                 </button>
@@ -3572,7 +3585,12 @@ export function ChatPane({
                     setOpenMenu(null);
                   }}
                 >
-                  {p.label}
+                  <span className="flex flex-col leading-snug">
+                    <span>{p.label}</span>
+                    {PERMISSION_SUBS[p.id] && (
+                      <span className="text-[10.5px] text-[var(--color-faint)]">{PERMISSION_SUBS[p.id]}</span>
+                    )}
+                  </span>
                 </MenuItem>
               ))}
               <div className="mt-1 border-t border-[var(--color-border)] px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
@@ -4071,7 +4089,7 @@ export function ChatPane({
             add as context
           </button>
         )}
-        <div className="mx-auto flex max-w-2xl flex-col gap-5 px-6 py-8">
+        <div className="chat-col mx-auto flex flex-col gap-5 px-6 py-8">
           {resumedTitle && (
             <div className="flex justify-center">
               <ResumedNote title={resumedTitle} onClear={() => setResumedTitle(null)} />
@@ -4148,7 +4166,7 @@ export function ChatPane({
         </button>
       )}
       <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 px-6 pb-5 pt-3 backdrop-blur">
-        <div className="mx-auto max-w-2xl">
+        <div className="chat-col mx-auto">
           {/* context readout — out of the cramped composer, model-aware window
               (opus 4.8 = 1M, sonnet/haiku = 200K, codex = 272K) */}
           {ctxTokens != null && (

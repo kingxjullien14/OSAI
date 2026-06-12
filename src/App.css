@@ -332,6 +332,20 @@ select:focus-visible,
 .toast-in  { animation: aios-toast-in  var(--aios-dur-base) var(--aios-ease-spring) both; }
 .toast-out { animation: aios-toast-out var(--aios-dur-fast) var(--aios-ease-in) forwards; }
 
+/* ── chat reading column ──────────────────────────────────────────────
+   42rem matches the old max-w-2xl; on wide panes (maximized, single-pane
+   layouts) the column breathes out to 52rem instead of leaving a narrow
+   ribbon in a sea of margin. Container query — keyed to the PANE's width,
+   not the window's, so a half-width pane keeps its reading measure. */
+[data-chat-pane] { container-type: inline-size; }
+.chat-col {
+  max-width: 42rem;
+  transition: max-width var(--aios-dur-slow) var(--aios-ease-out);
+}
+@container (min-width: 1100px) {
+  .chat-col { max-width: 52rem; }
+}
+
 /* .disclose — animate auto-height disclosure (tool cards, diff expands)
    without measuring: the grid-rows 0fr→1fr technique. */
 .disclose {
