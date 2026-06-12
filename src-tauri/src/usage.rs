@@ -47,15 +47,133 @@ pub fn usage_stats() -> Value {
     }
 }
 
-/// Live Claude rate-limit usage parsed directly from `~/.aios/state/usage.json`
-/// (the statusline-written file `usage_stats` reads). Returns a shape that mirrors
+/// Live, ACCOUNT-GLOBAL Claude usage straight from Anthropic's OAuth usage
+/// endpoint — the same source claude-code's own /usage panel reads. The
+/// statusline file is only a fallback now: it goes stale the moment no
+/// interactive session is ticking (user-reported: 5h showed 0% while the
+/// real window was at 37%).
+fn claude_usage_from_oauth() -> Option<Value> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let creds: Value = serde_json::from_str(
+        &std::fs::read_to_string(format!("{home}/.claude/.credentials.json")).ok()?,
+    )
+    .ok()?;
+    let oauth = creds.get("claudeAiOauth")?;
+    let token = oauth.get("accessToken")?.as_str()?;
+    // expired token → the CLI owns the refresh; fall back until it does.
+    if let Some(exp_ms) = oauth.get("expiresAt").and_then(|v| v.as_i64()) {
+        if exp_ms <= chrono::Utc::now().timestamp_millis() {
+            return None;
+        }
+    }
+    let mut child = std::process::Command::new(if cfg!(windows) { "curl.exe" } else { "/usr/bin/curl" })
+        .args([
+            "-fsS",
+            "--max-time",
+            "4",
+            "--config",
+            "-",
+            "https://api.anthropic.com/api/oauth/usage",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    // headers ride stdin (--config -) so the token never appears in argv.
+    child
+        .stdin
+        .as_mut()?
+        .write_all(
+            format!(
+                "header = \"Authorization: Bearer {token}\"\nheader = \"anthropic-beta: oauth-2025-04-20\"\nheader = \"Content-Type: application/json\"\n"
+            )
+            .as_bytes(),
+        )
+        .ok()?;
+    let out = child.wait_with_output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let payload: Value = serde_json::from_slice(&out.stdout).ok()?;
+    map_oauth_usage(&payload)
+}
+
+/// Maps the OAuth usage payload onto the sidebar shape. Liberal on field names
+/// (utilization vs used_percentage; ISO vs epoch resets) and on nesting (root
+/// vs under rate_limits) so a server-side rename degrades to the fallback
+/// instead of bogus numbers.
+fn map_oauth_usage(payload: &Value) -> Option<Value> {
+    let pick = |k: &str| -> Option<&Value> {
+        payload
+            .get(k)
+            .or_else(|| payload.pointer(&format!("/rate_limits/{k}")))
+            .or_else(|| payload.pointer(&format!("/usage/{k}")))
+    };
+    let resets_to_epoch = |v: &Value| -> Option<i64> {
+        if let Some(n) = v.as_i64() {
+            // tolerate ms-epoch payloads
+            return Some(if n > 100_000_000_000 { n / 1000 } else { n });
+        }
+        let s = v.as_str()?;
+        chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|t| t.timestamp())
+    };
+    let win = |w: Option<&Value>| -> Value {
+        let Some(w) = w else {
+            return json!({ "pct": null, "resetsAt": null });
+        };
+        let pct = w
+            .get("utilization")
+            .or_else(|| w.get("used_percentage"))
+            .or_else(|| w.get("used_percent"))
+            .and_then(|x| x.as_f64());
+        let resets = w
+            .get("resets_at")
+            .or_else(|| w.get("reset_at"))
+            .and_then(resets_to_epoch);
+        let (pct, resets) = windowed(pct, resets);
+        json!({ "pct": pct, "resetsAt": resets })
+    };
+    let five = win(pick("five_hour"));
+    let seven = win(pick("seven_day"));
+    if five.get("pct").map(|v| v.is_null()).unwrap_or(true)
+        && seven.get("pct").map(|v| v.is_null()).unwrap_or(true)
+    {
+        return None; // unknown shape → let the caller fall back
+    }
+    Some(json!({ "fiveHour": five, "sevenDay": seven }))
+}
+
+/// 60s in-process cache so the sidebar's 30s poll + per-turn events don't
+/// hammer the endpoint (mirrors how the codex wham fetch behaves in practice).
+fn claude_usage_oauth_cached() -> Option<Value> {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+    static CACHE: OnceLock<Mutex<Option<(Instant, Option<Value>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let mut guard = cache.lock().ok()?;
+    if let Some((at, value)) = guard.as_ref() {
+        if at.elapsed() < Duration::from_secs(60) {
+            return value.clone();
+        }
+    }
+    let fresh = claude_usage_from_oauth();
+    *guard = Some((Instant::now(), fresh.clone()));
+    fresh
+}
+
+/// Live Claude rate-limit usage: OAuth endpoint first (account-global, always
+/// current), the statusline-written file as fallback. Shape mirrors
 /// `codex_usage` so the sidebar renders both identically:
 ///   { "fiveHour": {pct, resetsAt}, "sevenDay": {pct, resetsAt} }
-/// Returns `null` when the file is missing/unwritten so the sidebar block hides
-/// gracefully. Reads + parses the JSON in Rust — no shelling out to node/ccusage
-/// (the GUI-launched app has no node on PATH).
 #[tauri::command]
 pub fn claude_usage() -> Value {
+    if let Some(live) = claude_usage_oauth_cached() {
+        return live;
+    }
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let path = format!("{home}/.aios/state/usage.json");
     if !fresh_enough(&path) {

@@ -2099,32 +2099,24 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
 /// Reads the statusline's `~/.aios/state/usage.json` and builds a claude-shaped
 /// `usage` event line (5h/7d windows), or `None` if it's not written yet.
 fn claude_usage_event() -> Option<String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()?;
-    let path = format!("{home}/.aios/state/usage.json");
-    // stale snapshots (an old session's file) must not feed the live strip.
-    if !crate::usage::fresh_enough(&path) {
+    // single source of truth with the sidebar: OAuth endpoint first (live,
+    // ACCOUNT-global — not per-session), statusline file as its fallback.
+    let v = crate::usage::claude_usage();
+    let win = |k: &str| -> serde_json::Value {
+        json!({
+            "pct": v.pointer(&format!("/{k}/pct")).cloned().unwrap_or(serde_json::Value::Null),
+            "resets_at": v.pointer(&format!("/{k}/resetsAt")).cloned().unwrap_or(serde_json::Value::Null),
+        })
+    };
+    if v.is_null() {
         return None;
     }
-    let s = std::fs::read_to_string(&path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&s).ok()?;
-    let rl = v.get("rate_limits")?;
-    let win = |k: &str| -> serde_json::Value {
-        let w = &rl[k];
-        // an expired window's used% belongs to the PREVIOUS window — zero it.
-        let (pct, resets_at) = crate::usage::windowed(
-            w.get("used_percentage").and_then(|x| x.as_f64()),
-            w.get("resets_at").and_then(|x| x.as_i64()),
-        );
-        json!({ "pct": pct, "resets_at": resets_at })
-    };
     Some(
         json!({
             "type": "usage",
             "provider": "claude",
-            "five_hour": win("five_hour"),
-            "seven_day": win("seven_day"),
+            "five_hour": win("fiveHour"),
+            "seven_day": win("sevenDay"),
         })
         .to_string(),
     )
