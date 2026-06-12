@@ -71,6 +71,24 @@ const THEME = {
 const FONT_FAMILY =
   '"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Consolas", ui-monospace, monospace';
 
+/** Resolve a CSS custom property at call time, with a fallback. */
+function cssVar(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/** The frozen THEME plus the LIVE accent-driven pieces: caret + selection
+ *  follow the user's accent (lib/theme.ts writes --color-cursor/--color-
+ *  selection at runtime). The interior stays terminal-dark by design. */
+function liveXtermTheme(): typeof THEME {
+  return {
+    ...THEME,
+    cursor: cssVar("--color-cursor", THEME.cursor),
+    selectionBackground: cssVar("--color-selection", THEME.selectionBackground),
+  };
+}
+
 /** Shell-quote a path (single-quote wrap) only when it needs it. POSIX shells
  *  escape an embedded quote as '\''; PowerShell doubles it — and backslashes
  *  are ordinary path characters on Windows, so they must NOT trigger quoting. */
@@ -197,7 +215,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       macOptionIsMeta: true,
       allowTransparency: true,
       scrollback: 10000,
-      theme: THEME,
+      theme: liveXtermTheme(),
     });
     termRef.current = term;
     const fit = new FitAddon();

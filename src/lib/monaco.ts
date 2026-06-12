@@ -153,6 +153,12 @@ function registerDart(m: typeof monaco) {
 
 /** A dark theme tuned to the app's chrome (transparent bg so the pane shows). */
 function defineTheme(m: typeof monaco) {
+  // the caret follows the user's LIVE accent (lib/theme.ts writes
+  // --color-cursor at runtime) instead of a frozen orange hex.
+  const accentCursor =
+    (typeof document !== "undefined" &&
+      getComputedStyle(document.documentElement).getPropertyValue("--color-cursor").trim()) ||
+    "#e8732c";
   m.editor.defineTheme("aios-dark", {
     base: "vs-dark",
     inherit: true,
@@ -177,7 +183,7 @@ function defineTheme(m: typeof monaco) {
       "editorLineNumber.activeForeground": "#8a8a96",
       "editor.selectionBackground": "#2a2a35",
       "editor.lineHighlightBackground": "#15151a",
-      "editorCursor.foreground": "#e8732c",
+      "editorCursor.foreground": accentCursor,
       "editorIndentGuide.background1": "#1c1c22",
       "editorGutter.background": "#0a0a0c",
       "scrollbarSlider.background": "#2a2a3580",

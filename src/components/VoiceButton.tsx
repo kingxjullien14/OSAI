@@ -159,9 +159,16 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
           title="stop dictation (esc to cancel)"
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-2 py-1 text-[11px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-danger)]/20"
         >
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-danger)] opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--color-danger)]" />
+          {/* live-feeling equalizer (the composer's language) instead of a
+              bare ping dot — recording should LOOK like listening. */}
+          <span className="flex h-3.5 items-center gap-[2px]" aria-hidden>
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+              <span
+                key={i}
+                className="aios-wave-bar h-full rounded-full !bg-[var(--color-danger)]"
+                style={{ animationDelay: `${(i * 110) % 700}ms` }}
+              />
+            ))}
           </span>
           <span className="font-mono tabular-nums text-[12px] text-[var(--color-text)]">
             {fmtElapsed(elapsed)}

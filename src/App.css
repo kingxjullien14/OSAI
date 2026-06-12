@@ -90,15 +90,18 @@
   --aios-radius-xl: 16px;   /* the composer surface — the signature radius */
   --aios-radius-pill: 9999px; /* pills, status dots, accent send button */
 
-  /* type scale — px sizes lifted from the chat surface */
-  --aios-text-hero: 30px;   /* empty-state hero "what should we work on?" (text-3xl) */
-  --aios-text-title: 17px;  /* H1 inside prose / section titles */
-  --aios-text-lg: 15px;     /* composer input */
-  --aios-text-body: 14px;   /* default body / bubbles */
-  --aios-text-sm: 12.5px;   /* dense UI, menu items, code */
-  --aios-text-xs: 11.5px;   /* pill labels, tool args */
-  --aios-text-2xs: 11px;    /* mono footer helper, pane-header titles */
-  --aios-text-micro: 10.5px; /* result footers, code-fence lang label */
+  /* type scale — px sizes lifted from the chat surface. Every token multiplies
+     by --app-font-scale (the Settings "text size" slider, applied at boot by
+     appearance.ts) so token-driven surfaces scale together; the slider was a
+     visible no-op before this had consumers. */
+  --aios-text-hero: calc(30px * var(--app-font-scale, 1));
+  --aios-text-title: calc(17px * var(--app-font-scale, 1));
+  --aios-text-lg: calc(15px * var(--app-font-scale, 1));
+  --aios-text-body: calc(14px * var(--app-font-scale, 1));
+  --aios-text-sm: calc(12.5px * var(--app-font-scale, 1));
+  --aios-text-xs: calc(11.5px * var(--app-font-scale, 1));
+  --aios-text-2xs: calc(11px * var(--app-font-scale, 1));
+  --aios-text-micro: calc(10.5px * var(--app-font-scale, 1));
 
   /* spacing — 4px base rhythm (matches the chat's gap-/px- usage) */
   --aios-space-1: 4px;
@@ -221,6 +224,20 @@ html, body, #root {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* density — "compact" tightens the shared scales everywhere they're consumed
+   (pane headers, chrome strip, the spacing rhythm). Set as data-density on
+   <html> by appearance.ts; this was the other half of the Settings control
+   that previously changed nothing. */
+html[data-density="compact"] {
+  --aios-space-2: 6px;
+  --aios-space-3: 10px;
+  --aios-space-4: 12px;
+  --aios-space-5: 16px;
+  --aios-space-6: 18px;
+  --aios-h-chrome: 24px;
+  --aios-h-header: 31px;
 }
 
 ::selection { background: var(--color-selection); }

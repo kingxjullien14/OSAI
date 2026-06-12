@@ -12,9 +12,14 @@
  *  callers (VoiceButton, and via the pane-writer bridge, ChatPane's composer)
  *  keep working unchanged: dictateStart / dictateStop / dictateCancel. */
 
+import { getSetting } from "./settings";
+
 /** Local whisper.cpp server transcription endpoint. Multipart `file` field,
- *  same contract the old Rust path used (temperature + response_format). */
-const WHISPER_URL = "http://localhost:9000/inference";
+ *  same contract the old Rust path used (temperature + response_format).
+ *  Read per-call from settings so the endpoint is configurable (it was a
+ *  hardcoded localhost:9000 that only failed AFTER you'd recorded). */
+const whisperUrl = (): string =>
+  getSetting("whisperUrl")?.trim() || "http://localhost:9000/inference";
 
 /** Target format whisper.cpp wants: 16 kHz mono PCM16. */
 const TARGET_SAMPLE_RATE = 16000;
@@ -342,7 +347,7 @@ async function postToWhisper(wav: Blob): Promise<string> {
 
   let res: Response;
   try {
-    res = await window.fetch(WHISPER_URL, {
+    res = await window.fetch(whisperUrl(), {
       method: "POST",
       body: form,
       signal: controller.signal,

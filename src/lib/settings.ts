@@ -42,6 +42,9 @@ export interface AppSettings {
   autoRefreshSeconds: number;
   showNonAiosSessions: boolean;
 
+  // voice — local whisper.cpp transcription endpoint (dictation POSTs here).
+  whisperUrl: string;
+
   // memory
   graphPhysicsStrength: number; // 0..100
 
@@ -99,6 +102,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationQuietMode: false,
 
   defaultSocketName: "adletic",
+  whisperUrl: "http://localhost:9000/inference",
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
 

@@ -260,10 +260,7 @@ const WAVEFORM_BARS: { h: number; delay: number }[] = Array.from(
   { length: 40 },
   (_, i) => ({ h: 28 + ((i * 37) % 60), delay: (i * 70) % 900 }),
 );
-const WAVE_KEYFRAMES = `@keyframes aios-wave {
-  0%, 100% { transform: scaleY(0.32); opacity: 0.55; }
-  50% { transform: scaleY(1); opacity: 1; }
-}`;
+// (the aios-wave keyframe lives in App.css now — one definition app-wide.)
 
 /** File extension for a clipboard/file image mime. */
 function extFromMime(mime: string): string {
@@ -3341,7 +3338,6 @@ export function ChatPane({
               e.target.value = "";
             }}
           />
-          <style>{WAVE_KEYFRAMES}</style>
           {recording ? (
             <div className="flex items-center gap-3 px-4 pt-4 pb-2">
               <div className="flex h-7 flex-1 items-center gap-[3px] overflow-hidden">
