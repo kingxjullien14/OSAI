@@ -53,7 +53,7 @@ import { recallUrl, recallPaneUrl, forgetUrl } from "./lib/browser-mem";
 import { browserOpenDevtools, setWindowFullscreen } from "./lib/browser";
 import { AccountMenu } from "./components/AccountMenu";
 import { Onboarding } from "./components/Onboarding";
-import { CommandPalette, type Command } from "./components/CommandPalette";
+import { CommandPalette, loadMru as loadCommandMru, type Command } from "./components/CommandPalette";
 import { FileFinder } from "./components/FileFinder";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { IdleDashboard } from "./components/IdleDashboard";
@@ -113,6 +113,7 @@ import {
   openSettingsTo,
   paneKeyForChatSession,
   registerSpawnPane,
+  onChatBusy,
   type SpawnPaneKind,
   type SpawnCtx,
   type PayloadKind,
@@ -474,6 +475,9 @@ function App() {
   const [dragActiveKey, setDragActiveKey] = useState<string | null>(null);
   // focus spotlight (⌘./Ctrl+.) — dim every pane but the active one.
   const [focusSpotlight, setFocusSpotlight] = useState(false);
+  // activity glow — the set of chat panes with a live run (chrome breathes).
+  const [busyChatKeys, setBusyChatKeys] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => onChatBusy((s) => setBusyChatKeys(new Set(s))), []);
   const paneDragRef = useRef<{ from: string; x: number; y: number; armed: boolean } | null>(null);
   const paneDragOverRef = useRef<string | null>(null);
   // per-pane window controls. The maximized pane escapes the CSS grid to fill
@@ -1453,10 +1457,26 @@ function App() {
 
   // ---- keyboard: ⌘B sidebar · ⌘K palette · ⌘T terminal · ⌘, settings · ⌘⌘ appshot
   const lastMeta = useRef(0);
+  // live commands list for the repeat-last chord (ref: the keydown listener
+  // must not re-bind every time the registry rebuilds).
+  const commandsRef = useRef<Command[]>([]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "k") {
+      if (mod && e.shiftKey && e.key.toLowerCase() === "k") {
+        // ⌘⇧K / Ctrl+Shift+K — repeat the last palette command. Power users
+        // live on repetition; the MRU the palette already records makes this
+        // a one-keystroke re-fire (appshot loops, run-project loops…).
+        e.preventDefault();
+        const [lastId] = loadCommandMru();
+        const cmd = lastId ? commandsRef.current.find((c) => c.id === lastId) : undefined;
+        if (cmd) {
+          flash(`repeat: ${cmd.title}`);
+          cmd.run();
+        } else {
+          flash("nothing to repeat yet — run something from the palette first");
+        }
+      } else if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "f") {
@@ -1770,6 +1790,9 @@ function App() {
       setMaximizedKey,
     });
   }, [spawn, fireAppshot, chats, oracles, resumeChat, addOracle, runF5, loadProjects, projects, home, runProject, panes.length, activeKey]);
+  // keep the repeat-last chord's view of the registry fresh without re-binding
+  // the global keydown listener on every rebuild.
+  commandsRef.current = commands;
 
   const agentController = useMemo(
     () =>
@@ -2536,6 +2559,7 @@ function App() {
                   onMoveRight={() => movePaneByKey(pane.key, 1)}
                   reorderable={panes.length > 1}
                   isDragging={dragActiveKey === pane.key}
+                  busy={busyChatKeys.has(pane.key)}
                   dimmed={
                     focusSpotlight &&
                     panes.length > 1 &&
@@ -3934,6 +3958,7 @@ function PaneCard({
   reorderable,
   isDragging,
   dimmed,
+  busy,
   onPaneDragStart,
   onFocus,
   onAnnotate,
@@ -3972,6 +3997,8 @@ function PaneCard({
   isDragging?: boolean;
   /** focus-spotlight: this pane is NOT the focused one — recede. */
   dimmed?: boolean;
+  /** activity glow: a live agent run is streaming in this pane. */
+  busy?: boolean;
   onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
   onFocus: () => void;
   onAnnotate: (text: string) => void;
@@ -4108,7 +4135,15 @@ function PaneCard({
             }`
       }`}
     >
-      <div className="flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2.5">
+      <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2.5">
+        {/* activity glow — a quiet breathing seam while an agent run streams
+            in this pane: ambient awareness, no dialog (reduce-motion safe). */}
+        {busy && (
+          <span
+            aria-hidden
+            className="mascot-idle pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-[var(--color-accent)]/60 to-transparent"
+          />
+        )}
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
           onPointerDown={(e) => {

@@ -283,6 +283,29 @@ export function openSettingsTo(section: string): boolean {
   return true;
 }
 
+// ── live chat-busy signal (Activity Glow) ────────────────────────────────────
+// Chat panes report streaming state here; the shell glows the busy panes'
+// chrome so "agents are working" is ambient, not a dialog.
+const busyChats = new Set<string>();
+const busyListeners = new Set<(busy: ReadonlySet<string>) => void>();
+
+export function setChatBusy(key: string, busy: boolean): void {
+  const had = busyChats.has(key);
+  if (busy === had) return;
+  if (busy) busyChats.add(key);
+  else busyChats.delete(key);
+  busyListeners.forEach((fn) => fn(busyChats));
+}
+
+/** Subscribe to the set of currently-streaming chat pane keys. */
+export function onChatBusy(fn: (busy: ReadonlySet<string>) => void): () => void {
+  busyListeners.add(fn);
+  fn(busyChats);
+  return () => {
+    busyListeners.delete(fn);
+  };
+}
+
 // ── cross-pane drag signal ───────────────────────────────────────────────────
 // When an item carrying our `application/x-aios-path` payload is dragged
 // anywhere in the app, every pane's drop overlay should light up so the drop is

@@ -130,6 +130,7 @@ import {
   openUrlInPane,
   openViewerFileInPane,
   revealFileInPane,
+  setChatBusy,
   spawnPane,
 } from "../lib/paneBus";
 import { isHttpPaneTarget, isPaneFileTarget, resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
@@ -811,6 +812,12 @@ export function ChatPane({
   // transient pre-session status shown inline in the hero (queued-send notice,
   // startup failure) — never a transcript turn, so the empty state stays calm.
   const [startupNote, setStartupNote] = useState<string | null>(null);
+  // activity glow: report this pane's live run to the shell (chrome breathes).
+  useEffect(() => {
+    if (!paneKey) return;
+    setChatBusy(paneKey, streaming);
+    return () => setChatBusy(paneKey, false);
+  }, [paneKey, streaming]);
   // claude's init event arrived (session_id known) — gates the seed auto-send
   const [claudeReady, setClaudeReady] = useState(false);
 

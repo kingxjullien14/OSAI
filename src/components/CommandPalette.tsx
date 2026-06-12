@@ -16,7 +16,7 @@ import { reportUsage } from "../lib/diag";
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
 const MRU_KEY = "aios.palette.mru";
 const MRU_CAP = 8;
-function loadMru(): string[] {
+export function loadMru(): string[] {
   try {
     const raw = JSON.parse(localStorage.getItem(MRU_KEY) || "[]");
     return Array.isArray(raw) ? raw.filter((x) => typeof x === "string").slice(0, MRU_CAP) : [];
