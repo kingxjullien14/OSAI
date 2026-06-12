@@ -94,10 +94,27 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Accent-hover discipline** (`a4f2804`) — 30 → 10 per DESIGN.md §6: decoration (rows/chips/floats/secondary buttons) hovers `border-strong`; accent survives only on true primary/add affordances; ratchet pinned at 10 with rationale
 - [x] **Homescreen final touches** — verified already shipped (focus-on-mount, engine hint line, weekday greeting, composer-grade command line); stale line removed
 
-## Still open (the long tail)
-- [ ] **Workspaces** — save/restore named layouts + palette commands + morph transition (biggest remaining feature)
-- [ ] **Living pet wiring** — pet reacts to terminal/agent activity (build green = celebrate, stack trace = wince)
-- [ ] **Soundscape** — optional, default off
+- [x] **Workspaces** (`f83998c`) — save/restore/delete named pane layouts from the palette; snapshot = persistable panes + grid fr-fractions; restore rides the shared boot hydration (terminal session reattach, browser last-url), seeds target tracks pre-swap (reflow glides), detaches busy chats instead of killing; a11y naming modal
+- [x] **Hero overlays open downward** (`a2e8e7a`, user-reported screenshot) — resume picker / slash / @-mention clipped at the pane top on the hero (composer sits at 14vh); direction now follows the layout
+- [x] **Session labels sanitized** (`0d9213f`, user-reported screenshot) — CLI slash turns leaked raw `<command-name>` XML into resume rows/hero rail/repainted transcripts; new leaf `sessionLabel` module + 4 unit tests
+- [x] **Workspace chips on the idle launch row** (`2090602`) — saved layouts restore in one click from the home
+
+## UI/UX wave 2 — chat pane + idle dashboard *(user, 2026-06-12: "further improve the chat pane and idle dashboard")*
+
+### Chat pane
+- [ ] **Hover timestamps** — faint relative time on user/assistant blocks, revealed on hover/focus (codex-style, reduce-motion-safe)
+- [ ] **Wide-pane readability** — transcript/composer column widens past `max-w-2xl` on large/maximized panes (container query) instead of a narrow ribbon in a sea of margin
+- [ ] **Day separators** — quiet hairline + date when a resumed transcript spans days
+- [ ] **Composer wrench menu polish** — aria-label on the icon-only trigger, per-toggle description lines in the menu rows
+- [ ] **Queued-row affordance** — steer/queue rows: clearer "this sends next" copy + remove-one X parity
+
+### Idle dashboard
+- [ ] **Git pulse on recent projects** — the launch row's project rows surface their already-fetched dirty/ahead/behind state as a status dot + tooltip (data is in `pulse`, currently only a footer count)
+- [ ] **Command-line seed recall** — ↑ in the empty command line recalls the last seed text
+- [ ] **Living pet wiring** — pet reacts to live activity (chat busy → attentive, run result → celebrate/wince); folds the old tracker item in
+- [ ] **Soundscape** — optional, default off (last fun item)
+
+### Parked
 - [ ] poll-swap transitions on cast/mirror rosters (macOS-gated panes — low priority on the Windows daily driver)
 - [ ] ratchet floors if ever unlockable: accent-hover 10 (all true primaries), shadow-2xl 3 (locked TerminalComposer)
 
