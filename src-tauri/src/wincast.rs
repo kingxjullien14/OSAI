@@ -31,6 +31,7 @@
 #![cfg(target_os = "windows")]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -72,9 +73,9 @@ use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemIntero
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, EnumWindows, GetClientRect,
     GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
-    RegisterClassW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HTTRANSPARENT, SWP_NOACTIVATE,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WM_NCHITTEST, WNDCLASSW, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_VISIBLE,
+    RegisterClassW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HTTRANSPARENT, HWND_TOP,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WM_NCHITTEST,
+    WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_VISIBLE,
 };
 
 use crate::appcast::WindowInfo;
@@ -113,6 +114,8 @@ pub struct CastSession {
     session: SendWrap<GraphicsCaptureSession>,
     pool: SendWrap<Direct3D11CaptureFramePool>,
     frame_token: i64,
+    /// first set_bounds for this session gets an eprintln (diagnosis breadcrumb).
+    bounds_logged: AtomicBool,
 }
 
 /// Managed by tauri (`.manage(appcast::AppCastState::default())` in lib.rs —
@@ -251,6 +254,19 @@ unsafe fn create_child(parent: isize, x: i32, y: i32, w: i32, h: i32) -> Result<
         None,
     )
     .map_err(|e| format!("CreateWindowExW failed: {e}"))?;
+    // Top the sibling z-order EXPLICITLY. The WebView2 subtree is a sibling of
+    // this child, and Chromium creates more sibling windows of its own (e.g.
+    // intermediate D3D hosts) over the app's lifetime — anything created after
+    // us lands above us and composites the webview OVER the mirror, leaving the
+    // pane looking empty. set_bounds re-asserts this on every sync tick.
+    let _ = SetWindowPos(child, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    eprintln!(
+        "[wincast] child hwnd={:?} parent=0x{:x} at ({x}, {y}) {}x{} physical px",
+        child.0,
+        parent,
+        w.max(1),
+        h.max(1)
+    );
     Ok(child.0 as isize)
 }
 
@@ -395,6 +411,9 @@ pub fn start(
             std::sync::Arc::new(Mutex::new(SendWrap((context, swapchain, size))));
         let handler_device = SendWrap(winrt_device.clone());
         let handler_gpu = gpu.clone();
+        // per-session one-shot log flags (FrameArrived fires ~60/s — log once)
+        let first_frame = AtomicBool::new(false);
+        let present_err_logged = AtomicBool::new(false);
         let token = pool
             .FrameArrived(&TypedEventHandler::<
                 Direct3D11CaptureFramePool,
@@ -411,34 +430,51 @@ pub fn start(
                     Err(_) => return Ok(()),
                 };
                 let Ok(content) = frame.ContentSize() else { return Ok(()) };
+                if !first_frame.swap(true, Ordering::Relaxed) {
+                    eprintln!(
+                        "[wincast] first frame: content {}x{}",
+                        content.Width, content.Height
+                    );
+                }
                 if let Ok(mut wrap) = handler_gpu.lock() {
                     let g = &mut wrap.0;
-                    // source resized → re-arm pool + backbuffer at the new size
+                    // source resized → re-arm pool + backbuffer at the new size.
+                    // Only adopt the new size if BOTH succeed — a half-applied
+                    // resize would leave CopyResource silently size-mismatched
+                    // (D3D drops the call) and the mirror frozen/black forever.
                     if content.Width != g.2.Width || content.Height != g.2.Height {
                         if content.Width > 0 && content.Height > 0 {
-                            let _ = pool.Recreate(
+                            if let Err(e) = pool.Recreate(
                                 handler_device.get(),
                                 DirectXPixelFormat::B8G8R8A8UIntNormalized,
                                 2,
                                 content,
-                            );
-                            unsafe {
-                                let _ = g.1.ResizeBuffers(
+                            ) {
+                                eprintln!("[wincast] pool.Recreate failed: {e}");
+                                return Ok(());
+                            }
+                            match unsafe {
+                                g.1.ResizeBuffers(
                                     2,
                                     content.Width as u32,
                                     content.Height as u32,
                                     DXGI_FORMAT_B8G8R8A8_UNORM,
                                     DXGI_SWAP_CHAIN_FLAG(0),
-                                );
+                                )
+                            } {
+                                Ok(()) => g.2 = content,
+                                Err(e) => eprintln!("[wincast] ResizeBuffers failed: {e}"),
                             }
-                            g.2 = content;
                         }
                         return Ok(());
                     }
                     unsafe {
                         if let Ok(back) = g.1.GetBuffer::<ID3D11Texture2D>(0) {
                             g.0.CopyResource(&back, &tex);
-                            let _ = g.1.Present(0, DXGI_PRESENT(0));
+                            let hr = g.1.Present(0, DXGI_PRESENT(0));
+                            if hr.is_err() && !present_err_logged.swap(true, Ordering::Relaxed) {
+                                eprintln!("[wincast] Present failed: 0x{:08x}", hr.0 as u32);
+                            }
                         }
                     }
                 }
@@ -451,11 +487,16 @@ pub fn start(
         // capture border stays — trust-is-the-moat: never capture silently)
         let _ = session.SetIsCursorCaptureEnabled(false);
         session.StartCapture().map_err(|e| e.to_string())?;
+        eprintln!(
+            "[wincast] capture started: source {}x{} physical px",
+            size.Width, size.Height
+        );
         Ok(CastSession {
             child,
             session: SendWrap(session),
             pool: SendWrap(pool),
             frame_token: token,
+            bounds_logged: AtomicBool::new(false),
         })
     })();
 
@@ -483,22 +524,27 @@ pub fn set_bounds(
     height: f64,
 ) -> Result<(), String> {
     let state = app.state::<AppCastState>();
-    let child = match state.0.lock().unwrap().get(&label) {
-        Some(s) => s.child,
+    let (child, log_first) = match state.0.lock().unwrap().get(&label) {
+        Some(s) => (s.child, !s.bounds_logged.swap(true, Ordering::Relaxed)),
         None => return Ok(()), // pane raced ahead of start — harmless
     };
     let (main, _, scale) = main_window_hwnd(app)?;
     let (px, py, pw, ph) = (phys(x, scale), phys(y, scale), phys(width, scale), phys(height, scale));
+    if log_first {
+        eprintln!("[wincast] first set_bounds: ({px}, {py}) {pw}x{ph} physical px (scale {scale})");
+    }
     main
         .run_on_main_thread(move || unsafe {
+            // HWND_TOP every tick (not SWP_NOZORDER): keeps the mirror above any
+            // sibling windows WebView2 creates after us — see create_child.
             let _ = SetWindowPos(
                 HWND(child as *mut _),
-                None,
+                Some(HWND_TOP),
                 px,
                 py,
                 pw.max(1),
                 ph.max(1),
-                SWP_NOZORDER | SWP_NOACTIVATE,
+                SWP_NOACTIVATE,
             );
         })
         .map_err(|e| e.to_string())
@@ -541,5 +587,6 @@ pub fn close(app: &AppHandle, label: String) -> Result<(), String> {
             let _ = DestroyWindow(HWND(child as *mut _));
         });
     }
+    eprintln!("[wincast] session closed");
     Ok(())
 }
