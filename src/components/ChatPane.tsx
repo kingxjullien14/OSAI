@@ -100,7 +100,7 @@ import { saveMoneyAgentChatSession } from "../lib/moneyAgents";
 import { fileSrc, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { SHIFT, chord } from "../lib/platform";
-import { idleRate, codexRate, resetIn } from "../lib/dashboard";
+import { claudeRate, idleRate, codexRate, resetIn, type ModelRate } from "../lib/dashboard";
 import {
   composerContextChips,
   contextLedger,
@@ -223,6 +223,41 @@ function codexUsageForModel(r: ChatUsageRate, model: ChatModel): UsageSnapshot |
 function hasUsageData(snapshot: UsageSnapshot | null): snapshot is UsageSnapshot {
   if (!snapshot) return false;
   return snapshot.fiveHour.pct != null || snapshot.sevenDay.pct != null;
+}
+
+/** Per-engine maps of model-specific rate windows for the picker rows. */
+type PickerWindows = {
+  claude: Record<string, ModelRate>;
+  codex: Record<string, ModelRate>;
+};
+
+/**
+ * The model-specific window to chip onto a picker row, if its provider reports
+ * one. Claude carve-outs are bare names ("sonnet" matches claude-sonnet-4-6),
+ * codex entries are full ids; longest matching key wins so "…codex" can never
+ * shadow "…codex-spark". Weekly window preferred (that's what the carve-outs
+ * are); 5h only when it's all a model has.
+ */
+function modelWindowFor(
+  model: ChatModel,
+  windows: PickerWindows,
+): { tag: "5h" | "7d"; pct: number; resetsAt: number | null } | null {
+  const engine = model.engine ?? "claude";
+  if (engine !== "claude" && engine !== "codex") return null;
+  const map = windows[engine];
+  const id = model.id.toLowerCase();
+  const key = Object.keys(map)
+    .filter((k) => id.includes(k.toLowerCase()))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!key) return null;
+  const m = map[key];
+  if (m.sevenDay.pct != null) {
+    return { tag: "7d", pct: m.sevenDay.pct, resetsAt: m.sevenDay.resetsAt };
+  }
+  if (m.fiveHour.pct != null) {
+    return { tag: "5h", pct: m.fiveHour.pct, resetsAt: m.fiveHour.resetsAt };
+  }
+  return null;
 }
 
 function normalizeUsage(
@@ -959,6 +994,25 @@ export function ChatPane({
   const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced">(
     null,
   );
+
+  // per-model rate windows for the picker rows (claude's sonnet/opus weekly
+  // carve-outs, codex spark) — refreshed when the menu opens. Both commands
+  // are 60s-cached backend-side, so opening the menu repeatedly is free.
+  const [pickerWindows, setPickerWindows] = useState<PickerWindows>({ claude: {}, codex: {} });
+  useEffect(() => {
+    if (openMenu !== "model") return;
+    let alive = true;
+    void Promise.allSettled([claudeRate(), codexRate()]).then(([c, x]) => {
+      if (!alive) return;
+      setPickerWindows({
+        claude: c.status === "fulfilled" ? c.value.models : {},
+        codex: x.status === "fulfilled" ? x.value.models : {},
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [openMenu]);
 
   // overlay popovers anchored to the composer (slash menu / @-files / resume)
   const [overlay, setOverlay] = useState<null | "slash" | "mention" | "resume">(
@@ -3548,38 +3602,51 @@ export function ChatPane({
                 </>
               }
             >
-              {pickerModels.map((m) => (
-                <MenuItem
-                  key={m.id}
-                  active={m.id === model.id}
-                  disabled={m.disabled}
-                  title={m.note}
-                  onClick={() => {
-                    if (m.disabled) return;
-                    setModel(m);
-                    // picking a model sets it as the global default (sticks
-                    // across panes + restarts). engine omitted = claude.
-                    // defaultAi is derived from the provider so "send to AI"
-                    // routing can never drift onto a different engine.
-                    const provider = `${m.engine ?? "claude"}-cli`;
-                    saveSettings({
-                      chatModel: m.id,
-                      chatProvider: provider,
-                      defaultAi: defaultAiForProvider(provider),
-                    });
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className="flex items-center gap-2">
-                    {m.label}
-                    {m.disabled && m.note && (
-                      <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
-                        {m.note}
-                      </span>
-                    )}
-                  </span>
-                </MenuItem>
-              ))}
+              {pickerModels.map((m) => {
+                const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
+                return (
+                  <MenuItem
+                    key={m.id}
+                    active={m.id === model.id}
+                    disabled={m.disabled}
+                    title={m.note}
+                    onClick={() => {
+                      if (m.disabled) return;
+                      setModel(m);
+                      // picking a model sets it as the global default (sticks
+                      // across panes + restarts). engine omitted = claude.
+                      // defaultAi is derived from the provider so "send to AI"
+                      // routing can never drift onto a different engine.
+                      const provider = `${m.engine ?? "claude"}-cli`;
+                      saveSettings({
+                        chatModel: m.id,
+                        chatProvider: provider,
+                        defaultAi: defaultAiForProvider(provider),
+                      });
+                      setOpenMenu(null);
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      {m.label}
+                      {m.disabled && m.note && (
+                        <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
+                          {m.note}
+                        </span>
+                      )}
+                      {win && (
+                        <span
+                          className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
+                          title={`this model's own ${win.tag === "7d" ? "weekly" : "5-hour"} window${
+                            win.resetsAt ? ` · resets ${resetIn(win.resetsAt)}` : ""
+                          }`}
+                        >
+                          {win.tag} {Math.round(Math.min(Math.max(100 - win.pct, 0), 100))}% left
+                        </span>
+                      )}
+                    </span>
+                  </MenuItem>
+                );
+              })}
             </Dropdown>
 
             {voicePhase === "transcribing" ? (
@@ -3688,6 +3755,7 @@ export function ChatPane({
       onResumeKeyDown,
       resumeSession,
       closeResume,
+      pickerWindows,
     ],
   );
 

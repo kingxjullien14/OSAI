@@ -21,6 +21,7 @@ import {
   resetIn,
   type ClaudeRate,
   type CodexRate,
+  type ModelRate,
 } from "../../lib/dashboard";
 import { usagePaceRisk, type UsagePaceRisk } from "../../lib/usagePace";
 import { reportDiag } from "../../lib/diag";
@@ -90,16 +91,70 @@ function topRisk(...risks: Array<UsagePaceRisk | null>): UsagePaceRisk | null {
   return risks.find((risk) => risk?.level === "danger") ?? risks.find(Boolean) ?? null;
 }
 
+/**
+ * Per-model carve-out rows nested under a provider block — the weekly windows
+ * some models carry on top of the account ones (claude sonnet/opus, codex
+ * spark). One quiet row each: name + its 7d window (5h when that's all there
+ * is) + a hairline bar, indented behind a left rule so they read as children.
+ */
+function ModelRows({
+  models,
+  showRemaining,
+}: {
+  models?: Record<string, ModelRate>;
+  showRemaining: boolean;
+}) {
+  const entries = Object.entries(models ?? {})
+    .map(([name, m]) => {
+      const tag = m.sevenDay.pct != null ? "7d" : "5h";
+      const win = m.sevenDay.pct != null ? m.sevenDay : m.fiveHour;
+      return { name, tag, win };
+    })
+    .filter((e) => e.win.pct != null)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (entries.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 border-l border-[var(--color-border)] pl-2">
+      {entries.map(({ name, tag, win }) => {
+        const pct = Math.min(Math.max(win.pct!, 0), 100);
+        const reset = win.resetsAt ? resetIn(win.resetsAt) : "";
+        return (
+          <div
+            key={name}
+            className="flex flex-col gap-0.5"
+            title={`${name} has its own ${tag === "7d" ? "weekly" : "5-hour"} window on top of the account one${reset ? ` · resets ${reset}` : ""}`}
+          >
+            <div className="flex items-baseline justify-between gap-2 text-[10px]">
+              <span className="truncate lowercase text-[var(--color-muted)]">{name}</span>
+              <span className="shrink-0 font-mono text-[var(--color-text-2)]">
+                {tag} {Math.round(showRemaining ? 100 - pct : pct)}%{showRemaining ? " left" : ""}
+              </span>
+            </div>
+            <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
+              <div
+                className="h-full rounded-full transition-[width] duration-700"
+                style={{ width: `${pct}%`, background: barColor(pct) }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** One provider's titled block (e.g. "claude" / "codex") with its 5h + 7d bars. */
 export function ProviderBlock({
   name,
   fiveHour,
   sevenDay,
+  models,
   showRemaining = false,
 }: {
   name: string;
   fiveHour: { pct: number | null; resetsAt: number | null };
   sevenDay: { pct: number | null; resetsAt: number | null };
+  models?: Record<string, ModelRate>;
   showRemaining?: boolean;
 }) {
   if (fiveHour.pct == null && sevenDay.pct == null) return null;
@@ -121,6 +176,7 @@ export function ProviderBlock({
       </span>
       <UsageBar label="5h" pct={fiveHour.pct} resetsAt={fiveHour.resetsAt} showRemaining={showRemaining} />
       <UsageBar label="7d" pct={sevenDay.pct} resetsAt={sevenDay.resetsAt} showRemaining={showRemaining} />
+      <ModelRows models={models} showRemaining={showRemaining} />
       <PaceWarning risk={risk} />
     </div>
   );
@@ -205,7 +261,13 @@ export function UsageGlance() {
     <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-3">
       <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
       {hasClaude ? (
-        <ProviderBlock name="claude" fiveHour={claude!.fiveHour} sevenDay={claude!.sevenDay} showRemaining />
+        <ProviderBlock
+          name="claude"
+          fiveHour={claude!.fiveHour}
+          sevenDay={claude!.sevenDay}
+          models={claude!.models}
+          showRemaining
+        />
       ) : (
         // one provider reporting while claude is silent looked like fake data
         // (user-reported) — say explicitly why claude has no bars yet.
@@ -222,7 +284,13 @@ export function UsageGlance() {
       {hasCodex && (
         // labeled with its true source: the ChatGPT-subscription account
         // windows (read via ~/.codex/auth.json), live even without the CLI.
-        <ProviderBlock name="codex · chatgpt sub" fiveHour={codex!.fiveHour} sevenDay={codex!.sevenDay} showRemaining />
+        <ProviderBlock
+          name="codex · chatgpt sub"
+          fiveHour={codex!.fiveHour}
+          sevenDay={codex!.sevenDay}
+          models={codex!.models}
+          showRemaining
+        />
       )}
     </div>
   );

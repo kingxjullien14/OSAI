@@ -181,12 +181,24 @@ export function IdleControlCenter({
             <div className="aios-fade-in flex w-full flex-wrap items-start justify-center gap-x-12 gap-y-4" style={{ animationDelay: "120ms" }}>
               {hasClaude && (
                 <div className="min-w-[200px] flex-1 sm:max-w-[280px]">
-                  <ProviderBlock name="claude" fiveHour={claude!.fiveHour} sevenDay={claude!.sevenDay} showRemaining />
+                  <ProviderBlock
+                    name="claude"
+                    fiveHour={claude!.fiveHour}
+                    sevenDay={claude!.sevenDay}
+                    models={claude!.models}
+                    showRemaining
+                  />
                 </div>
               )}
               {hasCodex && (
                 <div className="min-w-[200px] flex-1 sm:max-w-[280px]">
-                  <ProviderBlock name="codex" fiveHour={codex!.fiveHour} sevenDay={codex!.sevenDay} showRemaining />
+                  <ProviderBlock
+                    name="codex"
+                    fiveHour={codex!.fiveHour}
+                    sevenDay={codex!.sevenDay}
+                    models={codex!.models}
+                    showRemaining
+                  />
                 </div>
               )}
             </div>

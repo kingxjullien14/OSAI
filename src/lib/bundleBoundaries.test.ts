@@ -125,8 +125,13 @@ test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
 
   // firaz 2026-06-06: replaced the gpt-5.3-codex-spark block with a real claude
   // meter sourced from ~/.aios/state/usage.json (claude_usage → claudeRate).
-  assert.match(source, /ProviderBlock name="claude"/);
+  assert.match(source, /ProviderBlock\s+name="claude"/);
   assert.match(source, /claudeRate\(\)/);
+  // per-model carve-out rows (claude sonnet/opus weekly, codex spark) nest
+  // under each provider block in both the sidebar and the idle home.
+  assert.match(source, /models=\{claude!\.models\}/);
+  assert.match(source, /models=\{codex!\.models\}/);
+  assert.match(source, /function ModelRows/);
   assert.equal(source.includes("gpt-5.3-codex-spark"), false);
   assert.equal(source.includes("idleRate()"), false);
   assert.match(sidebar, /UsageGlance as SidebarUsage/);

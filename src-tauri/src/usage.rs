@@ -144,7 +144,38 @@ fn map_oauth_usage(payload: &Value) -> Option<Value> {
     {
         return None; // unknown shape → let the caller fall back
     }
-    Some(json!({ "fiveHour": five, "sevenDay": seven }))
+    // Per-model weekly carve-outs ride alongside the account windows as
+    // `seven_day_<model>` keys (live-verified: seven_day_sonnet). Collect them
+    // (plus any five_hour_<model> siblings) so the picker/sidebar can show
+    // remaining headroom per model, mirroring codex's `models` map.
+    let mut models = serde_json::Map::new();
+    let mut scan = |obj: Option<&Value>| {
+        let Some(map) = obj.and_then(|v| v.as_object()) else {
+            return;
+        };
+        for (key, val) in map {
+            let (kind, name) = if let Some(n) = key.strip_prefix("seven_day_") {
+                ("sevenDay", n)
+            } else if let Some(n) = key.strip_prefix("five_hour_") {
+                ("fiveHour", n)
+            } else {
+                continue;
+            };
+            if name.is_empty() {
+                continue;
+            }
+            let w = win(Some(val));
+            if w.get("pct").map(|p| p.is_null()).unwrap_or(true) {
+                continue;
+            }
+            let entry = models.entry(name.to_string()).or_insert_with(|| json!({}));
+            entry[kind] = w;
+        }
+    };
+    scan(Some(payload));
+    scan(payload.get("rate_limits"));
+    scan(payload.get("usage"));
+    Some(json!({ "fiveHour": five, "sevenDay": seven, "models": models }))
 }
 
 /// 60s in-process cache so the sidebar's 30s poll + per-turn events don't
@@ -191,17 +222,37 @@ pub fn claude_usage() -> Value {
         Some(rl) => rl,
         None => return Value::Null,
     };
-    let win = |k: &str| -> Value {
-        let w = &rl[k];
+    let win = |w: &Value| -> Value {
         let (pct, resets_at) = windowed(
             w.get("used_percentage").and_then(|x| x.as_f64()),
             w.get("resets_at").and_then(|x| x.as_i64()),
         );
         json!({ "pct": pct, "resetsAt": resets_at })
     };
+    // the statusline snapshot can carry the same per-model carve-out keys
+    // (seven_day_sonnet …) — surface them identically to the OAuth path.
+    let mut models = serde_json::Map::new();
+    if let Some(map) = rl.as_object() {
+        for (key, val) in map {
+            let (kind, name) = if let Some(n) = key.strip_prefix("seven_day_") {
+                ("sevenDay", n)
+            } else if let Some(n) = key.strip_prefix("five_hour_") {
+                ("fiveHour", n)
+            } else {
+                continue;
+            };
+            let w = win(val);
+            if name.is_empty() || w.get("pct").map(|p| p.is_null()).unwrap_or(true) {
+                continue;
+            }
+            let entry = models.entry(name.to_string()).or_insert_with(|| json!({}));
+            entry[kind] = w;
+        }
+    }
     json!({
-        "fiveHour": win("five_hour"),
-        "sevenDay": win("seven_day"),
+        "fiveHour": win(&rl["five_hour"]),
+        "sevenDay": win(&rl["seven_day"]),
+        "models": models,
     })
 }
 
@@ -465,6 +516,40 @@ mod tests {
                 "models": {}
             }))
         );
+    }
+
+    #[test]
+    fn maps_oauth_usage_with_per_model_weekly_windows() {
+        // far-future resets so `windowed` doesn't zero the snapshot
+        let future = 4102444800i64; // 2100-01-01T00:00:00Z
+        let payload = json!({
+            "five_hour": { "utilization": 39.0, "resets_at": "2100-01-01T00:00:00Z" },
+            "seven_day": { "utilization": 31.0, "resets_at": future },
+            "seven_day_sonnet": { "utilization": 2.0, "resets_at": future }
+        });
+        let v = map_oauth_usage(&payload).expect("mapped");
+        assert_eq!(v.pointer("/fiveHour/pct"), Some(&json!(39.0)));
+        assert_eq!(v.pointer("/fiveHour/resetsAt"), Some(&json!(future)));
+        assert_eq!(v.pointer("/sevenDay/pct"), Some(&json!(31.0)));
+        assert_eq!(v.pointer("/models/sonnet/sevenDay/pct"), Some(&json!(2.0)));
+        assert_eq!(v.pointer("/models/sonnet/sevenDay/resetsAt"), Some(&json!(future)));
+    }
+
+    #[test]
+    fn oauth_per_model_windows_skip_empty_and_expired_keys_stay_zeroed() {
+        let future = 4102444800i64;
+        let payload = json!({
+            "five_hour": { "utilization": 10.0, "resets_at": future },
+            "seven_day": { "utilization": 5.0, "resets_at": future },
+            // expired carve-out: rolled over → reported as 0% used, no reset
+            "seven_day_opus": { "utilization": 88.0, "resets_at": 1 },
+            // junk entry without a percentage → dropped entirely
+            "seven_day_misc": { "note": "n/a" }
+        });
+        let v = map_oauth_usage(&payload).expect("mapped");
+        assert_eq!(v.pointer("/models/opus/sevenDay/pct"), Some(&json!(0.0)));
+        assert_eq!(v.pointer("/models/opus/sevenDay/resetsAt"), Some(&Value::Null));
+        assert_eq!(v.pointer("/models/misc"), None);
     }
 
     #[test]

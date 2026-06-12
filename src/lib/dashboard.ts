@@ -91,7 +91,8 @@ export interface RateWindow {
   pct: number | null;
   resetsAt: number | null;
 }
-export interface CodexModelRate {
+/** One model's own rate windows (codex spark, claude sonnet/opus carve-outs). */
+export interface ModelRate {
   fiveHour: RateWindow;
   sevenDay: RateWindow;
 }
@@ -145,7 +146,7 @@ export interface CodexRate {
   fiveHour: RateWindow;
   sevenDay: RateWindow;
   plan: string | null;
-  models: Record<string, CodexModelRate>;
+  models: Record<string, ModelRate>;
 }
 export async function codexRate(): Promise<CodexRate> {
   const empty: CodexRate = {
@@ -169,7 +170,7 @@ export async function codexRate(): Promise<CodexRate> {
     } | null>("codex_usage");
     if (!u) return empty;
     const models = u.models ?? {};
-    const parsedModels: Record<string, CodexModelRate> = {};
+    const parsedModels: Record<string, ModelRate> = {};
     for (const [name, m] of Object.entries(models)) {
       if (!m || typeof m !== "object") continue;
       const mAny = m as {
@@ -214,18 +215,37 @@ export async function codexRate(): Promise<CodexRate> {
 export interface ClaudeRate {
   fiveHour: RateWindow;
   sevenDay: RateWindow;
+  /** Per-model weekly carve-outs (sonnet/opus…) the OAuth endpoint reports. */
+  models: Record<string, ModelRate>;
 }
 export async function claudeRate(): Promise<ClaudeRate> {
   const empty: ClaudeRate = {
     fiveHour: { pct: null, resetsAt: null },
     sevenDay: { pct: null, resetsAt: null },
+    models: {},
   };
   try {
+    type WireWindow = { pct?: number | null; resetsAt?: number | null };
     const u = await invoke<{
-      fiveHour?: { pct?: number | null; resetsAt?: number | null };
-      sevenDay?: { pct?: number | null; resetsAt?: number | null };
+      fiveHour?: WireWindow;
+      sevenDay?: WireWindow;
+      models?: Record<string, { fiveHour?: WireWindow; sevenDay?: WireWindow }>;
     } | null>("claude_usage");
     if (!u) return empty;
+    const models: Record<string, ModelRate> = {};
+    for (const [name, m] of Object.entries(u.models ?? {})) {
+      if (!m || typeof m !== "object") continue;
+      models[name] = {
+        fiveHour: {
+          pct: m.fiveHour?.pct ?? null,
+          resetsAt: m.fiveHour?.resetsAt ?? null,
+        },
+        sevenDay: {
+          pct: m.sevenDay?.pct ?? null,
+          resetsAt: m.sevenDay?.resetsAt ?? null,
+        },
+      };
+    }
     return {
       fiveHour: {
         pct: u.fiveHour?.pct ?? null,
@@ -235,6 +255,7 @@ export async function claudeRate(): Promise<ClaudeRate> {
         pct: u.sevenDay?.pct ?? null,
         resetsAt: u.sevenDay?.resetsAt ?? null,
       },
+      models,
     };
   } catch {
     return empty;
