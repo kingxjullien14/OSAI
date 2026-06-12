@@ -69,6 +69,7 @@ import { ProviderBlock, useUsageRates } from "./dashboard/UsageGlance";
 import { listWorkspaces, subscribeWorkspaces, type Workspace } from "../lib/workspaces";
 import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
+import { setPaletteMorphSource } from "../lib/paletteMorph";
 
 const PetDashboardCompanion = lazy(() =>
   import("./PetPane").then((mod) => ({ default: mod.PetDashboardCompanion })),
@@ -147,10 +148,22 @@ export function IdleControlCenter({
   const [workspaces, setWorkspaces] = useState<Workspace[]>(listWorkspaces);
   useEffect(() => subscribeWorkspaces(() => setWorkspaces(listWorkspaces())), []);
 
+  // liveness 0..1 — the backdrop breathes with what the system is actually
+  // doing (agents running, repos with unpushed work, unread signals). Idle
+  // reads calm-dim; a busy cockpit warms up. Opacity-only (composite-cheap),
+  // 2s ease so wake-ups breathe in rather than snap.
+  const liveness = Math.min(
+    1,
+    activeAgents * 0.45 + Math.min(dirtyProjects, 3) * 0.12 + (unread > 0 ? 0.18 : 0),
+  );
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* faint ambient drift — identity, not decoration; reduce-motion kills it */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-70">
+      <div
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+        style={{ opacity: 0.55 + liveness * 0.45, transition: "opacity 2s ease-in-out" }}
+      >
         <div
           className="aios-drift-a absolute h-[48vh] w-[48vh] rounded-full blur-[110px]"
           style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 70%)" }}
@@ -390,6 +403,7 @@ function CommandLine({
 }) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
 
   // the home's primary affordance receives focus on arrival — type-to-start,
   // no click required (it never stole focus before).
@@ -397,6 +411,14 @@ function CommandLine({
     const t = setTimeout(() => inputRef.current?.focus(), 250);
     return () => clearTimeout(t);
   }, []);
+
+  // empty submit / the ⌘K kbd → the palette MORPHS out of this surface (FLIP):
+  // record the rect; CommandPalette consumes it on its next mount.
+  const openPaletteMorphed = useCallback(() => {
+    const r = surfaceRef.current?.getBoundingClientRect();
+    if (r) setPaletteMorphSource(r);
+    onOpenPalette();
+  }, [onOpenPalette]);
 
   // type-ahead intents — the line reads what you're typing and offers the
   // direct route: `$…` → a terminal, `/` → the palette, plain text → matching
@@ -453,7 +475,7 @@ function CommandLine({
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text) {
-      onOpenPalette();
+      openPaletteMorphed();
       return;
     }
     // explicit prefixes route to their intent — seeding a chat with "$ls"
@@ -469,7 +491,7 @@ function CommandLine({
     }
     onSeedChat(text);
     setValue("");
-  }, [value, onSeedChat, onOpenPalette, intents]);
+  }, [value, onSeedChat, openPaletteMorphed, intents]);
 
   // ↑ in the empty line recalls what you last launched (chat-style history,
   // depth 1 — the home is a launcher, not a transcript).
@@ -496,7 +518,10 @@ function CommandLine({
         submit();
       }}
     >
-      <div className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]">
+      <div
+        ref={surfaceRef}
+        className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
+      >
         {/* accent sheen sweeping the top edge when focused — mirrors the composer */}
         <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-[var(--color-accent)] to-transparent opacity-0 transition-opacity duration-500 group-focus-within/cmd:opacity-80" />
         <Search

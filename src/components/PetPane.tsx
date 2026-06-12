@@ -15,6 +15,8 @@ import {
   getPetState,
   subscribePetState,
   subscribePetReactions,
+  subscribePetBubbles,
+  type PetBubble,
   type PetReaction,
   type PetState,
 } from "../lib/pet";
@@ -41,6 +43,37 @@ function usePetReaction(): PetReaction | null {
     };
   }, []);
   return reaction;
+}
+
+/** Companion speech — the rate-limited bubble bus (pet.ts). Shows ~7s. */
+function usePetBubble(): PetBubble | null {
+  const [bubble, setBubble] = useState<PetBubble | null>(null);
+  useEffect(() => {
+    let timer: number | null = null;
+    const unsubscribe = subscribePetBubbles((b) => {
+      setBubble(b);
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => setBubble(null), 7000);
+    });
+    return () => {
+      unsubscribe();
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, []);
+  return bubble;
+}
+
+/** The bubble itself — a quiet glass chip that settles in over the sprite. */
+function PetSpeechBubble({ bubble }: { bubble: PetBubble | null }) {
+  if (!bubble) return null;
+  return (
+    <div
+      key={bubble.id}
+      className="modal-in pointer-events-none absolute left-1/2 top-1 z-30 max-w-[230px] -translate-x-1/2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-2.5 py-1.5 text-center font-sans text-[11px] leading-snug text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)]"
+    >
+      {bubble.text}
+    </div>
+  );
 }
 
 const METERS: Array<{
@@ -399,6 +432,7 @@ function PetSprite({
 export function PetPane() {
   const [state, setState] = useState(() => getPetState());
   const reaction = usePetReaction();
+  const bubble = usePetBubble();
   const [showHatchOnboarding, setShowHatchOnboarding] = useState(() => !hasSavedVariant() && !readOnboardingDone());
   const [variant, setVariant] = useState(readVariant);
   const [accent, setAccentState] = useState<Accent>(getAccent);
@@ -499,6 +533,7 @@ export function PetPane() {
       )}
 
       <div className={`pet-canvas pet-canvas--${variant.environment}`} style={spriteStyle}>
+        <PetSpeechBubble bubble={bubble} />
         <div className="pet-world" aria-label={`aios pet room: ${activity.label}`}>
           <div className="pet-world-sky">
             <span className="pet-world-star pet-world-star-a" />
@@ -581,6 +616,7 @@ export function PetDashboardCompanion({
 }) {
   const [state, setState] = useState(() => getPetState());
   const reaction = usePetReaction();
+  const bubble = usePetBubble();
   const [variant] = useState(readVariant);
 
   useEffect(() => {
@@ -608,6 +644,7 @@ export function PetDashboardCompanion({
       </div>
 
       <div className={`pet-dashboard-canvas pet-canvas pet-canvas--${variant.environment}`} style={spriteStyle}>
+        <PetSpeechBubble bubble={bubble} />
         <div className="pet-world" aria-label={`aios pet dashboard companion: ${activity.label}`}>
           <div className="pet-world-sky">
             <span className="pet-world-star pet-world-star-a" />

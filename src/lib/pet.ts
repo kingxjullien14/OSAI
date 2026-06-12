@@ -61,6 +61,30 @@ function react(reaction: PetReaction) {
   reactionListeners.forEach((l) => l(reaction));
 }
 
+/** Companion bubbles — an OCCASIONAL line of speech driven by real state
+ *  (context draining, a failed run, a long clean finish). Hard per-kind
+ *  cooldowns keep it charming; a chatty pet is Clippy. Visual layers
+ *  (PetPane + the idle-home companion) subscribe and show ~7s. */
+export interface PetBubble {
+  id: number;
+  text: string;
+}
+type BubbleListener = (b: PetBubble) => void;
+const bubbleListeners = new Set<BubbleListener>();
+export function subscribePetBubbles(listener: BubbleListener): () => void {
+  bubbleListeners.add(listener);
+  return () => bubbleListeners.delete(listener);
+}
+let bubbleSeq = 0;
+const bubbleLastAt: Record<string, number> = {};
+function maybeBubble(kind: string, text: string, cooldownMs: number) {
+  const t = now();
+  if (t - (bubbleLastAt[kind] ?? 0) < cooldownMs) return;
+  bubbleLastAt[kind] = t;
+  const bubble = { id: ++bubbleSeq, text };
+  bubbleListeners.forEach((l) => l(bubble));
+}
+
 const STORAGE_KEY = "aios.pet.state.v1";
 const TICK_MS = 10000;
 
@@ -271,6 +295,11 @@ export function onPetUserMessage(input: PetActionInput = {}) {
 export function onPetResult(input: PetResultInput = {}) {
   startTicker();
   react(input.ok === false ? "wince" : "celebrate");
+  if (input.ok === false) {
+    maybeBubble("wince", "ouch — that run failed", 10 * 60_000);
+  } else if ((input.durationMs ?? 0) > 120_000) {
+    maybeBubble("longrun", "that was a long one — clean finish", 20 * 60_000);
+  }
   apply((s) => {
     const stressFromTokens = scoreFromTokens(input.tokens);
     const durationPenalty = Number.isFinite(input.durationMs ?? 0)
@@ -305,6 +334,10 @@ export function onPetUsage(input: PetUsageInput = {}) {
   startTicker();
   const pct = input.pct == null ? null : Number(input.pct);
   if (pct == null || !Number.isFinite(pct)) return;
+  // pct = consumed; ≥85% means the context window is running out
+  if (pct >= 85) {
+    maybeBubble("lowctx", "context is getting low — consider /handoff", 15 * 60_000);
+  }
   apply((s) => {
     s.stress = clamp(s.stress + decayByProvider(pct));
     s.bloat = clamp(s.bloat + (pct >= 80 ? 1.1 : -0.3));

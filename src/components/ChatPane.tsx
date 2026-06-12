@@ -167,6 +167,7 @@ import { invoke, isTauriRuntime } from "../lib/tauri";
 import { playCue } from "../lib/sound";
 import { PaneDropZone } from "./PaneDropZone";
 import { CopyButton, trapTab } from "./ui";
+import { RunCinema } from "./RunCinema";
 import { reportDiag } from "../lib/diag";
 import { pushNotification } from "../lib/notifications";
 
@@ -4024,6 +4025,23 @@ export function ChatPane({
     return () => window.removeEventListener("aios-chat-find", onFind);
   }, [paneKey]);
 
+  // ── run cinema — replay the captured run-event timeline ────────────────
+  // Segment starts: index 0 plus the event after each terminal marker, so the
+  // k-th activity group replays from (roughly) its own run's beginning.
+  const [cinemaAt, setCinemaAt] = useState<number | null>(null);
+  const cinemaSegStarts = useMemo(() => {
+    const starts = [0];
+    runEventState.events.forEach((ev, i) => {
+      if (
+        (ev.type === "run.completed" || ev.type === "run.failed" || ev.type === "run.interrupted") &&
+        i + 1 < runEventState.events.length
+      ) {
+        starts.push(i + 1);
+      }
+    });
+    return starts;
+  }, [runEventState.events]);
+
   // ── conversation minimap — one tick per block, click to jump ───────────
   const [mapTicks, setMapTicks] = useState<
     { id: string; kind: RenderBlock["kind"]; frac: number; err: boolean }[]
@@ -4297,7 +4315,10 @@ export function ChatPane({
             // (resumed sessions span days; "yesterday" deserves a seam).
             const out: React.ReactNode[] = [];
             let prevDay: string | null = null;
+            let actIdx = -1; // running activity-group index → cinema segment
             blocks.forEach((b, i) => {
+              if (b.kind === "activity") actIdx += 1;
+              const segForBlock = Math.min(actIdx < 0 ? 0 : actIdx, cinemaSegStarts.length - 1);
               const t = blockTime(b);
               if (t != null) {
                 const day = new Date(t).toDateString();
@@ -4317,6 +4338,11 @@ export function ChatPane({
                     elapsedMs={liveStart != null ? now - liveStart : 0}
                     phase={runEventState.phase}
                     forceOpen={findOpen && findMatchSet.has(b.id)}
+                    onReplay={
+                      runEventState.events.length > 0
+                        ? () => setCinemaAt(cinemaSegStarts[segForBlock] ?? 0)
+                        : undefined
+                    }
                   />
                 ) : b.kind === "user" ? (
                   <UserBubble
@@ -4379,6 +4405,14 @@ export function ChatPane({
             )}
         </div>
       </div>
+      {/* run cinema — replay the captured run timeline at director's pace */}
+      {cinemaAt != null && runEventState.events.length > 0 && (
+        <RunCinema
+          events={runEventState.events}
+          startIndex={cinemaAt}
+          onClose={() => setCinemaAt(null)}
+        />
+      )}
       {/* find-in-chat bar — opens via mod+F (App routes by focused pane) */}
       {findOpen && (
         <div className="surface-pop scale-in absolute right-3 top-2 z-30 flex items-center gap-1.5 px-2 py-1.5">
@@ -4751,6 +4785,7 @@ function ActivityGroup({
   elapsedMs,
   phase,
   forceOpen = false,
+  onReplay,
 }: {
   tools: ToolTurn[];
   durationMs?: number;
@@ -4760,6 +4795,8 @@ function ActivityGroup({
   phase?: RunPhase;
   /** find-in-chat: a hit lives in this group — reveal it regardless of toggle. */
   forceOpen?: boolean;
+  /** run cinema: replay this group's run segment (finished groups only). */
+  onReplay?: () => void;
 }) {
   // expanded while the turn is live (so you watch tools run in real time), then
   // auto-collapses to "Worked for Xs ›" when done — unless the user toggled it.
@@ -4784,7 +4821,7 @@ function ActivityGroup({
       : `${n} step${n === 1 ? "" : "s"}`;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group/actg flex flex-col gap-1.5">
       <button
         type="button"
         onClick={() => setUserToggled(!open)}
@@ -4805,7 +4842,19 @@ function ActivityGroup({
             · {n} step{n === 1 ? "" : "s"}
           </span>
         )}
+        {/* replay (run cinema) — sibling-positioned via the absolute span so
+            it never nests a button inside this button; reveals on hover. */}
       </button>
+      {!live && onReplay && (
+        <button
+          type="button"
+          onClick={onReplay}
+          title="replay this run (run cinema)"
+          className="-mt-1.5 ml-5 grid h-5 w-fit items-center gap-1 rounded px-1 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
+        >
+          ▶ replay
+        </button>
+      )}
 
       {open && n > 0 && (
         <div className="ml-[6px] flex flex-col gap-0.5 border-l border-[var(--color-border)] pl-3">

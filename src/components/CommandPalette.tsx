@@ -22,6 +22,7 @@ import {
   type Accent,
   type Theme,
 } from "../lib/theme";
+import { consumePaletteMorphSource } from "../lib/paletteMorph";
 import { trapTab, useExitState } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
@@ -209,6 +210,7 @@ export function CommandPalette({
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // reset query + selection every time it opens; focus the input.
   useEffect(() => {
@@ -218,6 +220,36 @@ export function CommandPalette({
       // focus after paint so the autofocus lands reliably
       requestAnimationFrame(() => inputRef.current?.focus());
     }
+  }, [open]);
+
+  // FLIP morph: when the idle command line opened us (it records its rect via
+  // paletteMorph), the panel starts as an inverted transform mapping back onto
+  // that surface and settles into place — the input visibly BECOMES the
+  // palette. WAAPI overrides the CSS .modal-in entrance for this one open;
+  // reduce-motion (or a normal ⌘K open) skips it entirely.
+  useEffect(() => {
+    if (!open) return;
+    const src = consumePaletteMorphSource();
+    const el = panelRef.current;
+    if (!src || !el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const dst = el.getBoundingClientRect();
+    if (dst.width === 0 || dst.height === 0) return;
+    el.style.animation = "none"; // suppress .modal-in for the morph open
+    const dx = src.left + src.width / 2 - (dst.left + dst.width / 2);
+    const dy = src.top + src.height / 2 - (dst.top + dst.height / 2);
+    const sx = src.width / dst.width;
+    const sy = src.height / dst.height;
+    const anim = el.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, opacity: 0.65 },
+        { transform: "none", opacity: 1 },
+      ],
+      { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+    );
+    anim.onfinish = () => {
+      el.style.animation = "";
+    };
   }, [open]);
 
   // flat, ranked, group-ordered list. Empty query → "recent" (MRU) first.
@@ -517,6 +549,7 @@ export function CommandPalette({
       }}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
