@@ -257,7 +257,7 @@ export function NotesPane({ onSend }: { onSend?: (text: string) => void }) {
                   <button
                     onClick={onSendToOracle}
                     title="send this note to the oracle (active chat)"
-                    className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]"
+                    className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
                   >
                     <Send size={11} />
                     send

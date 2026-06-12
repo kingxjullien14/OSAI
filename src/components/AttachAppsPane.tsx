@@ -145,7 +145,7 @@ function AttachAppsPaneInner({
                         type="button"
                         onClick={() => void focus(app)}
                         disabled={busy}
-                        className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 text-[11px] text-[var(--color-text-2)] hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)] disabled:opacity-60"
+                        className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 text-[11px] text-[var(--color-text-2)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-60"
                         title="focus app"
                       >
                         {busy ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}

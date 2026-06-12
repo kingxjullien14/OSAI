@@ -798,7 +798,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
         <button
           onClick={() => spawnPane("files", { path: paneCwd })}
           title={`Open files here${paneCwd ? `\n${paneCwd}` : ""}`}
-          className="absolute left-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] opacity-40 backdrop-blur transition-all hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)] hover:opacity-100"
+          className="absolute left-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] opacity-40 backdrop-blur transition-all hover:text-[var(--color-text)] hover:opacity-100"
         >
           <FolderOpen size={13} />
           <span>files</span>
@@ -808,7 +808,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           <button
             onClick={() => setComposerOpen(true)}
             title="open compose box"
-            className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] backdrop-blur transition-colors hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)]"
+            className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
           >
             <MessageSquarePlus size={13} />
             <span>compose</span>

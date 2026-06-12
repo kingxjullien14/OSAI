@@ -200,7 +200,7 @@ export function BridgesPane() {
           <button
             onClick={pairPersonal}
             disabled={pairing}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)] disabled:opacity-50"
+            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
             title="pair your personal WhatsApp (wwebjs) — enables the 'personal' send channel"
           >
             {pairing ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
@@ -415,7 +415,7 @@ function NotConnectedRow({
       </span>
       <button
         onClick={() => onConnect("channel connectors coming — not wired yet")}
-        className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5 text-[11px] text-[var(--color-text-2)] hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)]"
+        className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5 text-[11px] text-[var(--color-text-2)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
         title="channel connectors coming soon"
       >
         <Plug size={11} />

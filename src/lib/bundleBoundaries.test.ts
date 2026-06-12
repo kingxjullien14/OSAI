@@ -683,7 +683,10 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
   };
   ratchet("text-white", /text-white/g, 0);
   ratchet("text-black", /text-black/g, 0);
-  ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 30);
+  // floor is 10, not 0: the survivors are TRUE primary/add affordances per
+  // DESIGN.md §6 (palette ask-CTA, oracle/notes/money add-CTAs, reply action
+  // buttons, snippet tip). Decoration (rows, chips, floats) is border-strong.
+  ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 10);
   // floor is 3, not 0: TerminalComposer.tsx is locked (never edited) and
   // carries the last three. Everything editable is on --aios-shadow-pop.
   ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 3);

@@ -154,7 +154,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
               <button
                 type="button"
                 onClick={() => onOpenAgentChat(agent.id, agent.label)}
-                className="mt-3 inline-flex h-8 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)]/45 hover:text-[var(--color-text)]"
+                className="mt-3 inline-flex h-8 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
                 title={`talk to ${agent.label}`}
               >
                 <MessageSquare size={13} />

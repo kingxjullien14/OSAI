@@ -219,7 +219,7 @@ function MirrorAction({
       className={`rounded-md border px-3 py-2 text-[12px] transition-colors ${
         danger
           ? "border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10"
-          : "border-[var(--color-border)] text-[var(--color-text-2)] hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)]"
+          : "border-[var(--color-border)] text-[var(--color-text-2)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
       }`}
     >
       {label}

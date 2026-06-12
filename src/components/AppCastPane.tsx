@@ -348,7 +348,7 @@ function AppCastPaneInner({
               setPickerOpen((o) => !o);
               if (!pickerOpen) refreshWindows();
             }}
-            className="flex w-full min-w-0 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-left text-[12px] text-[var(--color-text)] outline-none hover:border-[var(--color-accent)]/50"
+            className="flex w-full min-w-0 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-left text-[12px] text-[var(--color-text)] outline-none hover:border-[var(--color-border-strong)]"
           >
             <span className="min-w-0 flex-1 truncate">
               {pickedWin
@@ -418,7 +418,7 @@ function AppCastPaneInner({
                           e.stopPropagation();
                           refreshWindows();
                         }}
-                        className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[11px] text-[var(--color-text)] hover:border-[var(--color-accent)]/50"
+                        className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[11px] text-[var(--color-text)] hover:border-[var(--color-border-strong)]"
                       >
                         retry
                       </button>
@@ -511,7 +511,7 @@ function AppCastPaneInner({
                         setError(null);
                         refreshWindows();
                       }}
-                      className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text)] hover:border-[var(--color-accent)]/50"
+                      className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text)] hover:border-[var(--color-border-strong)]"
                     >
                       retry
                     </button>

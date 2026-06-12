@@ -1178,7 +1178,7 @@ export function Settings({
                       <button
                         type="button"
                         onClick={() => onCopyMirrorUrl?.()}
-                        className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]"
+                        className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-border-strong)]"
                       >
                         <MonitorUp size={13} />
                         copy link

@@ -94,7 +94,7 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
             <span className="text-[12px]">binary file{preview ? ` · ${(preview.size / 1024).toFixed(0)} KB` : ""}</span>
             <button
               onClick={() => openPath(path).catch((e) => reportDiag("fileviewer.open", e, { action: "openPath" }))}
-              className="rounded-md border border-[var(--color-border)] px-3 py-1 text-[11px] hover:border-[var(--color-accent)]/50"
+              className="rounded-md border border-[var(--color-border)] px-3 py-1 text-[11px] hover:border-[var(--color-border-strong)]"
             >
               open externally
             </button>

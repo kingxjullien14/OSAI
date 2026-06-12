@@ -562,7 +562,7 @@ function TmuxRow({
   }, [confirmKill]);
 
   return (
-    <div className="group flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/30 px-2 py-1.5 transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-panel-2)]">
+    <div className="group flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/30 px-2 py-1.5 transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-panel-2)]">
       <button
         onClick={onAttach}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"

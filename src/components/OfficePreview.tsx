@@ -32,7 +32,7 @@ export function OfficePreview({ path, name }: { path: string; name?: string }) {
         <span className="text-[12px]">couldn't render · {error}</span>
         <button
           onClick={() => openPath(path).catch((e) => reportDiag("office.open", e, { action: "openPath" }))}
-          className="rounded-md border border-[var(--color-border)] px-3 py-1 text-[11px] hover:border-[var(--color-accent)]/50"
+          className="rounded-md border border-[var(--color-border)] px-3 py-1 text-[11px] hover:border-[var(--color-border-strong)]"
         >
           open externally
         </button>

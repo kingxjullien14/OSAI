@@ -4137,7 +4137,7 @@ export function ChatPane({
           type="button"
           onClick={jumpToLatest}
           title="scroll to bottom"
-          className="absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:border-[var(--color-accent)]/60 hover:text-[var(--color-text)]"
+          className="absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
         >
           <ArrowDown size={15} />
         </button>
@@ -4176,7 +4176,7 @@ export function ChatPane({
               type="button"
               onClick={() => setComposerCollapsed(false)}
               title="show composer"
-              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-panel-2)]/80 px-3 py-2 text-left text-[12px] text-[var(--color-text-2)] shadow-xl shadow-black/25 backdrop-blur transition-colors hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)]"
+              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-panel-2)]/80 px-3 py-2 text-left text-[12px] text-[var(--color-text-2)] shadow-xl shadow-black/25 backdrop-blur transition-colors hover:text-[var(--color-text)]"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <CornerDownLeft size={14} className="shrink-0 text-[var(--color-accent)]" />
@@ -4787,7 +4787,7 @@ function FileCard({ artifact }: { artifact: Artifact }) {
       className={`group/file flex max-w-full items-center gap-2.5 rounded-lg border bg-[var(--color-panel-2)] px-3 py-2 text-left transition-colors ${
         err
           ? "border-[var(--color-danger)]/50"
-          : "border-[var(--color-border)] hover:border-[var(--color-accent)]/50"
+          : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
       }`}
     >
       <button type="button" onClick={open} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
@@ -5159,7 +5159,7 @@ function ApprovalCard({
           onClick={() =>
             onResolve(turn.requestId, turn.toolName, "allow_always")
           }
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/50"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-panel)]"
         >
           <CheckCheck size={13} /> allow always
         </button>
