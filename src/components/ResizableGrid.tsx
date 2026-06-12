@@ -107,6 +107,20 @@ export function ResizableGrid({
     setDragging(false);
   };
 
+  // Double-click a gutter → equalize its two tracks (persisted via the normal
+  // save effect). The reflow transition glides them since no drag is active.
+  const equalize = (axis: "col" | "row", i: number) => {
+    const next = (prev: number[]) => {
+      const arr = [...prev];
+      const share = (arr[i] + arr[i + 1]) / 2;
+      arr[i] = share;
+      arr[i + 1] = share;
+      return arr;
+    };
+    if (axis === "col") setColFr(next);
+    else setRowFr(next);
+  };
+
   // Cumulative fraction (0..1) of a boundary after track i — used to place the
   // gutter handle. Gap offset is negligible at typical sizes; the wide hit area
   // absorbs it.
@@ -136,7 +150,8 @@ export function ResizableGrid({
         {children}
       </div>
 
-      {/* vertical gutters (resize columns) */}
+      {/* vertical gutters (resize columns) — faint resting pip so the affordance
+          is discoverable without hover-hunting; double-click equalizes. */}
       {Array.from({ length: cols - 1 }, (_, i) => (
         <div
           key={`c${i}`}
@@ -144,10 +159,12 @@ export function ResizableGrid({
           onPointerMove={onMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onDoubleClick={() => equalize("col", i)}
+          title="drag to resize · double-click to equalize"
           className="group absolute top-0 bottom-0 z-20 flex w-2 -translate-x-1/2 cursor-col-resize items-center justify-center"
           style={{ left: `${colBoundary(i) * 100}%` }}
         >
-          <span className="h-10 w-[3px] rounded-full bg-[var(--color-border)] opacity-0 transition-opacity group-hover:opacity-100 group-active:bg-[var(--color-accent)] group-active:opacity-100" />
+          <span className="h-10 w-[3px] rounded-full bg-[var(--color-border)] opacity-30 transition-opacity group-hover:opacity-100 group-active:bg-[var(--color-accent)] group-active:opacity-100" />
         </div>
       ))}
 
@@ -159,10 +176,12 @@ export function ResizableGrid({
           onPointerMove={onMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onDoubleClick={() => equalize("row", i)}
+          title="drag to resize · double-click to equalize"
           className="group absolute left-0 right-0 z-20 flex h-2 -translate-y-1/2 cursor-row-resize items-center justify-center"
           style={{ top: `${rowBoundary(i) * 100}%` }}
         >
-          <span className="h-[3px] w-10 rounded-full bg-[var(--color-border)] opacity-0 transition-opacity group-hover:opacity-100 group-active:bg-[var(--color-accent)] group-active:opacity-100" />
+          <span className="h-[3px] w-10 rounded-full bg-[var(--color-border)] opacity-30 transition-opacity group-hover:opacity-100 group-active:bg-[var(--color-accent)] group-active:opacity-100" />
         </div>
       ))}
     </div>

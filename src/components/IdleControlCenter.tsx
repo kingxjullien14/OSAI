@@ -321,10 +321,13 @@ function HeroClock() {
   const ss = String(now.getSeconds()).padStart(2, "0");
   return (
     <div className="aios-fade-in flex items-baseline justify-center gap-2 font-mono tabular-nums text-[var(--color-text)]" style={{ animationDelay: "40ms" }}>
-      <span className="text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{hh}</span>
+      {/* key= remounts a changed glyph so .clock-tick eases it in (150ms
+          opacity) — the 1Hz swap was the one hard cut on the calmest surface.
+          tabular-nums means no layout shift; reduce-motion kills the ease. */}
+      <span key={`h${hh}`} className="clock-tick text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{hh}</span>
       <span className="aios-colon text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em] text-[var(--color-accent)]">:</span>
-      <span className="text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{mm}</span>
-      <span className="self-end pb-[0.9vw] font-mono text-[clamp(16px,2vw,22px)] font-light leading-none tracking-tight text-[var(--color-faint)]">{ss}</span>
+      <span key={`m${mm}`} className="clock-tick text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{mm}</span>
+      <span key={`s${ss}`} className="clock-tick self-end pb-[0.9vw] font-mono text-[clamp(16px,2vw,22px)] font-light leading-none tracking-tight text-[var(--color-faint)]">{ss}</span>
     </div>
   );
 }

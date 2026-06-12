@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, Loader2, Search } from "lucide-react";
 
 import { searchInFiles, type SearchHit } from "../lib/fs";
-import { trapTab } from "./ui";
+import { trapTab, useExitState } from "./ui";
 
 const DEBOUNCE_MS = 180;
 
@@ -144,7 +144,10 @@ export function GlobalSearch({
     listRef.current?.querySelector<HTMLElement>(`[data-row="${rowIdx}"]`)?.scrollIntoView({ block: "nearest" });
   }, [sel, open, hitRowIdx]);
 
-  if (!open) return null;
+  // Exit motion — same closing contract as the palette (App.css data-closing).
+  const { mounted, closing } = useExitState(open);
+
+  if (!mounted) return null;
 
   const prefix = root.endsWith("/") ? root : `${root}/`;
   const pick = (path: string, hit: SearchHit) => {
@@ -214,7 +217,8 @@ export function GlobalSearch({
 
   return (
     <div
-      className="overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
+      data-closing={closing || undefined}
+      className={`overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -223,6 +227,7 @@ export function GlobalSearch({
         role="dialog"
         aria-modal="true"
         aria-label="search in files"
+        data-closing={closing || undefined}
         className="modal-in glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {

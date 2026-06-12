@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 
 import { listProjects, type ProjectInfo } from "../lib/run";
-import { trapTab } from "./ui";
+import { trapTab, useExitState } from "./ui";
 import {
   loadProjectsStore,
   subscribeProjects,
@@ -1046,14 +1046,18 @@ export function Settings({
     if (open) requestAnimationFrame(() => dialogRef.current?.focus());
   }, [open]);
 
-  if (!open) return null;
+  // Exit motion — same closing contract as the palette (App.css data-closing).
+  const { mounted, closing } = useExitState(open);
+
+  if (!mounted) return null;
 
   /** Persist + update local state in one move. */
   const patch = (p: Partial<AppSettings>) => setS(saveSettings(p));
 
   return (
     <div
-      className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
+      data-closing={closing || undefined}
+      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
       onMouseDown={onClose}
     >
       <div
@@ -1062,6 +1066,7 @@ export function Settings({
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
+        data-closing={closing || undefined}
         className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}

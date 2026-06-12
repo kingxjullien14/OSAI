@@ -41,7 +41,7 @@ import {
 import { type NotificationLevel } from "../lib/notifications";
 import { isWindows } from "../lib/platform";
 // (reportDiag dropped with the inline clipboard handler — CopyButton owns it)
-import { CopyButton } from "./ui";
+import { CopyButton, PaneEmpty } from "./ui";
 
 /** Brand-ish icon per channel id (falls back to a generic plug). lucide only. */
 function channelIcon(id: string, size = 13, className = "") {
@@ -133,16 +133,25 @@ export function BridgesPane() {
 
   // lightweight self-contained toast (connect button is an honest no-op).
   const [toast, setToast] = useState<string | null>(null);
+  const [toastLeaving, setToastLeaving] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastOutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((msg: string, _level: NotificationLevel = "info", _body?: string) => {
     // Local toast only. These are ephemeral UI acks (e.g. "connect is a no-op") —
     // mirroring them into the bell was pure noise, so it's dropped.
+    setToastLeaving(false);
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
+    if (toastOutTimer.current) clearTimeout(toastOutTimer.current);
+    toastOutTimer.current = setTimeout(() => setToastLeaving(true), 2300);
+    toastTimer.current = setTimeout(() => {
+      setToast(null);
+      setToastLeaving(false);
+    }, 2500);
   }, []);
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
+    if (toastOutTimer.current) clearTimeout(toastOutTimer.current);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -266,7 +275,16 @@ export function BridgesPane() {
         {error && <p className="text-[12px] text-[var(--color-danger)]">{error}</p>}
 
         {channels.length === 0 && !loading && !error && (
-          <p className="text-[11px] text-[var(--color-muted)]/60">no channels detected.</p>
+          <PaneEmpty
+            icon={Radio}
+            title="no channels detected"
+            hint={
+              isWindows
+                ? "channels run on the macOS bridge host — this pane is read-only here"
+                : "start the aios bridge (launchd) and hit refresh"
+            }
+            action={{ label: "refresh", onClick: () => void refresh() }}
+          />
         )}
 
         <div className="flex flex-col gap-2.5">
@@ -277,7 +295,10 @@ export function BridgesPane() {
       </div>
 
       {toast && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-lg">
+        <div
+          key={toast}
+          className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]`}
+        >
           {toast}
         </div>
       )}

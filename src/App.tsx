@@ -26,6 +26,7 @@ import {
   FolderPlus,
   Globe,
   GripVertical,
+  Home,
   Layers,
   Maximize2,
   Minimize2,
@@ -122,7 +123,7 @@ import {
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
 import { SidebarUsage } from "./components/SidebarUsage";
-import { trapTab } from "./components/ui";
+import { trapTab, useExitState, ExitGate } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, isApple } from "./lib/platform";
@@ -480,6 +481,10 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
   // pane key pending a close-confirm (busy chat: keep-running vs kill).
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
+  // Panes mid-exit-animation: still rendered (with .pane-exit) for one beat
+  // before removal. Ref mirrors the state for the double-close guard.
+  const [closingKeys, setClosingKeys] = useState<string[]>([]);
+  const closingPanesRef = useRef<Set<string>>(new Set());
   // pane currently under a native OS file drag OR a reorder-drag (drop highlight).
   const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
   // the pane currently being drag-reordered (null = none). Drives per-pane hover
@@ -779,9 +784,21 @@ function App() {
     saveLayout(panes);
   }, [panes]);
 
+  // Toast with a real exit beat (.toast-in/.toast-out). Timer refs so a second
+  // flash can't have the FIRST flash's timeout clear it mid-display (the old
+  // bug: every flash armed an unconditional 2.6s clear).
+  const toastTimers = useRef<{ out?: number; clear?: number }>({});
+  const [toastLeaving, setToastLeaving] = useState(false);
   const flash = useCallback((msg: string) => {
+    clearTimeout(toastTimers.current.out);
+    clearTimeout(toastTimers.current.clear);
+    setToastLeaving(false);
     setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+    toastTimers.current.out = window.setTimeout(() => setToastLeaving(true), 2400);
+    toastTimers.current.clear = window.setTimeout(() => {
+      setToast(null);
+      setToastLeaving(false);
+    }, 2600);
   }, []);
 
   useEffect(() => {
@@ -1173,6 +1190,9 @@ function App() {
     [spawn],
   );
   const closePane = useCallback((key: string) => {
+    // Double-close guard: the exit beat below means a second click can land
+    // while the pane is already dying.
+    if (closingPanesRef.current.has(key)) return;
     // If the pane being closed owns the OS fullscreen (e.g. a maximized browser
     // pane with a video in fullscreen), drop fullscreen first — otherwise the
     // window stays fullscreen with the owning pane gone ("bugs out on close").
@@ -1182,14 +1202,29 @@ function App() {
     });
     if (prevMaxRef.current === key) prevMaxRef.current = null;
     if (focusedPane.current === key) focusedPane.current = null;
-    // Drop any session-restore memory for this pane key — a pane closed on
-    // purpose shouldn't have its last url linger in the browser-mem map (it
-    // also won't be in the next layout, so this just keeps the map from
-    // accumulating dead entries). No-op for non-browser keys.
-    forgetUrl(key);
-    setPanes((p) => p.filter((x) => x.key !== key));
-    setHiddenKeys((h) => h.filter((k) => k !== key));
-    setActiveKey((a) => (a === key ? null : a));
+    const remove = () => {
+      closingPanesRef.current.delete(key);
+      setClosingKeys((c) => c.filter((k) => k !== key));
+      // Drop any session-restore memory for this pane key — a pane closed on
+      // purpose shouldn't have its last url linger in the browser-mem map (it
+      // also won't be in the next layout, so this just keeps the map from
+      // accumulating dead entries). No-op for non-browser keys.
+      forgetUrl(key);
+      setPanes((p) => p.filter((x) => x.key !== key));
+      setHiddenKeys((h) => h.filter((k) => k !== key));
+      setActiveKey((a) => (a === key ? null : a));
+    };
+    // Exit beat: flag the pane so PaneCard plays .pane-exit (fade+scale, App.css),
+    // then actually remove — the grid-reflow transition glides the survivors in.
+    // Under reduce-motion remove immediately (the animation is killed anyway —
+    // don't hold a frozen pane for 170ms).
+    if (document.documentElement.dataset.reduceMotion === "true") {
+      remove();
+      return;
+    }
+    closingPanesRef.current.add(key);
+    setClosingKeys((c) => [...c, key]);
+    setTimeout(remove, 170);
   }, []);
   // Closing a chat pane whose claude is mid-task → prompt to keep it running in
   // the background (with optional done-notification) instead of killing it.
@@ -2498,6 +2533,33 @@ function App() {
                 topBarHidden ? "pt-8" : ""
               }`}
             >
+              {/* home anchor — the brand mark is also the way BACK: one click
+                  rests every pane to the idle home (they stay in the OPEN list
+                  to restore). Previously the only route was hiding panes one
+                  by one. */}
+              {panes.length > 0 && panes.some((p) => !hiddenKeys.includes(p.key)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaximizedKey((m) => {
+                      if (m) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
+                      return null;
+                    });
+                    setHiddenKeys(panes.map((p) => p.key));
+                  }}
+                  title="back to the idle home (panes stay restorable in OPEN)"
+                  className={`group flex shrink-0 items-center rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--color-panel-2)] ${
+                    iconsOnly ? "justify-center" : "gap-2"
+                  }`}
+                >
+                  <Home size={13} className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]" />
+                  {!iconsOnly && (
+                    <span className="font-mono text-[11px] tracking-[0.14em] text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]">
+                      aios
+                    </span>
+                  )}
+                </button>
+              )}
               {panes.length > 0 && (
                 <OpenPanesList
                   panes={panes}
@@ -2646,6 +2708,7 @@ function App() {
                   hidden={hiddenKeys.includes(pane.key)}
                   style={paneStyle}
                   dropTarget={dropTargetKey === pane.key}
+                  closing={closingKeys.includes(pane.key)}
                   onClose={() => requestClose(pane.key)}
                   onToggleMax={() => toggleMax(pane.key)}
                   onToggleHide={() => toggleHide(pane.key)}
@@ -2722,7 +2785,13 @@ function App() {
       )}
 
       {toast && (
-        <div className="modal-in glass absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-2xl">
+        // .toast-in/out own the -50% X in their keyframes; keyed by message so
+        // a replacing flash re-plays the entrance. (was .modal-in — a modal's
+        // slide-up gesture on a toast — with shadow-2xl and no exit at all)
+        <div
+          key={toast}
+          className={`${toastLeaving ? "toast-out" : "toast-in"} glass absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]`}
+        >
           {toast}
         </div>
       )}
@@ -2732,7 +2801,7 @@ function App() {
 
       {/* close a busy chat: keep running in background, or kill */}
       {closePrompt && (
-        <div className="absolute inset-0 z-50 grid place-items-center bg-black/50" onClick={() => setClosePrompt(null)}>
+        <div className="overlay-backdrop absolute inset-0 z-50 grid place-items-center bg-black/50" onClick={() => setClosePrompt(null)}>
           <div
             role="dialog"
             aria-modal="true"
@@ -2746,7 +2815,7 @@ function App() {
               }
               trapTab(e, e.currentTarget);
             }}
-            className="modal-in w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-2xl"
+            className="modal-in w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-[var(--aios-shadow-pop)]"
           >
             <div className="text-[13px] font-medium text-[var(--color-text)]">this chat is still working</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
@@ -2790,7 +2859,10 @@ function App() {
         </div>
       )}
 
-      {settingsOpen && (
+      {/* ExitGate keeps the lazy mount alive ~160ms after close so Settings'
+          internal data-closing exit can play (the parent conditional used to
+          unmount it in the same frame). */}
+      <ExitGate open={settingsOpen}>
         <Suspense fallback={null}>
           <Settings
             open={settingsOpen}
@@ -2808,7 +2880,7 @@ function App() {
             }}
           />
         </Suspense>
-      )}
+      </ExitGate>
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -3014,7 +3086,9 @@ function NotificationCenter({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      {/* .stagger: the panel mounts fresh per open, so rows cascade once
+          (capped at 5 delays) instead of appearing as a slab */}
+      <div className="stagger min-h-0 flex-1 overflow-y-auto p-2">
         {notifications.length === 0 ? (
           <div className="grid h-28 place-items-center rounded-md border border-dashed border-[var(--color-border)] text-[11px] text-[var(--color-faint)]">
             no notifications yet
@@ -3634,7 +3708,8 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
       setLabel("");
     }
   }, [open]);
-  if (!open) return null;
+  const { mounted, closing } = useExitState(open);
+  if (!mounted) return null;
   const submit = () => {
     const u = url.trim();
     if (!u) return;
@@ -3642,12 +3717,17 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
     onClose();
   };
   return (
-    <div className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
+    <div
+      data-closing={closing || undefined}
+      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="pin a site"
-        className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-2xl"
+        data-closing={closing || undefined}
+        className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -3717,8 +3797,14 @@ function SaveWorkspaceModal({
   onSave: (name: string) => void;
   onClose: () => void;
 }) {
-  if (draft == null) return null;
-  const clean = draft.trim();
+  // Sticky draft: during the 160ms closing render draft is already null — keep
+  // the last real value so the input doesn't blank mid-exit.
+  const lastDraft = useRef("");
+  if (draft != null) lastDraft.current = draft;
+  const { mounted, closing } = useExitState(draft != null);
+  if (!mounted) return null;
+  const value = draft ?? lastDraft.current;
+  const clean = value.trim();
   const overwrites = existing.some((n) => n.toLowerCase() === clean.toLowerCase());
   const submit = () => {
     if (!clean) return;
@@ -3726,11 +3812,16 @@ function SaveWorkspaceModal({
     onClose();
   };
   return (
-    <div className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
+    <div
+      data-closing={closing || undefined}
+      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="save workspace"
+        data-closing={closing || undefined}
         className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
@@ -3748,7 +3839,7 @@ function SaveWorkspaceModal({
         >
           <input
             autoFocus
-            value={draft}
+            value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && onClose()}
             placeholder="e.g. deep work · review · research"
@@ -3863,7 +3954,10 @@ function PaneOverview({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, panes, sel, onClose, onPick]);
 
-  if (!open) return null;
+  // Exit motion — same closing contract as the palette (App.css data-closing).
+  const { mounted, closing } = useExitState(open);
+
+  if (!mounted) return null;
 
   // Card width adapts so 1-2 panes sit big + centered (not stretched), many panes
   // wrap into a tidy gallery — the Mission-Control feel at any count.
@@ -3875,7 +3969,8 @@ function PaneOverview({
       role="dialog"
       aria-modal="true"
       aria-label="mission control — open panes"
-      className="modal-in fixed inset-0 z-[60] flex flex-col bg-black/55 backdrop-blur-2xl"
+      data-closing={closing || undefined}
+      className={`modal-in fixed inset-0 z-[60] flex flex-col bg-black/55 backdrop-blur-2xl ${closing ? "pointer-events-none" : ""}`}
       onMouseDown={onClose}
     >
       {/* top bar — title centered like macOS "Desktop", controls on the right */}
@@ -3906,7 +4001,9 @@ function PaneOverview({
       {/* the gallery — empty space stays click-to-close (cards stop their own
           propagation), so a stray click anywhere dims out of Mission Control */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6">
-        <div className="flex flex-wrap items-center justify-center gap-6">
+        {/* .stagger: cards fan in on each open (the overview fully unmounts on
+            close, so the cascade replays per open, capped at 5 delays) */}
+        <div className="stagger flex flex-wrap items-center justify-center gap-6">
           {panes.map((p, i) => {
             const hidden = hiddenKeys.includes(p.key);
             const isSel = i === sel;
@@ -3917,7 +4014,7 @@ function PaneOverview({
                   onMouseEnter={() => setSel(i)}
                   onMouseDown={(e) => { e.stopPropagation(); onPick(p.key); }}
                   style={{ width: cardW }}
-                  className={`group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[var(--color-pane)] text-left shadow-2xl shadow-black/50 transition-all duration-150 hover:-translate-y-1 ${
+                  className={`group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[var(--color-pane)] text-left shadow-[var(--aios-shadow-pop)] transition-all duration-150 hover:-translate-y-1 ${
                     isSel
                       ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/60 scale-[1.02]"
                       : "border-[var(--color-border-strong)] hover:border-[var(--color-accent)]/40"
@@ -4170,6 +4267,7 @@ function PaneCard({
   isDragging,
   dimmed,
   busy,
+  closing,
   onPaneDragStart,
   onFocus,
   onAnnotate,
@@ -4210,6 +4308,8 @@ function PaneCard({
   dimmed?: boolean;
   /** activity glow: a live agent run is streaming in this pane. */
   busy?: boolean;
+  /** exit beat: pane is closing — play .pane-exit before removal. */
+  closing?: boolean;
   onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
   onFocus: () => void;
   onAnnotate: (text: string) => void;
@@ -4325,7 +4425,7 @@ function PaneCard({
       style={hidden ? { display: "none" } : style}
       className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-[color,background-color,border-color,box-shadow,opacity] duration-200 ${
         dimmed ? "opacity-45" : ""
-      } ${
+      } ${closing ? "pane-exit" : ""} ${
         maximized
           ? // truly fullscreen — edge-to-edge over the top bar + sidebar, no chrome
             "fixed inset-0 z-40"
@@ -4346,6 +4446,18 @@ function PaneCard({
             }`
       }`}
     >
+      {/* maximize hint — settles in, holds ~2s, fades itself out (pure CSS,
+          keyed so it replays per maximize). The 12px restore icon + Esc were
+          both invisible affordances on a chrome-covering surface. */}
+      {maximized && (
+        <div
+          key={pane.key + ":maxhint"}
+          aria-hidden
+          className="maximize-hint absolute bottom-6 left-1/2 z-50 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/85 px-3 py-1 font-mono text-[11px] text-[var(--color-muted)] backdrop-blur-sm"
+        >
+          esc to restore
+        </div>
+      )}
       <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2.5">
         {/* activity glow — a quiet breathing seam while an agent run streams
             in this pane: ambient awareness, no dialog (reduce-motion safe). */}

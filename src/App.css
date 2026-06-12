@@ -323,6 +323,16 @@ select:focus-visible,
 .overlay-backdrop[data-closing="true"] {
   animation: aios-overlay-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
 }
+/* Descendant form — <ExitGate> (ui.tsx) wraps overlays whose internals we
+   don't restructure (Settings, Mission Control, close-prompt): it sets
+   data-closing on a display:contents wrapper and these rules reach in. */
+[data-closing="true"] .overlay-backdrop {
+  animation: aios-overlay-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
+  pointer-events: none;
+}
+[data-closing="true"] .modal-in {
+  animation: aios-modal-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
+}
 
 /* .toast-in/.toast-out — bottom-anchored toast motion. The -50% X rides every
    keyframe because toasts sit on left-1/2 -translate-x-1/2. */
@@ -490,6 +500,44 @@ select:focus-visible,
 .brand-logo--splash { filter: drop-shadow(0 0 24px rgba(242, 101, 34, 0.40)); }
 .mascot-idle { animation: aios-breathe 4s ease-in-out infinite; }
 .modal-in { animation: aios-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Exit half of .modal-in — overlays were entering with a spring and vanishing
+   in one frame. Flip data-closing="true" (same contract as .overlay-backdrop)
+   ~160ms before unmount; ease-in, faster than the open, so dismissal snaps the
+   app back to focus. */
+@keyframes aios-modal-out {
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+.modal-in[data-closing="true"] {
+  animation: aios-modal-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
+}
+
+/* .pane-exit — a closing pane shrinks away instead of blinking out; the grid
+   reflow transition then glides the survivors into the gap. pointer-events
+   off so a dying pane can't eat clicks during its 160ms. */
+@keyframes aios-pane-out {
+  to { opacity: 0; transform: scale(0.96); }
+}
+.pane-exit {
+  animation: aios-pane-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
+  pointer-events: none;
+}
+
+/* .clock-tick — the idle hero clock's seconds glyph eases in on each 1Hz swap
+   (keyed span remount) instead of hard-cutting. Opacity only: calm, no slide. */
+@keyframes aios-tick-in { from { opacity: 0.25; } to { opacity: 1; } }
+.clock-tick { animation: aios-tick-in 150ms ease-out both; }
+
+/* .maximize-hint — one quiet "esc to restore" that settles in, holds, then
+   fades itself out; ends invisible + non-interactive (no JS timer needed). */
+@keyframes aios-hint-fade {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  12%, 70% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
+}
+.maximize-hint {
+  animation: aios-hint-fade 2.6s ease-out forwards;
+  pointer-events: none;
+}
 
 /* ---- idle cockpit motion (IdleDashboard) — the live data IS the decoration ---- */
 @keyframes aios-flame { 0%, 100% { transform: scale(1) translateY(0); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 50%, transparent)); } 50% { transform: scale(1.12) translateY(-1px); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--color-accent) 70%, transparent)); } }

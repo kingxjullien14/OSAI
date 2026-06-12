@@ -445,7 +445,9 @@ export function FilesPane({
         }}
         label="drop folder to set as workspace"
       >
-      <div className="h-full overflow-auto py-1">
+      {/* .stagger: initial listing cascades once (capped at 5 delays); rows are
+          keyed by path so scroll/expand only animate genuinely NEW entries. */}
+      <div className="stagger h-full overflow-auto py-1">
         {rows.map(({ entry, depth }) => (
           <TreeRow
             key={entry.path}

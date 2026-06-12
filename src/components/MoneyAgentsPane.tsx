@@ -196,7 +196,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
                     <span>queue: {agent.queuePath}</span>
                     <span>events: {agent.stdoutPath}</span>
                   </div>
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-black/25 p-2 font-mono text-[10.5px] leading-relaxed text-[var(--color-text-2)]">
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[var(--color-bg)]/60 p-2 font-mono text-[10.5px] leading-relaxed text-[var(--color-text-2)]">
                     {agent.logTail.length ? agent.logTail.join("\n") : "no log tail available yet"}
                   </pre>
                 </div>

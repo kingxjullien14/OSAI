@@ -12,7 +12,7 @@ const MAX_RESULTS = 50;
 
 import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Search } from "lucide-react";
 import { reportUsage } from "../lib/diag";
-import { trapTab } from "./ui";
+import { trapTab, useExitState } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
 const MRU_KEY = "aios.palette.mru";
@@ -295,7 +295,12 @@ export function CommandPalette({
     el?.scrollIntoView({ block: "nearest" });
   }, [sel, open]);
 
-  if (!open) return null;
+  // Exit motion: stay mounted ~160ms after close while data-closing plays the
+  // reversed modal-in + backdrop fade (App.css). Entrances were animated from
+  // day one; dismissal used to vanish in a single frame.
+  const { mounted, closing } = useExitState(open);
+
+  if (!mounted) return null;
 
   const move = (delta: number) => {
     if (!results.length) return;
@@ -364,7 +369,8 @@ export function CommandPalette({
 
   return (
     <div
-      className="overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
+      data-closing={closing || undefined}
+      className={`overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -373,6 +379,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
+        data-closing={closing || undefined}
         className="modal-in glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {

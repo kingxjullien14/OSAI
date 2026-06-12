@@ -3,6 +3,8 @@
  *  Token-driven; entrances ride the App.css utilities (master reduce-motion
  *  guard covers everything). */
 import {
+  useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type ComponentType,
@@ -10,6 +12,54 @@ import {
   type ReactNode,
 } from "react";
 import { Check, Copy } from "lucide-react";
+
+/** Exit-motion driver for overlays that hard-unmount on close. Returns
+ *  `{ mounted, closing }`: keep rendering while `mounted`, and put
+ *  `data-closing={closing || undefined}` on the `.overlay-backdrop` and
+ *  `.modal-in` elements — App.css plays the fast ease-in exit, then we
+ *  unmount after `ms`. Open→true resets instantly (no exit replay).
+ *  Under reduce-motion the exit is invisible (durations are killed) and the
+ *  ms delay is imperceptible. */
+export function useExitState(open: boolean, ms = 160): { mounted: boolean; closing: boolean } {
+  const [mounted, setMounted] = useState(open);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      setMounted(true);
+      return;
+    }
+    // closing only if we were actually open (not the initial closed mount)
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    const t = setTimeout(() => setMounted(false), ms);
+    return () => clearTimeout(t);
+  }, [open, ms]);
+  return { mounted: open || mounted, closing: !open && mounted };
+}
+
+/** Exit-motion wrapper for overlays mounted conditionally by a parent
+ *  (`{open && <Settings/>}` style) whose internals we don't restructure.
+ *  Keeps children mounted ~160ms after `open` flips false and flags
+ *  data-closing on a layout-neutral wrapper; App.css descendant rules play
+ *  the backdrop/card exits and disable pointer events while closing. */
+export function ExitGate({
+  open,
+  ms = 160,
+  children,
+}: {
+  open: boolean;
+  ms?: number;
+  children: ReactNode;
+}) {
+  const { mounted, closing } = useExitState(open, ms);
+  if (!mounted) return null;
+  return (
+    <div className="contents" data-closing={closing || undefined}>
+      {children}
+    </div>
+  );
+}
 
 /** Calm centered empty/unavailable state: faint icon, quiet title, optional
  *  mono hint and a single neutral action. One per surface, per DESIGN.md. */

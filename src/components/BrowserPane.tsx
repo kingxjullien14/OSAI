@@ -1704,7 +1704,7 @@ export function BrowserPane({
           </div>
         )}
         {annotating && (
-          <div className="pointer-events-none absolute left-1/2 top-2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-lg">
+          <div className="toast-in pointer-events-none absolute left-1/2 top-2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-[var(--aios-shadow-pop)]">
             <Crosshair size={12} />
             annotating… click an element, then describe it
           </div>
