@@ -74,7 +74,20 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Select-to-attach context snippets** (`7cea8bf`, user-requested) — select reply text → "add as context" chip → snippet pills in the composer, each riding the next send as its own labeled block
 - [x] **Design-token ratchet guard** (`ca602bb`) — text-white/text-black/hover-accent/shadow-2xl counts can only go down; new literals fail the suite
 - [x] **Dead bento CSS deleted** (`ca602bb`) — .aios-tile/.aios-omni/.aios-idle-glow (~90 lines), the last fully-open P0
-- [ ] shared PaneEmpty/Skeleton/CopyButton primitives (the lint guard half is done)
+- [x] **Shared primitives** (`086f7cc`) — ui.tsx PaneEmpty/Skeleton/CopyButton; adopted in chat, editor (skeleton code-lines), agents, cast fallbacks, bridges
+- [x] **BrowserPane occlusion** (`45fc534`) — autocomplete joins the native-hide list; toasts become a reserved strip above the page
+- [x] **Interactive surfaces** (`bfcb734`) — xterm/Monaco carets + selection follow the live accent; VoiceButton equalizer; whisperUrl setting; text-size + density tokens finally consumed app-wide; wave keyframe single-sourced
+- [x] **Dead code** (`0420a6d`) — hotkeys metadata deleted (reportUsage kept: it feeds Settings diagnostics)
+- [x] **Palette trust** (`4cec60d`) — danger markers, dimmed disabled rows, surfaced ok:false failures (toast), matcher cost cap
+- [x] **Motion** (`965d27d`) — smooth jump-to-latest, .disclose diff expansion with show-less
+- [x] **Activity Glow + repeat-last** (`a1476cf`) — breathing chrome seam on streaming panes; Ctrl+Shift+K re-fires the last command
+
+## Still open (the long tail)
+- [ ] FileFinder/GlobalSearch full ARIA mirror + focus traps across modals
+- [ ] grid-reflow transition (needs a not-while-dragging gate in ResizableGrid)
+- [ ] Workspaces (saved layouts), resume rail on the hero, living pet wiring, soundscape
+- [ ] remaining token ratchet counts → 0 (text-white 6, accent-hover 30, shadow-2xl 16)
+- [ ] per-model usage windows in the model picker ("not installed" reasons)
 - [ ] BrowserPane local occlusion (suggest dropdown/toasts under webview) + remaining superapp-pane §11 polish (menus onto .surface-pop, poll-swap transitions)
 - [ ] xterm/Monaco themes from live tokens; voice waveform + whisper URL setting; editor/terminal skeletons; density+font-scale CSS consumers (the boot plumbing exists, App.css consumers don't)
 - [ ] dead-code deletion batch (bento CSS verified unreferenced; hotkeys field; reportUsage loop)
