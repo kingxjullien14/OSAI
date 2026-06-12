@@ -70,7 +70,11 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Run-phase rail** (`904995d`) — think→write→act→done spine on live activity groups
 - [x] **Maximize/restore FLIP morph** (`904995d`) — panes expand/shrink instead of teleporting
 - [x] **`.pane-header` convergence complete** (`90c457d`+`904995d`) — pulse/plugins/channels/agents/editor/file-viewer/notes all on the shared header spec
-- [ ] shared PaneEmpty/Skeleton/CopyButton primitives + the lint guard
+- [x] **Usage truth** (`e950b28`+`7cea8bf`) — bogus test snapshot purged; expired windows zero themselves at the source (the "5h 78% resets now" bug); 24h freshness; strip render-guard; honest claude row wording
+- [x] **Select-to-attach context snippets** (`7cea8bf`, user-requested) — select reply text → "add as context" chip → snippet pills in the composer, each riding the next send as its own labeled block
+- [x] **Design-token ratchet guard** (`ca602bb`) — text-white/text-black/hover-accent/shadow-2xl counts can only go down; new literals fail the suite
+- [x] **Dead bento CSS deleted** (`ca602bb`) — .aios-tile/.aios-omni/.aios-idle-glow (~90 lines), the last fully-open P0
+- [ ] shared PaneEmpty/Skeleton/CopyButton primitives (the lint guard half is done)
 - [ ] BrowserPane local occlusion (suggest dropdown/toasts under webview) + remaining superapp-pane §11 polish (menus onto .surface-pop, poll-swap transitions)
 - [ ] xterm/Monaco themes from live tokens; voice waveform + whisper URL setting; editor/terminal skeletons; density+font-scale CSS consumers (the boot plumbing exists, App.css consumers don't)
 - [ ] dead-code deletion batch (bento CSS verified unreferenced; hotkeys field; reportUsage loop)
