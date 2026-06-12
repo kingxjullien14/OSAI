@@ -37,7 +37,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
-  Copy,
   CornerDownLeft,
   FileCode,
   FileText,
@@ -163,6 +162,7 @@ import {
 } from "../lib/chatScroll";
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { PaneDropZone } from "./PaneDropZone";
+import { CopyButton } from "./ui";
 import { reportDiag } from "../lib/diag";
 import { pushNotification } from "../lib/notifications";
 
@@ -4713,46 +4713,6 @@ function ResultFooter({
     <div className="text-center font-mono text-[10.5px] text-[var(--color-faint)]">
       {turn.text}
     </div>
-  );
-}
-
-/** Copy-to-clipboard button with a brief check confirmation. */
-function CopyButton({
-  text,
-  size = 13,
-  title = "copy",
-  className,
-}: {
-  text: string;
-  size?: number;
-  title?: string;
-  className?: string;
-}) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={() => {
-        navigator.clipboard?.writeText(text).then(
-          () => {
-            setDone(true);
-            setTimeout(() => setDone(false), 1200);
-          },
-          () => {},
-        );
-      }}
-      className={
-        className ??
-        "grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-      }
-    >
-      {done ? (
-        <Check size={size} className="text-[var(--color-success)]" />
-      ) : (
-        <Copy size={size} />
-      )}
-    </button>
   );
 }
 

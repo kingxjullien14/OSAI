@@ -16,7 +16,6 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
-  Copy,
   Hash,
   Link2,
   Loader2,
@@ -40,7 +39,8 @@ import {
   type Bridges,
 } from "../lib/bridges";
 import { type NotificationLevel } from "../lib/notifications";
-import { reportDiag } from "../lib/diag";
+// (reportDiag dropped with the inline clipboard handler — CopyButton owns it)
+import { CopyButton } from "./ui";
 
 /** Brand-ish icon per channel id (falls back to a generic plug). lucide only. */
 function channelIcon(id: string, size = 13, className = "") {
@@ -229,13 +229,11 @@ export function BridgesPane() {
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[var(--color-muted)]">pairing code</span>
                 <span className="font-mono text-[18px] font-semibold tracking-[0.2em] text-[var(--color-accent)]">{pairCode}</span>
-                <button
-                  onClick={() => navigator.clipboard?.writeText(pairCode).catch((e) => reportDiag("bridges.clipboard", e, { action: "pairCode" }))}
-                  className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
-                  title="copy"
-                >
-                  <Copy size={12} />
-                </button>
+                <CopyButton
+                  text={pairCode}
+                  size={12}
+                  className="rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
+                />
               </div>
               <p className="text-[11px] leading-snug text-[var(--color-text-2)]">
                 on your phone: WhatsApp → Settings → Linked Devices → Link a Device →{" "}

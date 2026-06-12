@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Loader2, MonitorUp, RefreshCw, Search, ShieldAlert, X } from "lucide-react";
 import { isApple } from "../lib/platform";
+import { PaneEmpty } from "./ui";
 
 import {
   appcastClose,
@@ -64,12 +65,12 @@ interface AppGroup {
  *  layouts can still carry a cast pane even though the catalog hides it. */
 function CastUnavailable() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2.5 bg-[var(--color-pane)] px-6 text-center">
-      <MonitorUp size={28} className="text-[var(--color-faint)]" />
-      <p className="text-[12.5px] text-[var(--color-muted)]">app cast isn't available on windows yet</p>
-      <p className="max-w-[280px] font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
-        live window mirroring rides macOS ScreenCaptureKit — a windows capture backend is on the roadmap
-      </p>
+    <div className="h-full bg-[var(--color-pane)]">
+      <PaneEmpty
+        icon={MonitorUp}
+        title="app cast isn't available on windows yet"
+        hint="live window mirroring rides macOS ScreenCaptureKit — a windows capture backend is on the roadmap"
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { MessageSquare, RefreshCw, Target, TriangleAlert } from "lucide-react";
 
+import { PaneEmpty } from "./ui";
 import {
   buildMoneyAgentRunCommand,
   loadMoneyAgentDetails,
@@ -122,13 +123,11 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {!loading && !error && agents.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-2.5 text-center">
-            <Target size={28} className="text-[var(--color-faint)]" />
-            <p className="text-[12.5px] text-[var(--color-muted)]">no agents yet</p>
-            <p className="max-w-[260px] font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
-              create one from the agents section in the sidebar — it runs as a chatpane the shell can monitor and steer
-            </p>
-          </div>
+          <PaneEmpty
+            icon={Target}
+            title="no agents yet"
+            hint="create one from the agents section in the sidebar — it runs as a chatpane the shell can monitor and steer"
+          />
         )}
         <div className="grid gap-3 xl:grid-cols-2">
           {agents.map((agent) => (

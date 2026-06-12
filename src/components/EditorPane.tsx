@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, Check, Circle, ExternalLink, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Circle, ExternalLink } from "lucide-react";
 
 import { fileMtime, readTextFile, SaveConflictError, writeTextFile } from "../lib/fs";
 import { chord } from "../lib/platform";
@@ -13,6 +13,7 @@ import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { languageForPath } from "../lib/editorLanguage";
 import { openFileInPane, registerPaneDropSink } from "../lib/paneBus";
 import { PaneDropZone } from "./PaneDropZone";
+import { Skeleton } from "./ui";
 import { reportDiag } from "../lib/diag";
 
 // ── ref-counted URI models (STRETCH) ────────────────────────────────────────
@@ -316,8 +317,12 @@ export function EditorPane({
       <div className="relative min-h-0 flex-1">
         <div ref={hostRef} className="h-full w-full" />
         {loading && (
-          <div className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]">
-            <Loader2 size={18} className="animate-spin text-[var(--color-accent)]" />
+          // skeleton "code lines" instead of a bare spinner — the wait reads as
+          // the editor warming up, and Monaco dissolves in over it.
+          <div className="absolute inset-0 flex flex-col gap-2.5 bg-[var(--color-bg)] p-5">
+            {[68, 42, 88, 55, 75, 30, 62].map((w, i) => (
+              <Skeleton key={i} className="h-3" style={{ width: `${w}%` }} />
+            ))}
           </div>
         )}
         {error && (
