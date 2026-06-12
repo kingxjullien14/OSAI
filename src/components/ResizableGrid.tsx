@@ -37,6 +37,10 @@ export function ResizableGrid({
   const [colFr, setColFr] = useState<number[]>(() => Array(cols).fill(1));
   const [rowFr, setRowFr] = useState<number[]>(() => Array(rows).fill(1));
   const drag = useRef<DragState | null>(null);
+  // Gutter drags need 1:1 pointer tracking — the reflow transition only runs
+  // when tracks change WITHOUT a drag (pane open/close, layout reset). State,
+  // not a ref, so the style actually recomputes on drag start/end.
+  const [dragging, setDragging] = useState(false);
 
   // Reset tracks to equal shares whenever the grid shape changes.
   useEffect(() => {
@@ -69,6 +73,7 @@ export function ResizableGrid({
       b0: fr[i + 1],
       total: axis === "col" ? totalCol : totalRow,
     };
+    setDragging(true);
   };
 
   const onMove = (e: React.PointerEvent) => {
@@ -99,6 +104,7 @@ export function ResizableGrid({
       }
       drag.current = null;
     }
+    setDragging(false);
   };
 
   // Cumulative fraction (0..1) of a boundary after track i — used to place the
@@ -118,6 +124,13 @@ export function ResizableGrid({
           padding: gap,
           gridTemplateColumns: colFr.map((f) => `minmax(0, ${f}fr)`).join(" "),
           gridTemplateRows: rowFr.map((f) => `minmax(0, ${f}fr)`).join(" "),
+          // Chromium interpolates grid-template tracks, so track changes from
+          // pane open/close/layout-reset glide instead of snapping. Gated off
+          // while a gutter drag owns the tracks (1:1 pointer tracking); the
+          // master reduce-motion guard squashes the duration globally.
+          transition: dragging
+            ? "none"
+            : "grid-template-columns var(--aios-dur-slow) var(--aios-ease-out), grid-template-rows var(--aios-dur-slow) var(--aios-ease-out)",
         }}
       >
         {children}
@@ -130,6 +143,7 @@ export function ResizableGrid({
           onPointerDown={(e) => beginDrag("col", i, e)}
           onPointerMove={onMove}
           onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           className="group absolute top-0 bottom-0 z-20 flex w-2 -translate-x-1/2 cursor-col-resize items-center justify-center"
           style={{ left: `${colBoundary(i) * 100}%` }}
         >
@@ -144,6 +158,7 @@ export function ResizableGrid({
           onPointerDown={(e) => beginDrag("row", i, e)}
           onPointerMove={onMove}
           onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           className="group absolute left-0 right-0 z-20 flex h-2 -translate-y-1/2 cursor-row-resize items-center justify-center"
           style={{ top: `${rowBoundary(i) * 100}%` }}
         >
