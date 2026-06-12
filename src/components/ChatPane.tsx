@@ -3229,9 +3229,10 @@ export function ChatPane({
           </div>
         )}
 
-        {/* slash / @-mention overlay */}
+        {/* slash / @-mention overlay — opens downward on the hero (the
+            composer sits near the top there; upward clipped, user-reported) */}
         {overlay === "slash" && slashFiltered.length > 0 && (
-          <OverlayPanel compact>
+          <OverlayPanel compact drop={empty ? "down" : "up"}>
             {slashFiltered.map((c, i) => (
               <OverlayRow
                 key={c.id}
@@ -3246,7 +3247,7 @@ export function ChatPane({
           </OverlayPanel>
         )}
         {overlay === "mention" && (
-          <OverlayPanel>
+          <OverlayPanel drop={empty ? "down" : "up"}>
             {!cwd ? (
               <div className="px-3 py-2 font-mono text-[11.5px] text-[var(--color-faint)]">
                 no working directory for this pane
@@ -3281,6 +3282,7 @@ export function ChatPane({
         )}
         {overlay === "resume" && (
           <ResumePicker
+            drop={empty ? "down" : "up"}
             sessions={resumeFiltered}
             total={resumeSessions.length}
             loading={resumeLoading}
@@ -5798,16 +5800,21 @@ interface SlashCommand {
 function OverlayPanel({
   children,
   compact = false,
+  drop = "up",
 }: {
   children: React.ReactNode;
   /** compact = a left-anchored dropdown (slash menu) vs the full-width panel. */
   compact?: boolean;
+  /** "up" above the composer (transcript view: composer at the bottom);
+   *  "down" below it (hero: composer near the top — upward would clip at the
+   *  pane edge, user-reported). */
+  drop?: "up" | "down";
 }) {
   return (
     <div
-      className={`absolute bottom-full z-40 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
-        compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"
-      }`}
+      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
+        drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
+      } ${compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"}`}
     >
       {children}
     </div>
@@ -5885,6 +5892,7 @@ function ResumePicker({
   onHover,
   onPick,
   onClose,
+  drop = "up",
 }: {
   sessions: ChatSessionInfo[];
   total: number;
@@ -5900,6 +5908,9 @@ function ResumePicker({
   onHover: (i: number) => void;
   onPick: (s: ChatSessionInfo) => void;
   onClose: () => void;
+  /** "up" above the composer (transcript view), "down" below it (hero —
+   *  opening upward there clipped the list at the pane edge, user-reported). */
+  drop?: "up" | "down";
 }) {
   const byProject = sessions.reduce<Array<{ key: string; label: string; items: ChatSessionInfo[] }>>(
     (groups, session) => {
@@ -5917,7 +5928,11 @@ function ResumePicker({
   );
   let rowIndex = 0;
   return (
-    <div className="absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--aios-shadow-pop)]">
+    <div
+      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--aios-shadow-pop)] ${
+        drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
+      }`}
+    >
       {/* sticky search header */}
       <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
         <History size={14} className="shrink-0 text-[var(--color-accent)]" />
