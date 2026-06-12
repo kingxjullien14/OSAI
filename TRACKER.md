@@ -111,6 +111,16 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [ ] poll-swap transitions on cast/mirror rosters (macOS-gated panes — low priority on the Windows daily driver)
 - [ ] ratchet floors if ever unlockable: accent-hover 10 (all true primaries), shadow-2xl 3 (locked TerminalComposer)
 
+## Wave 5 — Signature Styling *(planned 2026-06-13 — full spec + component map in [PLAN-wave5-styling.md](PLAN-wave5-styling.md))*
+
+> Restyle with Framer Motion (`motion`) + vendored/token-adapted Magic UI · Aceternity · ReactBits components. Hard rules: ratchet stays green (enforces tokenization), reduce-motion bridged into MotionConfig + every canvas fx, accent discipline survives the gradient temptation, no fx under native webviews or in the locked TerminalComposer, +60kb gz cap for the wave.
+
+- [ ] **W5-1 Foundation** — `motion`/clsx/tailwind-merge, `fx/` home (cn + motionTokens + reducedMotion bridge), global MotionConfig; AnimatePresence replaces useExitState/ExitGate across all 7 overlays + pane-exit (closingKeys dance dies) + toasts; retired CSS deleted; bundle delta logged
+- [ ] **W5-2 Idle showcase** — Aceternity vanish-input mechanics merged into the CommandLine (rotating placeholders + canvas vanish; chips/recall/$-routing survive), one-shot Spotlight sweep, masked DotPattern, BlurText greeting + AnimatedGradientText accent word, NumberTicker on usage/streak, low-alpha spotlight rows
+- [ ] **W5-3 Chat** — SplitText hero title, starter-deck CardSpotlight + ±4° tilt, ShimmerButton+Magnet send CTA, **BorderBeam on busy-pane chrome (the Activity Glow upgrade) + conductor pill**, BlurFade block entrances, AnimatedList notifications panel
+- [ ] **W5-4 Shell** — Dock magnify on the icons-only rail, layoutId sliding indicators (Settings nav + palette selection), motion-variants staggers (Mission Control, palette groups), Mission Control card glare, onboarding step slides + HoverBorderGradient on lone primaries
+- [ ] **W5-5 Personality + audit** — ClickSpark on `.press`, pet confetti on long-clean-run (rides bubble rate-limits), liveness Ripple behind the companion — all behind a new `funFx` setting; full audit: bundle ≤ +60kb gz, ratchet green, both themes, reduce-motion sweep, 60fps with a browser pane casting. Rejected-by-design list documented (meteors/marquee/globe/splash-cursor)
+
 ## Wave 4 — deep polish, QoL, wiring truth & the fun tier *(planned 2026-06-12 — full spec in [PLAN-wave4.md](PLAN-wave4.md))*
 
 > Original plan verified ~95% shipped (tsc clean · 91/91 tests · ratchets pinned). Wave 4 = the residuals + the next layer. Sessions below mirror the plan's roadmap; check off here as batches land.
