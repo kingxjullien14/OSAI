@@ -4053,7 +4053,7 @@ export function ChatPane({
           type="button"
           onClick={jumpToLatest}
           title="scroll to bottom"
-          className="absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 text-[var(--color-text-2)] shadow-2xl shadow-black/40 backdrop-blur transition-colors hover:border-[var(--color-accent)]/60 hover:text-[var(--color-text)]"
+          className="absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:border-[var(--color-accent)]/60 hover:text-[var(--color-text)]"
         >
           <ArrowDown size={15} />
         </button>
@@ -5721,7 +5721,7 @@ function OverlayPanel({
 }) {
   return (
     <div
-      className={`absolute bottom-full z-40 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-2xl shadow-black/50 ${
+      className={`absolute bottom-full z-40 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
         compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"
       }`}
     >
@@ -5833,7 +5833,7 @@ function ResumePicker({
   );
   let rowIndex = 0;
   return (
-    <div className="absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-2xl shadow-black/50">
+    <div className="absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--aios-shadow-pop)]">
       {/* sticky search header */}
       <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
         <History size={14} className="shrink-0 text-[var(--color-accent)]" />

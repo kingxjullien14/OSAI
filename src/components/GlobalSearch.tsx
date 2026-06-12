@@ -223,7 +223,7 @@ export function GlobalSearch({
         role="dialog"
         aria-modal="true"
         aria-label="search in files"
-        className="modal-in glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-2xl ring-1 ring-black/20"
+        className="modal-in glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // Escape closes from anywhere (a clicked hit row holds focus);

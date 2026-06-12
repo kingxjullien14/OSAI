@@ -114,8 +114,8 @@ export function AccountMenu({
         ) : (
           mono
         )}
-        <span className="absolute inset-0 grid place-items-center bg-black/55 opacity-0 transition-opacity group-hover:opacity-100">
-          <Camera size={12} className="text-white" />
+        <span className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]/55 opacity-0 transition-opacity group-hover:opacity-100">
+          <Camera size={12} className="text-[var(--color-text)]" />
         </span>
       </button>
       <input ref={fileRef} type="file" accept="image/*" onChange={onPick} className="hidden" />

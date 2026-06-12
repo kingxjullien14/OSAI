@@ -776,7 +776,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
             point at ⌘W to close. Replaces the silent corpse the old code left. */}
         {exited && (
           <div className="absolute inset-0 z-30 grid place-items-center bg-[var(--color-bg)]/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-6 py-5 text-center shadow-2xl shadow-black/50">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-6 py-5 text-center shadow-[var(--aios-shadow-pop)]">
               <span className="text-[13px] text-[var(--color-text)]">
                 process exited
               </span>

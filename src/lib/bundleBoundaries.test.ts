@@ -681,10 +681,12 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
     const n = count(re);
     assert.ok(n <= max, `${label}: ${n} occurrences (ratchet max ${max}) — use the design token instead`);
   };
-  ratchet("text-white", /text-white/g, 6);
+  ratchet("text-white", /text-white/g, 0);
   ratchet("text-black", /text-black/g, 0);
   ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 30);
-  ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 16);
+  // floor is 3, not 0: TerminalComposer.tsx is locked (never edited) and
+  // carries the last three. Everything editable is on --aios-shadow-pop.
+  ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 3);
 });
 
 test("panes are drag-to-move reorderable (pointer-driven, webview-safe)", () => {

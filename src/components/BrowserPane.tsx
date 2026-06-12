@@ -1192,7 +1192,7 @@ export function BrowserPane({
             />
           </form>
           {suggestOpen && suggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-[70] mt-1 max-h-80 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-2xl">
+            <div className="absolute left-0 right-0 top-full z-[70] mt-1 max-h-80 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-[var(--aios-shadow-pop)]">
               {suggestions.map((s, i) => {
                 let host = s.url;
                 try {
@@ -1248,7 +1248,7 @@ export function BrowserPane({
             <Globe size={13} />
           </NavBtn>
           {bookmarksOpen && (
-            <div className="absolute right-0 top-full z-[70] mt-1 max-h-96 w-72 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-2xl">
+            <div className="absolute right-0 top-full z-[70] mt-1 max-h-96 w-72 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-[var(--aios-shadow-pop)]">
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
                 bookmarks
               </div>
@@ -1297,7 +1297,7 @@ export function BrowserPane({
             <Download size={13} />
           </NavBtn>
           {downloadsOpen && (
-            <div className="absolute right-0 top-full z-[70] mt-1 max-h-96 w-80 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-2xl">
+            <div className="absolute right-0 top-full z-[70] mt-1 max-h-96 w-80 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] shadow-[var(--aios-shadow-pop)]">
               <div className="flex items-center justify-between px-3 py-1">
                 <span className="text-[10px] uppercase tracking-wide text-[var(--color-faint)]">downloads</span>
                 {downloads.length > 0 && (
@@ -1686,7 +1686,7 @@ export function BrowserPane({
               <button
                 type="button"
                 onClick={retryLoad}
-                className="mt-3 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-white"
+                className="mt-3 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)]"
               >
                 retry
               </button>

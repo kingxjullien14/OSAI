@@ -358,7 +358,7 @@ function AppCastPaneInner({
             {starting && <Loader2 size={12} className="shrink-0 animate-spin text-[var(--color-accent)]" />}
           </button>
           {pickerOpen && (
-            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] text-[12px] shadow-2xl">
+            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] text-[12px] shadow-[var(--aios-shadow-pop)]">
               {/* search + refresh header (sticky) */}
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
                 <Search size={12} className="shrink-0 text-[var(--color-faint)]" />
@@ -408,7 +408,7 @@ function AppCastPaneInner({
                             reportDiag("appcast.openSettings", err, { action: "openSettings" }),
                           );
                         }}
-                        className="rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-[11px] font-medium text-white"
+                        className="rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-accent-fg)]"
                       >
                         open settings
                       </button>
@@ -501,7 +501,7 @@ function AppCastPaneInner({
                           reportDiag("appcast.openSettings", err, { action: "openSettings" }),
                         )
                       }
-                      className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-white"
+                      className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)]"
                     >
                       open settings
                     </button>
@@ -527,7 +527,7 @@ function AppCastPaneInner({
                       setError(null);
                       refreshWindows();
                     }}
-                    className="mt-3 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-white"
+                    className="mt-3 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)]"
                   >
                     retry
                   </button>

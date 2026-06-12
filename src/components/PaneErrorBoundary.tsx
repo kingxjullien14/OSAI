@@ -56,7 +56,7 @@ export class PaneErrorBoundary extends Component<
           )}
           <button
             onClick={() => this.setState({ err: null, stack: "" })}
-            className="mt-1 w-fit rounded-md bg-[var(--color-accent)] px-3 py-1 text-[12px] font-medium text-white hover:bg-[var(--color-accent-hover)]"
+            className="mt-1 w-fit rounded-md bg-[var(--color-accent)] px-3 py-1 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
           >
             retry
           </button>

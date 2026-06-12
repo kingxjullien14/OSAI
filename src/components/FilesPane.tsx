@@ -345,7 +345,7 @@ export function FilesPane({
         {projOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setProjOpen(false)} />
-            <div className="absolute right-2 top-9 z-40 max-h-[60vh] w-64 overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] py-1 shadow-2xl">
+            <div className="absolute right-2 top-9 z-40 max-h-[60vh] w-64 overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] py-1 shadow-[var(--aios-shadow-pop)]">
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">open project</div>
               {projects.length === 0 ? (
                 <div className="px-3 py-2 text-[12px] text-[var(--color-muted)]">scanning…</div>

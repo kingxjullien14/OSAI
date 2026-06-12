@@ -1062,7 +1062,7 @@ export function Settings({
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
-        className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-2xl focus:outline-none"
+        className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
