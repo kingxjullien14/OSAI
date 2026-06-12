@@ -54,6 +54,7 @@ import {
 import { recallUrl, recallPaneUrl, forgetUrl } from "./lib/browser-mem";
 import { browserOpenDevtools, setWindowFullscreen } from "./lib/browser";
 import { AccountMenu } from "./components/AccountMenu";
+import { ShortcutHud } from "./components/ShortcutHud";
 import { Onboarding } from "./components/Onboarding";
 import { CommandPalette, loadMru as loadCommandMru, type Command } from "./components/CommandPalette";
 import { FileFinder } from "./components/FileFinder";
@@ -455,6 +456,7 @@ function App() {
     return () => window.removeEventListener("aios:replay-onboarding", replay);
   }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutHudOpen, setShortcutHudOpen] = useState(false);
   // When a notification deep-links to Settings → a section, App opens the overlay
   // AND hands Settings the section to jump to (consumed once on open).
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
@@ -1650,6 +1652,11 @@ function App() {
         const idx = Number(e.key) - 1;
         const p = panes[idx];
         if (p) focusPane(p.key);
+      } else if (mod && (e.key === "?" || (e.shiftKey && e.key === "/"))) {
+        // ⌘? / Ctrl+? — the shortcut HUD (every chord, one overlay, from the
+        // single shortcuts.ts catalog).
+        e.preventDefault();
+        setShortcutHudOpen((v) => !v);
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
@@ -2992,6 +2999,7 @@ function App() {
         onClose={() => setGlobalSearchOpen(false)}
         onPick={(abs, line, col) => openEditorFile(abs, pathBasename(abs), { line, col })}
       />
+      <ShortcutHud open={shortcutHudOpen} onClose={() => setShortcutHudOpen(false)} />
       <PinSiteModal spaceId={pinSiteSpace} onClose={() => setPinSiteSpace(null)} />
       <SaveWorkspaceModal
         draft={wsDraft}

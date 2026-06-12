@@ -10,8 +10,18 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "re
  *  Caps DOM churn so typing stays smooth even with hundreds of commands. */
 const MAX_RESULTS = 50;
 
-import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Search } from "lucide-react";
+import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Monitor, Moon, Search, Sun } from "lucide-react";
 import { reportUsage } from "../lib/diag";
+import {
+  ACCENT_ORDER,
+  ACCENT_PRESETS,
+  getAccent,
+  getTheme,
+  setAccent,
+  setTheme,
+  type Accent,
+  type Theme,
+} from "../lib/theme";
 import { trapTab, useExitState } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
@@ -56,6 +66,10 @@ export interface Command {
   danger?: string;
   /** Currently unavailable — rendered dimmed; running it explains why. */
   disabled?: boolean;
+  /** Detail lines for the selected row's preview strip (≤3 shown) — what the
+   *  command will actually touch: a workspace's panes, a session's engine+age,
+   *  a project's path. Rows without preview show nothing (no empty chrome). */
+  preview?: string[];
   run: () => void;
 }
 
@@ -209,6 +223,89 @@ export function CommandPalette({
   // flat, ranked, group-ordered list. Empty query → "recent" (MRU) first.
   const results = useMemo<Scored[]>(() => {
     const q = deferredQuery.trim();
+
+    // ── action mode (`>`): the palette becomes a verb router ────────────
+    // `>theme dark` / `>accent blue` live-PREVIEW as you arrow over rows and
+    // commit on Enter; `>workspace ship` scopes to the saved layouts. Bare
+    // `>` lists the verbs (those rows refine the query instead of closing).
+    if (q.startsWith(">")) {
+      const body = q.slice(1).trim();
+      const [verbRaw, ...restParts] = body.split(/\s+/);
+      const verb = (verbRaw ?? "").toLowerCase();
+      const rest = restParts.join(" ").toLowerCase();
+      const rows: Scored[] = [];
+      const push = (c: Command) => rows.push({ ...c, _idx: [], _score: 0 });
+
+      if (verb === "theme") {
+        for (const t of ["system", "light", "dark"] as Theme[]) {
+          if (rest && !t.includes(rest)) continue;
+          push({
+            id: `verbtheme.${t}`,
+            title: `theme: ${t}`,
+            subtitle: "arrow to preview · enter to keep",
+            group: "theme",
+            icon: t === "light" ? <Sun size={14} /> : t === "dark" ? <Moon size={14} /> : <Monitor size={14} />,
+            actionLabel: "apply",
+            run: () => {
+              themeBaselineRef.current = null; // commit — don't revert on close
+              setTheme(t);
+            },
+          });
+        }
+        return rows;
+      }
+      if (verb === "accent") {
+        for (const a of ACCENT_ORDER) {
+          if (rest && !a.includes(rest)) continue;
+          push({
+            id: `verbaccent.${a}`,
+            title: `accent: ${a}`,
+            subtitle: "arrow to preview · enter to keep",
+            group: "accent",
+            icon: (
+              <span
+                className="inline-block h-3 w-3 rounded-full border border-[var(--color-border-strong)]"
+                style={{ background: ACCENT_PRESETS[a] }}
+              />
+            ),
+            actionLabel: "apply",
+            run: () => {
+              accentBaselineRef.current = null; // commit — don't revert on close
+              setAccent(a);
+            },
+          });
+        }
+        return rows;
+      }
+      if (verb === "workspace" || verb === "ws") {
+        for (const c of commands) {
+          if (!c.id.startsWith("workspace.open.")) continue;
+          if (rest && !c.title.toLowerCase().includes(rest)) continue;
+          push(c);
+        }
+        return rows;
+      }
+      // bare `>` (or unknown verb) → the verb menu; picking one refines the
+      // query in place (runSel special-cases the verbmenu. prefix).
+      const verbs: { v: string; sub: string }[] = [
+        { v: "theme", sub: "preview + switch system / light / dark" },
+        { v: "accent", sub: "preview + switch the accent color" },
+        { v: "workspace", sub: "restore a saved pane layout" },
+      ];
+      for (const { v, sub } of verbs) {
+        if (verb && !v.startsWith(verb)) continue;
+        push({
+          id: `verbmenu.${v}`,
+          title: `>${v}`,
+          subtitle: sub,
+          group: "verbs",
+          icon: <CornerDownLeft size={14} />,
+          actionLabel: "refine",
+          run: () => {}, // handled by runSel (refines, doesn't close)
+        });
+      }
+      return rows;
+    }
     // AI intents kept alive for ANY non-empty query (was >= 2) so a user is never
     // dead-ended — even a 1-char query can "ask aios".
     const intentCommands: Command[] = q.length >= 1
@@ -288,6 +385,44 @@ export function CommandPalette({
     setSel((s) => (results.length ? Math.min(s, results.length - 1) : 0));
   }, [results.length]);
 
+  // ── action-mode live preview ─────────────────────────────────────────
+  // Arrowing over a theme/accent row applies it IMMEDIATELY (that's the whole
+  // magic); the pre-verb value is held in a baseline ref and restored when the
+  // verb is left / the palette closes uncommitted. Commit (Enter/click) clears
+  // the baseline so nothing reverts.
+  const themeBaselineRef = useRef<Theme | null>(null);
+  const accentBaselineRef = useRef<Accent | null>(null);
+  const selected = results[sel];
+  useEffect(() => {
+    if (!open) return;
+    if (selected?.id.startsWith("verbtheme.")) {
+      if (themeBaselineRef.current == null) themeBaselineRef.current = getTheme();
+      setTheme(selected.id.slice("verbtheme.".length) as Theme);
+    } else if (themeBaselineRef.current != null) {
+      setTheme(themeBaselineRef.current);
+      themeBaselineRef.current = null;
+    }
+    if (selected?.id.startsWith("verbaccent.")) {
+      if (accentBaselineRef.current == null) accentBaselineRef.current = getAccent();
+      setAccent(selected.id.slice("verbaccent.".length));
+    } else if (accentBaselineRef.current != null) {
+      setAccent(accentBaselineRef.current);
+      accentBaselineRef.current = null;
+    }
+  }, [open, selected]);
+  // close without commit → revert both
+  useEffect(() => {
+    if (open) return;
+    if (themeBaselineRef.current != null) {
+      setTheme(themeBaselineRef.current);
+      themeBaselineRef.current = null;
+    }
+    if (accentBaselineRef.current != null) {
+      setAccent(accentBaselineRef.current);
+      accentBaselineRef.current = null;
+    }
+  }, [open]);
+
   // keep the selected row in view
   useEffect(() => {
     if (!open) return;
@@ -310,6 +445,12 @@ export function CommandPalette({
   const runSel = () => {
     const c = results[sel];
     if (!c) return;
+    // verb-menu rows REFINE the query in place instead of running+closing.
+    if (c.id.startsWith("verbmenu.")) {
+      setQuery(`>${c.id.slice("verbmenu.".length)} `);
+      inputRef.current?.focus();
+      return;
+    }
     onClose();
     runCommand(c);
   };
@@ -465,6 +606,12 @@ export function CommandPalette({
                       aria-selected={active}
                       onMouseMove={() => setSel(pos)}
                       onClick={() => {
+                        // verb-menu rows refine the query in place (no close)
+                        if (c.id.startsWith("verbmenu.")) {
+                          setQuery(`>${c.id.slice("verbmenu.".length)} `);
+                          inputRef.current?.focus();
+                          return;
+                        }
                         onClose();
                         runCommand(c);
                       }}
@@ -512,6 +659,18 @@ export function CommandPalette({
           )}
         </div>
 
+        {/* preview strip — what the selected command will actually touch
+            (workspace panes, session engine+age, project path). Only renders
+            when the row carries preview lines: no empty chrome. */}
+        {selected?.preview && selected.preview.length > 0 && (
+          <div className="border-t border-[var(--color-border)] bg-[var(--color-panel-2)]/40 px-4 py-2">
+            {selected.preview.slice(0, 3).map((ln, i) => (
+              <div key={i} className="truncate font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
+                {ln}
+              </div>
+            ))}
+          </div>
+        )}
         {/* footer hint */}
         <div className="flex items-center gap-3.5 border-t border-[var(--color-border)] px-4 py-2 font-mono text-[10px] text-[var(--color-faint)]">
           <span>↑↓ navigate</span>
@@ -519,6 +678,7 @@ export function CommandPalette({
             <CornerDownLeft size={10} /> {selAction}
           </span>
           <span>esc close</span>
+          <span className="ml-auto">&gt; verbs</span>
         </div>
       </div>
     </div>

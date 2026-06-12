@@ -70,7 +70,8 @@ import {
   applyFontScale,
   applyReduceMotion,
 } from "../lib/appearance";
-import { MOD, isApple } from "../lib/platform";
+import { isApple } from "../lib/platform";
+import { shortcutGroups } from "../lib/shortcuts";
 
 import {
   type SidebarState,
@@ -622,14 +623,9 @@ function Keycap({ children }: { children: ReactNode }) {
   );
 }
 
-const SHORTCUTS: { keys: string[]; action: string }[] = [
-  { keys: [MOD, "B"], action: "toggle sidebar" },
-  { keys: [MOD, "K"], action: "command palette" },
-  { keys: [MOD, MOD], action: "appshot" },
-  { keys: [MOD, "T"], action: "new terminal" },
-  { keys: [MOD, "W"], action: "close pane" },
-  { keys: [MOD, ","], action: "open settings" },
-];
+// (the hand-maintained SHORTCUTS array is gone — it listed 6 of ~18 live
+//  chords and rotted whenever the keydown switch changed. The cheat-sheet now
+//  renders the same lib/shortcuts.ts catalog the Mod+? HUD uses.)
 
 /* ── diagnostics section (local-first, zero network) ────────────────── */
 
@@ -1524,19 +1520,27 @@ export function Settings({
 
               {section === "shortcuts" && (
                 <div className="-mt-1">
-                  {SHORTCUTS.map((sc) => (
-                    <div
-                      key={sc.action}
-                      className="flex items-center justify-between border-b border-[var(--color-border)] py-2.5 last:border-0"
-                    >
-                      <span className="text-[13px] text-[var(--color-text-2)]">
-                        {sc.action}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        {sc.keys.map((k, i) => (
-                          <Keycap key={i}>{k}</Keycap>
-                        ))}
-                      </span>
+                  {shortcutGroups().map((g) => (
+                    <div key={g.title} className="mb-3 last:mb-0">
+                      <GroupLabel>{g.title}</GroupLabel>
+                      {g.items.map((sc) => (
+                        <div
+                          key={sc.action}
+                          className="flex items-center justify-between border-b border-[var(--color-border)] py-2.5 last:border-0"
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-[13px] text-[var(--color-text-2)]">{sc.action}</span>
+                            {sc.note && (
+                              <span className="block font-mono text-[10px] text-[var(--color-faint)]">{sc.note}</span>
+                            )}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {sc.keys.map((k, i) => (
+                              <Keycap key={i}>{k}</Keycap>
+                            ))}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

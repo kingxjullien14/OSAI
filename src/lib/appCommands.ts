@@ -108,6 +108,11 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
         scope: "chat",
         icon: createElement(MessageSquare, { size: 14 }),
         keywords: ["chat", "session", "continue", "resume", c.cwd ?? ""],
+        preview: [
+          // mtime is unix SECONDS (fmtRelativeTime contract); savedAgo wants ms
+          `${c.engine ?? "claude"} · ${savedAgo(c.mtime * 1000)}`,
+          ...(c.cwd ? [c.cwd] : []),
+        ],
         run: () => deps.resumeChat(c),
       }),
       group: "resume",
@@ -134,6 +139,7 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
         scope: "run",
         icon: createElement(Play, { size: 14 }),
         keywords: ["run", "start", "launch", "project", p.name, p.kind, relPath(deps.home, p.root)],
+        preview: [p.root, `kind: ${p.kind}`],
         run: () => deps.runProject(p),
       }),
       group: "run",
@@ -161,6 +167,10 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
         scope: "global",
         icon: createElement(SquareStack, { size: 14 }),
         keywords: ["workspace", "layout", "restore", "open", "switch", ws.name],
+        preview: [
+          ws.panes.map((p) => p.label).join(" · "),
+          `${ws.panes.length} ${ws.panes.length === 1 ? "pane" : "panes"} · saved ${savedAgo(ws.savedAt)}`,
+        ],
         run: () => deps.applyWorkspace(ws),
       }),
       group: "workspaces",

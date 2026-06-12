@@ -5539,13 +5539,32 @@ function ApprovalCard({
         <span className="font-mono text-[11.5px] text-[var(--color-text-2)]">
           {turn.toolName}
         </span>
-        <span className="opacity-80">
+        <span className="shrink-0 opacity-80">
           {turn.decision === "allow"
             ? "allowed once"
             : turn.decision === "allow_always"
               ? "allowed for session"
               : "denied"}
         </span>
+        {/* echo WHAT was approved — the card used to erase the command on
+            resolution, leaving the transcript unauditable. Full text on hover
+            + one click to copy. */}
+        {args && (
+          <>
+            <span
+              className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--color-faint)]"
+              title={args}
+            >
+              {ellipsizeMid(args.replace(/\s+/g, " "), 64)}
+            </span>
+            <CopyButton
+              text={args}
+              size={11}
+              title="copy the approved command"
+              className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            />
+          </>
+        )}
       </div>
     );
   }

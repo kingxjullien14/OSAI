@@ -24,6 +24,8 @@ export interface AiosCommand {
   scope: CommandScope;
   danger: CommandDanger;
   keywords: string[];
+  /** Detail lines for the palette's selected-row preview strip (≤3 shown). */
+  preview?: string[];
   enabled: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, input?: unknown) => CommandResult | Promise<CommandResult>;
 }
@@ -36,6 +38,7 @@ export interface CommandInput {
   scope: CommandScope;
   danger?: CommandDanger;
   keywords?: string[];
+  preview?: string[];
   enabled?: (ctx: CommandContext) => boolean;
   run: (
     ctx: CommandContext,
@@ -87,6 +90,7 @@ export function commandToPaletteCommand(
     icon: command.icon,
     keywords: command.keywords.join(" "),
     actionLabel: options.actionLabel,
+    preview: command.preview,
     danger: command.danger !== "none" ? command.danger : undefined,
     disabled: !command.enabled(options.context),
     run: () => {
