@@ -129,7 +129,10 @@ import {
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
 import { SidebarUsage } from "./components/SidebarUsage";
-import { trapTab, useExitState, ExitGate } from "./components/ui";
+import { AnimatePresence, m } from "motion/react";
+
+import { modalPop, overlayFade, paneExit, toastPop } from "./components/fx/motionTokens";
+import { trapTab } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, fmtChord, isApple } from "./lib/platform";
@@ -461,6 +464,12 @@ function App() {
     return () => window.removeEventListener("aios:replay-onboarding", replay);
   }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Settings is lazy: mount it on FIRST open and keep it mounted after, so its
+  // internal AnimatePresence exit can play (the chunk still loads on demand).
+  const [settingsEverOpened, setSettingsEverOpened] = useState(false);
+  useEffect(() => {
+    if (settingsOpen) setSettingsEverOpened(true);
+  }, [settingsOpen]);
   const [shortcutHudOpen, setShortcutHudOpen] = useState(false);
   // When a notification deep-links to Settings → a section, App opens the overlay
   // AND hands Settings the section to jump to (consumed once on open).
@@ -492,10 +501,6 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
   // pane key pending a close-confirm (busy chat: keep-running vs kill).
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
-  // Panes mid-exit-animation: still rendered (with .pane-exit) for one beat
-  // before removal. Ref mirrors the state for the double-close guard.
-  const [closingKeys, setClosingKeys] = useState<string[]>([]);
-  const closingPanesRef = useRef<Set<string>>(new Set());
   // pane currently under a native OS file drag OR a reorder-drag (drop highlight).
   const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
   // the pane currently being drag-reordered (null = none). Drives per-pane hover
@@ -847,21 +852,14 @@ function App() {
     saveLayout(panes);
   }, [panes]);
 
-  // Toast with a real exit beat (.toast-in/.toast-out). Timer refs so a second
-  // flash can't have the FIRST flash's timeout clear it mid-display (the old
-  // bug: every flash armed an unconditional 2.6s clear).
-  const toastTimers = useRef<{ out?: number; clear?: number }>({});
-  const [toastLeaving, setToastLeaving] = useState(false);
+  // Toast: ONE dismiss timer; AnimatePresence owns the exit beat (the old
+  // toastLeaving + second-timer race plumbing died with it). Re-arming on a
+  // replacing flash keeps the first flash's timeout from clearing it early.
+  const toastTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((msg: string) => {
-    clearTimeout(toastTimers.current.out);
-    clearTimeout(toastTimers.current.clear);
-    setToastLeaving(false);
+    clearTimeout(toastTimer.current);
     setToast(msg);
-    toastTimers.current.out = window.setTimeout(() => setToastLeaving(true), 2400);
-    toastTimers.current.clear = window.setTimeout(() => {
-      setToast(null);
-      setToastLeaving(false);
-    }, 2600);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
 
   useEffect(() => {
@@ -1253,9 +1251,6 @@ function App() {
     [spawn],
   );
   const closePane = useCallback((key: string) => {
-    // Double-close guard: the exit beat below means a second click can land
-    // while the pane is already dying.
-    if (closingPanesRef.current.has(key)) return;
     // If the pane being closed owns the OS fullscreen (e.g. a maximized browser
     // pane with a video in fullscreen), drop fullscreen first — otherwise the
     // window stays fullscreen with the owning pane gone ("bugs out on close").
@@ -1265,29 +1260,17 @@ function App() {
     });
     if (prevMaxRef.current === key) prevMaxRef.current = null;
     if (focusedPane.current === key) focusedPane.current = null;
-    const remove = () => {
-      closingPanesRef.current.delete(key);
-      setClosingKeys((c) => c.filter((k) => k !== key));
-      // Drop any session-restore memory for this pane key — a pane closed on
-      // purpose shouldn't have its last url linger in the browser-mem map (it
-      // also won't be in the next layout, so this just keeps the map from
-      // accumulating dead entries). No-op for non-browser keys.
-      forgetUrl(key);
-      setPanes((p) => p.filter((x) => x.key !== key));
-      setHiddenKeys((h) => h.filter((k) => k !== key));
-      setActiveKey((a) => (a === key ? null : a));
-    };
-    // Exit beat: flag the pane so PaneCard plays .pane-exit (fade+scale, App.css),
-    // then actually remove — the grid-reflow transition glides the survivors in.
-    // Under reduce-motion remove immediately (the animation is killed anyway —
-    // don't hold a frozen pane for 170ms).
-    if (document.documentElement.dataset.reduceMotion === "true") {
-      remove();
-      return;
-    }
-    closingPanesRef.current.add(key);
-    setClosingKeys((c) => [...c, key]);
-    setTimeout(remove, 170);
+    // Remove immediately — AnimatePresence (popLayout) around the grid children
+    // plays the exit beat on the leaving PaneCard while the grid-reflow
+    // transition glides the survivors in. No closing flags, no timers.
+    // Drop any session-restore memory for this pane key — a pane closed on
+    // purpose shouldn't have its last url linger in the browser-mem map (it
+    // also won't be in the next layout, so this just keeps the map from
+    // accumulating dead entries). No-op for non-browser keys.
+    forgetUrl(key);
+    setPanes((p) => p.filter((x) => x.key !== key));
+    setHiddenKeys((h) => h.filter((k) => k !== key));
+    setActiveKey((a) => (a === key ? null : a));
   }, []);
   // Closing a chat pane whose claude is mid-task → prompt to keep it running in
   // the background (with optional done-notification) instead of killing it.
@@ -2882,6 +2865,11 @@ function App() {
               <>
                 {visibleCount === 0 && <div className="absolute inset-0 z-10">{idleDash}</div>}
             <ResizableGrid cols={cols} rows={rows} gap={8} storageKey={gridTrackStorageKey(GRID_TRACK_KEY, cols, rows)}>
+              {/* popLayout: a closing pane pops OUT of the grid flow (absolute at
+                  its measured rect) and plays the fx exit while the survivors'
+                  track transition glides them into the gap. initial=false keeps
+                  entrances on the CSS fade-in-up (mount-time). */}
+              <AnimatePresence initial={false} mode="popLayout">
               {panes.map((pane) => {
                 const visibleIndex = panes
                   .filter((p) => !hiddenKeys.includes(p.key))
@@ -2905,7 +2893,6 @@ function App() {
                   style={paneStyle}
                   dropTarget={dropTargetKey === pane.key}
                   dropZone={dropTargetKey === pane.key ? dropZone : null}
-                  closing={closingKeys.includes(pane.key)}
                   onClose={() => requestClose(pane.key)}
                   onToggleMax={() => toggleMax(pane.key)}
                   onToggleHide={() => toggleHide(pane.key)}
@@ -2960,6 +2947,7 @@ function App() {
                 />
                 );
               })}
+              </AnimatePresence>
             </ResizableGrid>
               </>
             );
@@ -2982,8 +2970,9 @@ function App() {
       )}
 
       {/* conductor pill — listening / executing state, top-center */}
+      <AnimatePresence>
       {conductorState !== "idle" && (
-        <div className="toast-in absolute left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
+        <m.div {...toastPop()} className="absolute left-1/2 top-4 z-50 flex items-center gap-2 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
           <Mic
             size={13}
             className={
@@ -2998,27 +2987,33 @@ function App() {
           <span className="font-mono text-[10px] text-[var(--color-faint)]">
             {fmtChord(["mod", "shift", "J"])} run · esc cancel
           </span>
-        </div>
+        </m.div>
       )}
+      </AnimatePresence>
+      {/* toastPop owns the -50% X across every state (so no -translate-x-1/2
+          class here); keyed by message so a replacing flash re-plays the
+          entrance while AnimatePresence exits the old one. */}
+      <AnimatePresence>
       {toast && (
-        // .toast-in/out own the -50% X in their keyframes; keyed by message so
-        // a replacing flash re-plays the entrance. (was .modal-in — a modal's
-        // slide-up gesture on a toast — with shadow-2xl and no exit at all)
-        <div
+        <m.div
           key={toast}
-          className={`${toastLeaving ? "toast-out" : "toast-in"} glass absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]`}
+          {...toastPop()}
+          className="glass absolute bottom-4 left-1/2 z-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
         >
           {toast}
-        </div>
+        </m.div>
       )}
+      </AnimatePresence>
 
       {/* minimized panes now live in the sidebar "OPEN" list (OpenPanesList) —
           no floating overlay. Restore / hide / close all happen from the rail. */}
 
       {/* close a busy chat: keep running in background, or kill */}
+      <AnimatePresence>
       {closePrompt && (
-        <div className="overlay-backdrop absolute inset-0 z-50 grid place-items-center bg-black/50" onClick={() => setClosePrompt(null)}>
-          <div
+        <m.div {...overlayFade()} className="absolute inset-0 z-50 grid place-items-center bg-black/50" onClick={() => setClosePrompt(null)}>
+          <m.div
+            {...modalPop()}
             role="dialog"
             aria-modal="true"
             aria-label="this chat is still working"
@@ -3031,7 +3026,7 @@ function App() {
               }
               trapTab(e, e.currentTarget);
             }}
-            className="modal-in w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-[var(--aios-shadow-pop)]"
+            className="w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-[var(--aios-shadow-pop)]"
           >
             <div className="text-[13px] font-medium text-[var(--color-text)]">this chat is still working</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
@@ -3071,14 +3066,15 @@ function App() {
                 stop &amp; close
               </button>
             </div>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
 
-      {/* ExitGate keeps the lazy mount alive ~160ms after close so Settings'
-          internal data-closing exit can play (the parent conditional used to
-          unmount it in the same frame). */}
-      <ExitGate open={settingsOpen}>
+      {/* Settings mounts on first open and STAYS mounted (its own
+          AnimatePresence needs to outlive `open` to play the exit); the lazy
+          chunk still only loads on that first open. */}
+      {settingsEverOpened && (
         <Suspense fallback={null}>
           <Settings
             open={settingsOpen}
@@ -3096,7 +3092,7 @@ function App() {
             }}
           />
         </Suspense>
-      </ExitGate>
+      )}
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -3925,8 +3921,6 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
       setLabel("");
     }
   }, [open]);
-  const { mounted, closing } = useExitState(open);
-  if (!mounted) return null;
   const submit = () => {
     const u = url.trim();
     if (!u) return;
@@ -3934,17 +3928,19 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
     onClose();
   };
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
       onMouseDown={onClose}
     >
-      <div
+      <m.div
+        {...modalPop()}
         role="dialog"
         aria-modal="true"
         aria-label="pin a site"
-        data-closing={closing || undefined}
-        className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -3992,8 +3988,10 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -4014,13 +4012,9 @@ function SaveWorkspaceModal({
   onSave: (name: string) => void;
   onClose: () => void;
 }) {
-  // Sticky draft: during the 160ms closing render draft is already null — keep
-  // the last real value so the input doesn't blank mid-exit.
-  const lastDraft = useRef("");
-  if (draft != null) lastDraft.current = draft;
-  const { mounted, closing } = useExitState(draft != null);
-  if (!mounted) return null;
-  const value = draft ?? lastDraft.current;
+  // No sticky-draft ref needed: AnimatePresence replays the LAST open render
+  // during the exit, so the input can't blank mid-exit by construction.
+  const value = draft ?? "";
   const clean = value.trim();
   const overwrites = existing.some((n) => n.toLowerCase() === clean.toLowerCase());
   const submit = () => {
@@ -4029,17 +4023,19 @@ function SaveWorkspaceModal({
     onClose();
   };
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {draft != null && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
       onMouseDown={onClose}
     >
-      <div
+      <m.div
+        {...modalPop()}
         role="dialog"
         aria-modal="true"
         aria-label="save workspace"
-        data-closing={closing || undefined}
-        className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -4094,8 +4090,10 @@ function SaveWorkspaceModal({
             </div>
           </div>
         </form>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -4171,23 +4169,22 @@ function PaneOverview({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, panes, sel, onClose, onPick]);
 
-  // Exit motion — same closing contract as the palette (App.css data-closing).
-  const { mounted, closing } = useExitState(open);
-
-  if (!mounted) return null;
-
   // Card width adapts so 1-2 panes sit big + centered (not stretched), many panes
   // wrap into a tidy gallery — the Mission-Control feel at any count.
   const n = panes.length;
   const cardW = n <= 1 ? 460 : n <= 2 ? 400 : n <= 6 ? 340 : 280;
 
+  // Exit motion — AnimatePresence + fx/motionTokens (one surface: the scrim
+  // carries the modal pop itself, same as the old `.modal-in` root).
   return (
-    <div
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...modalPop()}
       role="dialog"
       aria-modal="true"
       aria-label="mission control — open panes"
-      data-closing={closing || undefined}
-      className={`modal-in fixed inset-0 z-[60] flex flex-col bg-black/55 backdrop-blur-2xl ${closing ? "pointer-events-none" : ""}`}
+      className="fixed inset-0 z-[60] flex flex-col bg-black/55 backdrop-blur-2xl"
       onMouseDown={onClose}
     >
       {/* top bar — title centered like macOS "Desktop", controls on the right */}
@@ -4276,7 +4273,9 @@ function PaneOverview({
           })}
         </div>
       </div>
-    </div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -4468,6 +4467,7 @@ function OpenPanesList({
 }
 
 function PaneCard({
+  ref,
   pane,
   defaultCwd,
   active,
@@ -4485,7 +4485,6 @@ function PaneCard({
   isDragging,
   dimmed,
   busy,
-  closing,
   onPaneDragStart,
   onFocus,
   onAnnotate,
@@ -4508,6 +4507,9 @@ function PaneCard({
   onProfileChange,
   onVideoFullscreen,
 }: {
+  /** Forwarded by AnimatePresence popLayout (React 19 ref-as-prop): the exit
+   *  pop measures the root element through it. Merged with wrapRef below. */
+  ref?: React.Ref<HTMLDivElement>;
   pane: Pane;
   defaultCwd?: string;
   active: boolean;
@@ -4528,8 +4530,6 @@ function PaneCard({
   dimmed?: boolean;
   /** activity glow: a live agent run is streaming in this pane. */
   busy?: boolean;
-  /** exit beat: pane is closing — play .pane-exit before removal. */
-  closing?: boolean;
   onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
   onFocus: () => void;
   onAnnotate: (text: string) => void;
@@ -4638,14 +4638,21 @@ function PaneCard({
     setMon((v) => !v);
   };
   return (
-    <div
-      ref={wrapRef}
+    <m.div
+      {...paneExit()}
+      ref={(el: HTMLDivElement | null) => {
+        // merge: wrapRef (rect registry + FLIP morph) + the popLayout ref
+        // AnimatePresence forwards so the exit pop can measure this element.
+        wrapRef.current = el;
+        if (typeof ref === "function") ref(el);
+        else if (ref) ref.current = el;
+      }}
       data-pane-key={pane.key}
       onMouseDownCapture={onFocus}
       style={hidden ? { display: "none" } : style}
       className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-[color,background-color,border-color,box-shadow,opacity] duration-200 ${
         dimmed ? "opacity-45" : ""
-      } ${closing ? "pane-exit" : ""} ${
+      } ${
         maximized
           ? // truly fullscreen — edge-to-edge over the top bar + sidebar, no chrome
             "fixed inset-0 z-40"
@@ -4936,7 +4943,7 @@ function PaneCard({
           </div>
         </div>
       )}
-    </div>
+    </m.div>
   );
 }
 

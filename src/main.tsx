@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./App.css";
+import { MotionRoot } from "./components/fx/MotionRoot";
 import { installGlobalDiagHandlers } from "./lib/diag";
 
 // Local-first diagnostics: capture uncaught errors + unhandled promise
@@ -11,6 +12,8 @@ installGlobalDiagHandlers();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <MotionRoot>
+      <App />
+    </MotionRoot>
   </React.StrictMode>,
 );

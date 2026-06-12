@@ -315,32 +315,12 @@ select:focus-visible,
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent); }
 .btn-glow:active { transform: translateY(0) scale(0.97); }
 
-/* .overlay-backdrop — modal dims fade in instead of slamming on; flip
-   data-closing="true" before unmount for a fast ease-in exit. */
+/* .overlay-backdrop — modal dims fade in instead of slamming on. ENTRANCE
+   only: the W5-1 overlays animate via AnimatePresence + fx/motionTokens now;
+   this class remains for surfaces still on CSS (RunCinema). Toast motion
+   (the old .toast-in/.toast-out) lives in fx/motionTokens toastPop(). */
 @keyframes aios-fade-plain { from { opacity: 0; } to { opacity: 1; } }
-@keyframes aios-overlay-out { to { opacity: 0; } }
 .overlay-backdrop { animation: aios-fade-plain var(--aios-dur-base) ease both; }
-.overlay-backdrop[data-closing="true"] {
-  animation: aios-overlay-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
-}
-/* Descendant form — <ExitGate> (ui.tsx) wraps overlays whose internals we
-   don't restructure (Settings, Mission Control, close-prompt): it sets
-   data-closing on a display:contents wrapper and these rules reach in. */
-[data-closing="true"] .overlay-backdrop {
-  animation: aios-overlay-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
-  pointer-events: none;
-}
-[data-closing="true"] .modal-in {
-  animation: aios-modal-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
-}
-
-/* .toast-in/.toast-out — bottom-anchored toast motion. The -50% X rides every
-   keyframe because toasts sit on left-1/2 -translate-x-1/2. */
-@keyframes aios-toast-in  { from { opacity: 0; transform: translate(-50%, 16px) scale(0.96); }
-                            to   { opacity: 1; transform: translate(-50%, 0)    scale(1); } }
-@keyframes aios-toast-out { to   { opacity: 0; transform: translate(-50%, 8px); } }
-.toast-in  { animation: aios-toast-in  var(--aios-dur-base) var(--aios-ease-spring) both; }
-.toast-out { animation: aios-toast-out var(--aios-dur-fast) var(--aios-ease-in) forwards; }
 
 /* ── chat reading column ──────────────────────────────────────────────
    42rem matches the old max-w-2xl; on wide panes (maximized, single-pane
@@ -499,28 +479,9 @@ select:focus-visible,
   filter: drop-shadow(0 0 6px rgba(242, 101, 34, 0.25)); }
 .brand-logo--splash { filter: drop-shadow(0 0 24px rgba(242, 101, 34, 0.40)); }
 .mascot-idle { animation: aios-breathe 4s ease-in-out infinite; }
+/* ENTRANCE only since W5-1 (exit = AnimatePresence + fx/motionTokens
+   modalPop): remains for the PetPane speech bubble. */
 .modal-in { animation: aios-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
-/* Exit half of .modal-in — overlays were entering with a spring and vanishing
-   in one frame. Flip data-closing="true" (same contract as .overlay-backdrop)
-   ~160ms before unmount; ease-in, faster than the open, so dismissal snaps the
-   app back to focus. */
-@keyframes aios-modal-out {
-  to { opacity: 0; transform: translateY(8px) scale(0.98); }
-}
-.modal-in[data-closing="true"] {
-  animation: aios-modal-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
-}
-
-/* .pane-exit — a closing pane shrinks away instead of blinking out; the grid
-   reflow transition then glides the survivors into the gap. pointer-events
-   off so a dying pane can't eat clicks during its 160ms. */
-@keyframes aios-pane-out {
-  to { opacity: 0; transform: scale(0.96); }
-}
-.pane-exit {
-  animation: aios-pane-out var(--aios-dur-fast) var(--aios-ease-in) forwards;
-  pointer-events: none;
-}
 
 /* .find-current — find-in-chat's active hit: a one-shot highlight wash that
    plays when the class lands on a block wrapper (selection moved), then

@@ -22,8 +22,11 @@ import {
   type Accent,
   type Theme,
 } from "../lib/theme";
-import { consumePaletteMorphSource } from "../lib/paletteMorph";
-import { trapTab, useExitState } from "./ui";
+import { AnimatePresence, m } from "motion/react";
+
+import { consumePaletteMorphSource, peekPaletteMorphSource } from "../lib/paletteMorph";
+import { modalPop, overlayFade } from "./fx/motionTokens";
+import { trapTab } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
 const MRU_KEY = "aios.palette.mru";
@@ -225,7 +228,8 @@ export function CommandPalette({
   // FLIP morph: when the idle command line opened us (it records its rect via
   // paletteMorph), the panel starts as an inverted transform mapping back onto
   // that surface and settles into place — the input visibly BECOMES the
-  // palette. WAAPI overrides the CSS .modal-in entrance for this one open;
+  // palette. The render below suppresses the motion entrance for a morph open
+  // (peekPaletteMorphSource → initial:false), so WAAPI owns the transform;
   // reduce-motion (or a normal ⌘K open) skips it entirely.
   useEffect(() => {
     if (!open) return;
@@ -235,21 +239,17 @@ export function CommandPalette({
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const dst = el.getBoundingClientRect();
     if (dst.width === 0 || dst.height === 0) return;
-    el.style.animation = "none"; // suppress .modal-in for the morph open
     const dx = src.left + src.width / 2 - (dst.left + dst.width / 2);
     const dy = src.top + src.height / 2 - (dst.top + dst.height / 2);
     const sx = src.width / dst.width;
     const sy = src.height / dst.height;
-    const anim = el.animate(
+    el.animate(
       [
         { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, opacity: 0.65 },
         { transform: "none", opacity: 1 },
       ],
       { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
     );
-    anim.onfinish = () => {
-      el.style.animation = "";
-    };
   }, [open]);
 
   // flat, ranked, group-ordered list. Empty query → "recent" (MRU) first.
@@ -462,13 +462,6 @@ export function CommandPalette({
     el?.scrollIntoView({ block: "nearest" });
   }, [sel, open]);
 
-  // Exit motion: stay mounted ~160ms after close while data-closing plays the
-  // reversed modal-in + backdrop fade (App.css). Entrances were animated from
-  // day one; dismissal used to vanish in a single frame.
-  const { mounted, closing } = useExitState(open);
-
-  if (!mounted) return null;
-
   const move = (delta: number) => {
     if (!results.length) return;
     setSel((s) => (s + delta + results.length) % results.length);
@@ -540,21 +533,30 @@ export function CommandPalette({
   const selCmd = results[sel];
   const selAction = selCmd?.actionLabel ?? "select";
 
+  // Suppress the motion entrance on a morph open: the WAAPI FLIP (effect
+  // above) owns the panel's transform for that one mount. `initial` is only
+  // read when AnimatePresence mounts the panel, so peeking here is stable.
+  const morphOpen = open && peekPaletteMorphSource();
+  const pop = modalPop();
+
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
+      <m.div
+        {...pop}
+        initial={morphOpen ? false : pop.initial}
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
-        data-closing={closing || undefined}
-        className="modal-in glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
+        className="glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // focus can sit on a clicked row, not just the input — Escape still
@@ -713,7 +715,9 @@ export function CommandPalette({
           <span>esc close</span>
           <span className="ml-auto">&gt; verbs</span>
         </div>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }

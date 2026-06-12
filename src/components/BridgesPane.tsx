@@ -8,6 +8,10 @@
  *  App.tsx. This is purely the reframed UI.) */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AnimatePresence, m } from "motion/react";
+
+import { toastPop } from "./fx/motionTokens";
+
 import {
   Activity,
   ArrowDownLeft,
@@ -132,26 +136,18 @@ export function BridgesPane() {
   const [error, setError] = useState<string | null>(null);
 
   // lightweight self-contained toast (connect button is an honest no-op).
+  // One dismiss timer; AnimatePresence owns the exit beat.
   const [toast, setToast] = useState<string | null>(null);
-  const [toastLeaving, setToastLeaving] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastOutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((msg: string, _level: NotificationLevel = "info", _body?: string) => {
     // Local toast only. These are ephemeral UI acks (e.g. "connect is a no-op") —
     // mirroring them into the bell was pure noise, so it's dropped.
-    setToastLeaving(false);
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    if (toastOutTimer.current) clearTimeout(toastOutTimer.current);
-    toastOutTimer.current = setTimeout(() => setToastLeaving(true), 2300);
-    toastTimer.current = setTimeout(() => {
-      setToast(null);
-      setToastLeaving(false);
-    }, 2500);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    if (toastOutTimer.current) clearTimeout(toastOutTimer.current);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -294,14 +290,17 @@ export function BridgesPane() {
         </div>
       </div>
 
+      <AnimatePresence>
       {toast && (
-        <div
+        <m.div
           key={toast}
-          className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]`}
+          {...toastPop()}
+          className="pointer-events-none absolute bottom-3 left-1/2 z-10 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
         >
           {toast}
-        </div>
+        </m.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

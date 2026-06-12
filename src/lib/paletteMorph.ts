@@ -21,3 +21,10 @@ export function consumePaletteMorphSource(): DOMRect | null {
   if (!s || Date.now() - at > 1000) return null;
   return s;
 }
+
+/** Non-destructive freshness check — safe to call during render (pure). The
+ *  palette uses it to suppress its motion entrance on a morph open (the WAAPI
+ *  FLIP owns the transform for that one mount); the effect still consumes. */
+export function peekPaletteMorphSource(): boolean {
+  return source != null && Date.now() - at <= 1000;
+}

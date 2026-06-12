@@ -39,6 +39,9 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
+
+import { toastPop } from "./fx/motionTokens";
 
 import {
   browserBack,
@@ -1703,12 +1706,17 @@ export function BrowserPane({
             )}
           </div>
         )}
+        <AnimatePresence>
         {annotating && (
-          <div className="toast-in pointer-events-none absolute left-1/2 top-2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-[var(--aios-shadow-pop)]">
+          <m.div
+            {...toastPop()}
+            className="pointer-events-none absolute left-1/2 top-2 z-50 flex items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-[var(--aios-shadow-pop)]"
+          >
             <Crosshair size={12} />
             annotating… click an element, then describe it
-          </div>
+          </m.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );

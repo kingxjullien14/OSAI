@@ -3,9 +3,11 @@
  *  consumes, so the two can never drift apart). Platform-correct keycaps. */
 import type { ReactNode } from "react";
 import { Keyboard, X } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 
 import { shortcutGroups } from "../lib/shortcuts";
-import { trapTab, useExitState } from "./ui";
+import { modalPop, overlayFade } from "./fx/motionTokens";
+import { trapTab } from "./ui";
 
 function Keycap({ children }: { children: ReactNode }) {
   return (
@@ -16,21 +18,22 @@ function Keycap({ children }: { children: ReactNode }) {
 }
 
 export function ShortcutHud({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { mounted, closing } = useExitState(open);
-  if (!mounted) return null;
-  const groups = shortcutGroups();
+  // Exit motion: AnimatePresence keeps the tree mounted while the fx/
+  // motionTokens exit plays — interruption-safe (a reopen mid-exit reverses).
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
       onMouseDown={onClose}
     >
-      <div
+      <m.div
+        {...modalPop()}
         role="dialog"
         aria-modal="true"
         aria-label="keyboard shortcuts"
-        data-closing={closing || undefined}
-        className="modal-in glass w-[660px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[660px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -55,7 +58,7 @@ export function ShortcutHud({ open, onClose }: { open: boolean; onClose: () => v
           </button>
         </div>
         <div className="stagger grid max-h-[62vh] grid-cols-1 gap-x-8 gap-y-4 overflow-y-auto p-4 sm:grid-cols-3">
-          {groups.map((g) => (
+          {shortcutGroups().map((g) => (
             <div key={g.title} className="min-w-0">
               <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-faint)]">
                 {g.title}
@@ -81,7 +84,9 @@ export function ShortcutHud({ open, onClose }: { open: boolean; onClose: () => v
             </div>
           ))}
         </div>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }

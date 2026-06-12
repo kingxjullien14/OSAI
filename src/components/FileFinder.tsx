@@ -9,7 +9,10 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, FileText, History, Search } from "lucide-react";
 
 import { fuzzyMatch, Highlight } from "./CommandPalette";
-import { trapTab, useExitState } from "./ui";
+import { AnimatePresence, m } from "motion/react";
+
+import { modalPop, overlayFade } from "./fx/motionTokens";
+import { trapTab } from "./ui";
 import { findFiles } from "../lib/fs";
 import { basename, joinPath, normalizeSlashes } from "../lib/paths.ts";
 
@@ -124,11 +127,6 @@ export function FileFinder({
     el?.scrollIntoView({ block: "nearest" });
   }, [sel, open]);
 
-  // Exit motion — same closing contract as the palette (App.css data-closing).
-  const { mounted, closing } = useExitState(open);
-
-  if (!mounted) return null;
-
   const move = (delta: number) => {
     if (!results.length) return;
     setSel((s) => (s + delta + results.length) % results.length);
@@ -193,20 +191,23 @@ export function FileFinder({
 
   const showingRecent = !deferredQuery.trim();
 
+  // Exit motion — AnimatePresence + fx/motionTokens (same family as the palette).
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
+      <m.div
+        {...modalPop()}
         role="dialog"
         aria-modal="true"
         aria-label="go to file"
-        data-closing={closing || undefined}
-        className="modal-in glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
+        className="glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // Tab from a clicked row (focus left the input) stays inside the
@@ -322,7 +323,9 @@ export function FileFinder({
           </span>
           <span>esc close</span>
         </div>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }

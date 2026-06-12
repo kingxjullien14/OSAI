@@ -19,7 +19,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Loader2, MonitorUp, RefreshCw, Search, ShieldAlert, X } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
+
 import { isApple, isWindows } from "../lib/platform";
+import { toastPop } from "./fx/motionTokens";
 import { PaneEmpty } from "./ui";
 
 import {
@@ -550,11 +553,17 @@ function AppCastPaneInner({
             {starting ? "starting capture…" : "live mirror — click + type to control the app"}
           </div>
         )}
+        <AnimatePresence>
         {toast && (
-          <div className="toast-in pointer-events-none absolute bottom-2 left-1/2 z-50 -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+          <m.div
+            key={toast}
+            {...toastPop()}
+            className="pointer-events-none absolute bottom-2 left-1/2 z-50 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
+          >
             {toast}
-          </div>
+          </m.div>
         )}
+        </AnimatePresence>
         {/* "recording this app" indicator (trust-is-the-moat: never silent). */}
         {picked != null && !error && (
           <div className="pointer-events-none absolute right-2 top-2 z-50 flex items-center gap-1.5 rounded-full border border-[var(--color-danger)]/40 bg-[var(--color-panel-2)] px-2.5 py-1 text-[10px] text-[var(--color-danger)] shadow-lg">

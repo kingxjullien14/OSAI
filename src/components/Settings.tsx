@@ -41,7 +41,10 @@ import {
 } from "lucide-react";
 
 import { listProjects, type ProjectInfo } from "../lib/run";
-import { trapTab, useExitState } from "./ui";
+import { AnimatePresence, m } from "motion/react";
+
+import { modalPop, overlayFade } from "./fx/motionTokens";
+import { trapTab } from "./ui";
 import {
   loadProjectsStore,
   subscribeProjects,
@@ -1042,28 +1045,28 @@ export function Settings({
     if (open) requestAnimationFrame(() => dialogRef.current?.focus());
   }, [open]);
 
-  // Exit motion — same closing contract as the palette (App.css data-closing).
-  const { mounted, closing } = useExitState(open);
-
-  if (!mounted) return null;
-
   /** Persist + update local state in one move. */
   const patch = (p: Partial<AppSettings>) => setS(saveSettings(p));
 
+  // Exit motion — AnimatePresence + fx/motionTokens (the component stays
+  // mounted by App after first open so the exit can play; all content below
+  // only renders while `open`).
   return (
-    <div
-      data-closing={closing || undefined}
-      className={`overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm ${closing ? "pointer-events-none" : ""}`}
+    <AnimatePresence>
+      {open && (
+    <m.div
+      {...overlayFade()}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
       onMouseDown={onClose}
     >
-      <div
+      <m.div
+        {...modalPop()}
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
-        data-closing={closing || undefined}
-        className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
+        className="glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -1578,7 +1581,9 @@ export function Settings({
           </div>
           )}
         </div>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
+      )}
+    </AnimatePresence>
   );
 }
