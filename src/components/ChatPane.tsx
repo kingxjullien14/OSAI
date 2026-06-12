@@ -163,7 +163,7 @@ import {
 } from "../lib/chatScroll";
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { PaneDropZone } from "./PaneDropZone";
-import { CopyButton } from "./ui";
+import { CopyButton, trapTab } from "./ui";
 import { reportDiag } from "../lib/diag";
 import { pushNotification } from "../lib/notifications";
 
@@ -5135,7 +5135,20 @@ function GoalEditorOverlay({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="surface-pop focus-accent w-full max-w-md p-4">
+      <div
+        className="surface-pop focus-accent w-full max-w-md p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="ongoing goal"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onCancel();
+            return;
+          }
+          trapTab(e, e.currentTarget);
+        }}
+      >
         <div className="mb-2 flex items-center gap-1.5 text-[12px] text-[var(--color-text-2)]">
           <Target size={13} className="text-[var(--color-accent)]" />
           ongoing goal

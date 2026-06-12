@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { loadSettings, saveSettings } from "../lib/settings";
+import { trapTab } from "./ui";
 import { defaultAiForProvider, engineForProvider, type ChatEngine } from "../lib/chat";
 import { detectProviders, type ProviderStatus } from "../lib/providerDetect";
 import { listPlugins } from "../lib/plugins";
@@ -123,7 +124,13 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
         if (e.target === e.currentTarget) skip();
       }}
     >
-      <div className="surface-pop focus-accent w-full max-w-[440px] p-6" role="dialog" aria-modal="true">
+      <div
+        className="surface-pop focus-accent w-full max-w-[440px] p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="welcome to aios"
+        onKeyDown={(e) => trapTab(e, e.currentTarget)}
+      >
         {/* progress pips */}
         <div className="mb-5 flex items-center justify-center gap-1.5">
           {STEPS.map((s, i) => (

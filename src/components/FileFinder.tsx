@@ -9,6 +9,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, FileText, History, Search } from "lucide-react";
 
 import { fuzzyMatch, Highlight } from "./CommandPalette";
+import { trapTab } from "./ui";
 import { findFiles } from "../lib/fs";
 import { basename, joinPath, normalizeSlashes } from "../lib/paths.ts";
 
@@ -141,6 +142,12 @@ export function FileFinder({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // emacs/readline-style nav, mirroring the command palette exactly
+    if ((e.ctrlKey || e.metaKey) && (e.key === "n" || e.key === "p")) {
+      e.preventDefault();
+      move(e.key === "n" ? 1 : -1);
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -153,6 +160,22 @@ export function FileFinder({
       case "Tab":
         e.preventDefault();
         move(e.shiftKey ? -1 : 1);
+        break;
+      case "Home":
+        e.preventDefault();
+        setSel(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setSel(Math.max(0, results.length - 1));
+        break;
+      case "PageDown":
+        e.preventDefault();
+        move(10);
+        break;
+      case "PageUp":
+        e.preventDefault();
+        move(-10);
         break;
       case "Enter":
         e.preventDefault();
@@ -175,13 +198,31 @@ export function FileFinder({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="go to file"
         className="modal-in glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-2xl ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // Tab from a clicked row (focus left the input) stays inside the
+          // dialog; Escape closes from anywhere, not just the input.
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onClose();
+            return;
+          }
+          trapTab(e, e.currentTarget);
+        }}
       >
         <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">
           <Search size={17} className="shrink-0 text-[var(--color-muted)]" />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls="filefinder-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={results.length ? `filefinder-opt-${sel}` : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -194,17 +235,24 @@ export function FileFinder({
             className="w-full bg-transparent text-[15px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
           />
           {loading ? (
-            <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">indexing…</span>
+            <span aria-live="polite" className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">indexing…</span>
           ) : (
             results.length > 0 && (
-              <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">{results.length}</span>
+              <span aria-live="polite" className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">{results.length}</span>
             )
           )}
         </div>
 
-        <div ref={listRef} className="flex-1 overflow-y-auto py-2">
+        <div
+          ref={listRef}
+          id="filefinder-listbox"
+          role="listbox"
+          aria-label={showingRecent ? "recent files" : "files"}
+          aria-busy={loading || undefined}
+          className="flex-1 overflow-y-auto py-2"
+        >
           {showingRecent && results.length > 0 && (
-            <div className="px-4 pb-1 pt-1 text-[10px] font-medium lowercase tracking-[0.14em] text-[var(--color-faint)]">
+            <div role="presentation" className="px-4 pb-1 pt-1 text-[10px] font-medium lowercase tracking-[0.14em] text-[var(--color-faint)]">
               recent
             </div>
           )}
@@ -224,6 +272,9 @@ export function FileFinder({
                 <div key={c.rel} className="px-2">
                   <button
                     data-row={pos}
+                    id={`filefinder-opt-${pos}`}
+                    role="option"
+                    aria-selected={active}
                     onMouseMove={() => setSel(pos)}
                     onClick={() => pickAbs(c.rel)}
                     className={`relative flex w-full items-center gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-2 text-left transition-colors ${

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, Loader2, Search } from "lucide-react";
 
 import { searchInFiles, type SearchHit } from "../lib/fs";
+import { trapTab } from "./ui";
 
 const DEBOUNCE_MS = 180;
 
@@ -163,6 +164,12 @@ export function GlobalSearch({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // emacs/readline-style nav, mirroring the command palette exactly
+    if ((e.ctrlKey || e.metaKey) && (e.key === "n" || e.key === "p")) {
+      e.preventDefault();
+      move(e.key === "n" ? 1 : -1);
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -171,6 +178,26 @@ export function GlobalSearch({
       case "ArrowUp":
         e.preventDefault();
         move(-1);
+        break;
+      case "Tab":
+        e.preventDefault();
+        move(e.shiftKey ? -1 : 1);
+        break;
+      case "Home":
+        e.preventDefault();
+        setSel(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setSel(Math.max(0, hitRowIdx.length - 1));
+        break;
+      case "PageDown":
+        e.preventDefault();
+        move(10);
+        break;
+      case "PageUp":
+        e.preventDefault();
+        move(-10);
         break;
       case "Enter":
         e.preventDefault();
@@ -193,13 +220,31 @@ export function GlobalSearch({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="search in files"
         className="modal-in glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-2xl ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // Escape closes from anywhere (a clicked hit row holds focus);
+          // Tab can never escape the dialog.
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onClose();
+            return;
+          }
+          trapTab(e, e.currentTarget);
+        }}
       >
         <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">
           <Search size={17} className="shrink-0 text-[var(--color-muted)]" />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={hitRowIdx.length > 0}
+            aria-controls="globalsearch-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={selRowIdx != null ? `globalsearch-opt-${selRowIdx}` : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -215,14 +260,21 @@ export function GlobalSearch({
             <Loader2 size={13} className="shrink-0 animate-spin text-[var(--color-faint)]" />
           ) : (
             hits.length > 0 && (
-              <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
+              <span aria-live="polite" className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
                 {hits.length} in {groups.length}
               </span>
             )
           )}
         </div>
 
-        <div ref={listRef} className="flex-1 overflow-y-auto py-1.5">
+        <div
+          ref={listRef}
+          id="globalsearch-listbox"
+          role="listbox"
+          aria-label="matches"
+          aria-busy={loading || undefined}
+          className="flex-1 overflow-y-auto py-1.5"
+        >
           {rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
               <img src="/mascot.png" alt="" className="h-10 w-10 rounded-full object-cover opacity-40" />
@@ -243,6 +295,7 @@ export function GlobalSearch({
               row.kind === "file" ? (
                 <div
                   key={`f:${row.path}`}
+                  role="presentation"
                   className="flex items-center gap-2 px-4 pb-0.5 pt-2 font-mono text-[11px] text-[var(--color-text-2)]"
                   title={`${prefix}${row.path}`}
                 >
@@ -253,6 +306,9 @@ export function GlobalSearch({
                 <div key={`h:${row.path}:${row.hit.line}:${row.hit.col}`} className="px-2">
                   <button
                     data-row={rowIdx}
+                    id={`globalsearch-opt-${rowIdx}`}
+                    role="option"
+                    aria-selected={rowIdx === selRowIdx}
                     onMouseMove={() => {
                       const i = hitRowIdx.indexOf(rowIdx);
                       if (i >= 0) setSel(i);

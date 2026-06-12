@@ -12,6 +12,7 @@ const MAX_RESULTS = 50;
 
 import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Search } from "lucide-react";
 import { reportUsage } from "../lib/diag";
+import { trapTab } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
 const MRU_KEY = "aios.palette.mru";
@@ -374,6 +375,17 @@ export function CommandPalette({
         aria-label="command palette"
         className="modal-in glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-2xl ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // focus can sit on a clicked row, not just the input — Escape still
+          // closes and Tab still cycles inside (trapTab skips when the input
+          // already consumed Tab as move-selection).
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onClose();
+            return;
+          }
+          trapTab(e, e.currentTarget);
+        }}
       >
         {/* search row */}
         <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">

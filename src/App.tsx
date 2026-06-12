@@ -121,6 +121,7 @@ import {
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
 import { SidebarUsage } from "./components/SidebarUsage";
+import { trapTab } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, isApple } from "./lib/platform";
@@ -2640,7 +2641,18 @@ function App() {
       {closePrompt && (
         <div className="absolute inset-0 z-50 grid place-items-center bg-black/50" onClick={() => setClosePrompt(null)}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="this chat is still working"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setClosePrompt(null);
+                return;
+              }
+              trapTab(e, e.currentTarget);
+            }}
             className="modal-in w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-2xl"
           >
             <div className="text-[13px] font-medium text-[var(--color-text)]">this chat is still working</div>
@@ -2649,6 +2661,7 @@ function App() {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <button
+                autoFocus
                 onClick={() => {
                   // Ack-of-an-action-just-taken is noise. The real signal — chat
                   // done — fires later as a clickable `chat.done` notification.
@@ -3531,8 +3544,12 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
   return (
     <div className="overlay-backdrop fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm" onMouseDown={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="pin a site"
         className="modal-in glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
         <div className="mb-3 flex items-center gap-2 text-[13px] font-medium text-[var(--color-text)]">
           <Pin size={14} className="text-[var(--color-accent)]" />
@@ -3664,6 +3681,9 @@ function PaneOverview({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="mission control — open panes"
       className="modal-in fixed inset-0 z-[60] flex flex-col bg-black/55 backdrop-blur-2xl"
       onMouseDown={onClose}
     >

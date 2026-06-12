@@ -137,6 +137,31 @@ test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
   assert.match(sidebar, /UsageGlance as SidebarUsage/);
 });
 
+test("finder/search modals carry the palette's full dialog+combobox ARIA mirror", () => {
+  const finder = read("src/components/FileFinder.tsx");
+  const search = read("src/components/GlobalSearch.tsx");
+  const palette = read("src/components/CommandPalette.tsx");
+  const ui = read("src/components/ui.tsx");
+
+  // one shared focus trap, used by every modal (not per-file re-rolls)
+  assert.match(ui, /export function trapTab/);
+  for (const [src, key] of [
+    [finder, "filefinder"],
+    [search, "globalsearch"],
+  ] as const) {
+    assert.match(src, /role="dialog"/);
+    assert.match(src, /aria-modal="true"/);
+    assert.match(src, /role="combobox"/);
+    assert.match(src, /aria-activedescendant/);
+    assert.match(src, new RegExp(`id="${key}-listbox"`));
+    assert.match(src, /role="option"/);
+    assert.match(src, /aria-selected/);
+    assert.match(src, /trapTab\(e, e\.currentTarget\)/);
+  }
+  // palette rows can hold focus after a click — Tab must stay inside there too
+  assert.match(palette, /trapTab\(e, e\.currentTarget\)/);
+});
+
 test("browser video fullscreen avoids macos native space transition", () => {
   const source = read("src-tauri/src/browser.rs");
 

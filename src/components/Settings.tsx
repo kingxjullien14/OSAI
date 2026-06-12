@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 
 import { listProjects, type ProjectInfo } from "../lib/run";
+import { trapTab } from "./ui";
 import {
   loadProjectsStore,
   subscribeProjects,
@@ -1038,6 +1039,13 @@ export function Settings({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // land keyboard focus inside the dialog on open so the Tab trap + Escape
+  // work without a click first (screen readers announce the dialog label).
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => dialogRef.current?.focus());
+  }, [open]);
+
   if (!open) return null;
 
   /** Persist + update local state in one move. */
@@ -1049,8 +1057,14 @@ export function Settings({
       onMouseDown={onClose}
     >
       <div
-        className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-2xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="settings"
+        tabIndex={-1}
+        className="modal-in glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-2xl focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
         {/* nav rail */}
         <nav className="flex w-[180px] shrink-0 flex-col gap-0.5 border-r border-[var(--color-border)] bg-[var(--color-bg)]/40 p-2">

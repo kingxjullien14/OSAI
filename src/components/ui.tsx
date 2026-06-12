@@ -2,7 +2,13 @@
  *  empties/loading/copy converge on one look instead of per-file re-rolls.
  *  Token-driven; entrances ride the App.css utilities (master reduce-motion
  *  guard covers everything). */
-import { useState, type CSSProperties, type ComponentType, type ReactNode } from "react";
+import {
+  useState,
+  type CSSProperties,
+  type ComponentType,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Check, Copy } from "lucide-react";
 
 /** Calm centered empty/unavailable state: faint icon, quiet title, optional
@@ -41,6 +47,39 @@ export function PaneEmpty({
       {children}
     </div>
   );
+}
+
+/**
+ * Dialog focus trap: keep Tab cycling inside `container`. Call from the dialog
+ * root's onKeyDown — it walks the CURRENT visible focusables each press, so
+ * dynamic content (filtered lists, conditional buttons) stays trapped without
+ * any registration. Skips when something inner already handled the key (e.g.
+ * the palette's Tab-moves-selection input calls preventDefault first).
+ */
+export function trapTab(e: ReactKeyboardEvent, container: HTMLElement | null) {
+  if (e.key !== "Tab" || e.defaultPrevented || !container) return;
+  const focusables = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.offsetParent !== null); // visible only
+  if (focusables.length === 0) {
+    e.preventDefault();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+  const inside = active != null && container.contains(active);
+  if (e.shiftKey) {
+    if (!inside || active === first) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else if (!inside || active === last) {
+    e.preventDefault();
+    first.focus();
+  }
 }
 
 /** Shimmering loading block (the brand's cadence — `.skeleton` in App.css). */
