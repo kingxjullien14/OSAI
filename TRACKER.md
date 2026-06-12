@@ -34,20 +34,12 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **CSS substrate fixes** (`~6a7ac8a^`) — transition baseline into `@layer base` (Tailwind transitions work again); `.lift/.press/.btn-glow` carry color easing; new `.overlay-backdrop`/`.toast-in/out`/`.disclose`/`.skeleton`/`.aios-wave-bar` utilities
 - [x] **Composer menus un-clipped** (`6a7ac8a`, user-reported) — fixed-position direction-aware dropdowns with internal scroll
 - [x] **Windows drag feedback** (`6a7ac8a`, user-reported) — HTML5 draggable mac-only; pointer drag owns the gesture (ghost, live overlays, hover label, instant drop)
-- [ ] **Design-system convergence, pane by pane** (adopt `.pane-header`, `.surface-pop`, `.pill`, `.status-dot`, tokens; kill hex/`text-white`/`shadow-2xl`/accent-as-decoration):
-  - [ ] FilesPane (hex git colors → status tokens, accent folder glyphs → muted, project-picker `shadow-2xl`, "scanning…" forever state)
-  - [ ] NotesPane (accent hovers, bespoke focus borders)
-  - [ ] PluginsPane (accent MCP chips → `.pill` + status dots)
-  - [ ] BridgesPane (accent header glyphs, `shadow-lg` toast, mac/tmux affordances gated)
-  - [ ] MoneyAgentsPane (dual accent CTAs → one primary)
-  - [ ] FileViewerPane + EditorPane (loading skeletons, header convergence)
-  - [ ] PulsePane (real states)
-  - [ ] BrowserPane + Cast/Attach/Mirror panes (menus onto `.surface-pop`, accent hover discipline, poll-refresh transitions)
-- [ ] **Shared primitives** — `PaneEmpty`, `Skeleton`, `CopyButton`, toast; + a lint test banning `text-white`/`bg-black`/hex literals in components so it can't regress
-- [ ] **Motion choreography** — pane mount/unmount + grid-reflow motion, maximize/restore FLIP, overlay backdrop fades + modal exits, toast in/out, `.disclose` height animation for tool cards/diffs, palette entrance/exit, list staggers, smoothed autoscroll, 1Hz clock soft tick
-- [ ] **Homescreen completion** — command line onto `.surface-pop` + provider hint + focus-on-mount; usage glance consumes its skeleton (no pop-in); day-aware greeting clause; collapsed-sidebar entry points
-- [ ] **Settings cleanup** — wire or remove the four dead controls (density/font-scale become real), close-X stacking fix, focus traps + dialog semantics across all modals, FileFinder/GlobalSearch ARIA
-- [ ] **Terminal/editor/voice theming** — xterm + Monaco themes derived from the live tokens/accent (terminals stay dark by design but follow accent); VoiceButton real waveform; charming pet status copy; `aios-wave` keyframe de-duplicated
+- [x] **Design-system convergence, pane by pane** — verified shipped 2026-06-12 (`90c457d`+`904995d` header spec, `61f2029` menus onto `.surface-pop`, `a4f2804` accent discipline, `586fb35` ratchet, `c4fa535` honest states; FilesPane GIT_COLOR now status tokens). *Residual: FilesPane "scanning…" forever state → Wave 4.*
+- [x] **Shared primitives** (`086f7cc` ui.tsx PaneEmpty/Skeleton/CopyButton; ratchet guard `ca602bb` in bundleBoundaries.test.ts)
+- [x] **Motion choreography** — verified shipped (FLIP `904995d`, grid reflow `75a4b5f`, smooth jump + `.disclose` `965d27d`, block arrival `9a0d401`, pane mount `fade-in-up` in App.tsx, backdrop/toast utilities wired). *Residual crumbs (pane EXIT motion, 1Hz clock soft tick, list staggers audit) → Wave 4.*
+- [x] **Homescreen completion** — verified already shipped (see line in remaining-backlog section)
+- [x] **Settings cleanup** (`bfcb734` density/text-size real, `f3be886` traps + ARIA). *Residual: close-X stacking audit → Wave 4.*
+- [x] **Terminal/editor/voice theming** (`bfcb734` — live accent themes, real waveform, whisperUrl setting, wave keyframe single-sourced). *Residual: whisper pre-flight check → Wave 4.*
 
 ## Wave 3 — signature features (the fun part)
 
@@ -55,13 +47,13 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Starter deck on the empty hero** (`d1743a3`) — quiet pills prefill the composer, vanish on first keystroke
 - [x] **Chat hero redesign** (`235cf69`, user-reported) — time-aware greeting, accent-gradient title word, ambient aurora blobs, starter deck upgraded to four lift-on-hover icon cards, decluttered helper; dropdowns open toward the larger side + cap height (no more clipped selectors)
 - [x] **Windows menu strip removed** (`235cf69`, user-reported) — the native "AIOS Edit Pane" menu is macOS-only now; chords still work via the in-app keydown handler. *Caveat: on Windows, chords don't fire while focus is INSIDE a browser child webview (the menu was the workaround) — click into app chrome first. If that bites, we can add a Rust-side accelerator later.*
-- [ ] **Workspaces** — save/restore named layouts, morph transition, palette commands
-- [ ] **Activity Glow** — chrome breathes while agents run
-- [ ] **Resume rail** on the empty chat hero (recent sessions one click away)
-- [ ] **Run timeline rail** — live phase spine from runEvents beside the transcript
-- [ ] **Living Pet** — pet reacts to terminal/agent activity (build green = celebrate, stack trace = wince)
-- [ ] **Repeat-last + action ring** in the palette
-- [ ] **Soundscape** (optional, default off)
+- [x] **Workspaces** (`f83998c`) — see remaining-backlog section
+- [x] **Activity Glow** (`a1476cf`)
+- [x] **Resume rail** (`6525b41`)
+- [x] **Run timeline rail** (`904995d`)
+- [x] **Living Pet** (`53a0b87`)
+- [x] **Repeat-last** (`a1476cf`) + palette MRU "recent" group (CommandPalette.tsx)
+- [x] **Soundscape** (`f6799be`)
 
 ## Remaining Wave 2 backlog (next session)
 - [x] **Usage everywhere** (`90c457d`) — Windows feed fixed (USERPROFILE/curl.exe), sidebar-footer mount, honest claude "no feed" row, codex labeled with its chatgpt-sub provenance; chat strip explains itself
@@ -118,6 +110,19 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 ### Parked
 - [ ] poll-swap transitions on cast/mirror rosters (macOS-gated panes — low priority on the Windows daily driver)
 - [ ] ratchet floors if ever unlockable: accent-hover 10 (all true primaries), shadow-2xl 3 (locked TerminalComposer)
+
+## Wave 4 — deep polish, QoL, wiring truth & the fun tier *(planned 2026-06-12 — full spec in [PLAN-wave4.md](PLAN-wave4.md))*
+
+> Original plan verified ~95% shipped (tsc clean · 91/91 tests · ratchets pinned). Wave 4 = the residuals + the next layer. Sessions below mirror the plan's roadmap; check off here as batches land.
+
+- [ ] **W4-1 Truth** — wiring audit: whisper pre-flight, Bridges/Oracle/Monitor Windows gating, primary-oracle ID → setting, notification deep-link walk, pet↔terminal bus check, usage-feed degradation, workspace-restore edge cases, Settings close-X, FilesPane "scanning…" dead-end, hex-straggler audit (ChatPane×3, EditorPane×1)
+- [ ] **W4-2 Feel** — pane EXIT motion, overlay/modal EXIT motion (palette/finder/search/settings close by hard unmount — confirmed), 1Hz clock soft tick, list-stagger sweep, light-theme full pass, PaneEmpty adoption sweep, toast unification, scroll-position restore, two-click-danger sweep, gutter resting pip + double-click equalize, sidebar home anchor, PaletteShell extraction
+- [ ] **W4-3 Flow (chat QoL)** — find-in-chat (Ctrl+F, confirmed missing), conversation minimap, per-turn cost sparkline
+- [ ] **W4-4 Reach (window manager)** — snap-to-zone pane dragging, "pick up where you left off" pill, type-ahead intent chips on the idle command line
+- [ ] **W4-5 Palette** — preview rail (Raycast-style), `>` action mode, Mod+? shortcut HUD (also fixes the confirmed gap: Settings cheat-sheet lists 6 of ~18 live chords), resolved-approval command echo
+- [ ] **W4-6 Fun** — Run Cinema (replay a turn from persisted runEvents), pet companion bubbles (rate-limited), live pulse backdrop (`--liveness`), command-line→palette FLIP morph
+- [ ] **W4-7 Autonomy** — scheduled agents (schema half-built; due-tick → paneSubmitters → deep-linked notification), cwd-aware smart starter deck
+- [ ] **W4-8+ Flagships** — Conductor (push-to-talk orchestration; gated on whisper pre-flight), Windows capture backend (`Windows.Graphics.Capture` behind the same `appcast_*` surface)
 
 ## Verification gates (every batch)
 `npx tsc --noEmit` · `npm run test:chatpane` · `cargo check` (Rust batches) · `npm run build` (per wave) · manual run at the end
