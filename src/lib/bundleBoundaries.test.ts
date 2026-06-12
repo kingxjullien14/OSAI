@@ -1,6 +1,6 @@
 // @ts-nocheck -- source-boundary regression checks run directly in node.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -633,6 +633,28 @@ test("onboarding is gated + veteran-safe, and detect_providers is wired (PLAN §
   // the Rust detection command is registered
   assert.match(chatRs, /pub fn detect_providers\(\)/);
   assert.match(libRs, /chat::detect_providers/);
+});
+
+test("design-token ratchet: hardcoded color/elevation literals must not increase", () => {
+  // The §10 lint guard, ratchet-style: these counts may only go DOWN as the
+  // convergence sweep continues. If this test fails because a number grew, use
+  // the token instead: readable-on-accent = --color-accent-fg, hover lift =
+  // border-strong (accent is for active/primary/focus only, DESIGN.md §6),
+  // floating surfaces = .surface-pop / --aios-shadow-pop.
+  const dir = join(root, "src", "components");
+  const sources = readdirSync(dir, { recursive: true })
+    .filter((f) => String(f).endsWith(".tsx"))
+    .map((f) => readFileSync(join(dir, String(f)), "utf8"))
+    .join("\n");
+  const count = (re: RegExp) => (sources.match(re) ?? []).length;
+  const ratchet = (label: string, re: RegExp, max: number) => {
+    const n = count(re);
+    assert.ok(n <= max, `${label}: ${n} occurrences (ratchet max ${max}) — use the design token instead`);
+  };
+  ratchet("text-white", /text-white/g, 6);
+  ratchet("text-black", /text-black/g, 0);
+  ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 30);
+  ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 16);
 });
 
 test("panes are drag-to-move reorderable (pointer-driven, webview-safe)", () => {
