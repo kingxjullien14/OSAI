@@ -1429,6 +1429,33 @@ select:focus-visible,
     5px 5px 0 rgba(0, 0, 0, 0.18);
 }
 
+/* ── pet reactions — momentary expressions over the metabolic mood ────
+   Fired by live activity (send → attentive, run finished → celebrate,
+   error/failed turn → wince). A reaction briefly replaces the breath loop;
+   the master reduce-motion guard squashes these like everything else. */
+@keyframes pet-react-celebrate {
+  0%, 100% { transform: translateY(0); }
+  18% { transform: translateY(-10px) scale(1.05); }
+  38% { transform: translateY(0); }
+  58% { transform: translateY(-6px) scale(1.02); }
+  78% { transform: translateY(0); }
+}
+@keyframes pet-react-wince {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-5px) rotate(-2.5deg); }
+  38% { transform: translateX(5px) rotate(2.5deg); }
+  58% { transform: translateX(-4px) rotate(-1.5deg); }
+  78% { transform: translateX(4px) rotate(1.5deg); }
+}
+@keyframes pet-react-attentive {
+  0%, 100% { transform: scale(1); }
+  28% { transform: scale(1.07); }
+  60% { transform: scale(1.02); }
+}
+.pet-pixel--react-celebrate { animation: pet-react-celebrate 1.3s var(--aios-ease-spring) both; }
+.pet-pixel--react-wince { animation: pet-react-wince 0.9s var(--aios-ease-out) both; }
+.pet-pixel--react-attentive { animation: pet-react-attentive 0.8s var(--aios-ease-out) both; }
+
 .pet-pixel--starter .pet-pixel-tail {
   border-width: 3px;
   transform: scale(0.56);

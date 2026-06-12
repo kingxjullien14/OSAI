@@ -45,6 +45,22 @@ type PetUsageInput = {
 
 type Listener = (state: PetState) => void;
 
+/** Momentary expression layered over the slow metabolic mood — the pet
+ *  visibly REACTS to live activity (result ok → celebrate, error/failed →
+ *  wince, user send → attentive). Visual layers subscribe and play ~1.5s. */
+export type PetReaction = "celebrate" | "wince" | "attentive";
+type ReactionListener = (reaction: PetReaction) => void;
+const reactionListeners = new Set<ReactionListener>();
+
+export function subscribePetReactions(listener: ReactionListener): () => void {
+  reactionListeners.add(listener);
+  return () => reactionListeners.delete(listener);
+}
+
+function react(reaction: PetReaction) {
+  reactionListeners.forEach((l) => l(reaction));
+}
+
 const STORAGE_KEY = "aios.pet.state.v1";
 const TICK_MS = 10000;
 
@@ -237,6 +253,7 @@ export function calmPet() {
 
 export function onPetUserMessage(input: PetActionInput = {}) {
   startTicker();
+  react("attentive");
   apply((s) => {
     const textLength = clamp(input.textLength ?? 0, 0, 5000);
     const memoryCount = clamp(input.memoryCount ?? 0, 0, 12);
@@ -253,6 +270,7 @@ export function onPetUserMessage(input: PetActionInput = {}) {
 
 export function onPetResult(input: PetResultInput = {}) {
   startTicker();
+  react(input.ok === false ? "wince" : "celebrate");
   apply((s) => {
     const stressFromTokens = scoreFromTokens(input.tokens);
     const durationPenalty = Number.isFinite(input.durationMs ?? 0)
@@ -274,6 +292,7 @@ export function onPetResult(input: PetResultInput = {}) {
 
 export function onPetError(text?: string) {
   startTicker();
+  react("wince");
   apply((s) => {
     s.stress = clamp(s.stress + (text ? 12 : 8));
     s.health = clamp(s.health - 5);

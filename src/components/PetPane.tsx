@@ -14,8 +14,34 @@ import {
   feedPet,
   getPetState,
   subscribePetState,
+  subscribePetReactions,
+  type PetReaction,
   type PetState,
 } from "../lib/pet";
+
+/**
+ * Live momentary reaction (celebrate / wince / attentive) from the pet bus —
+ * fired by chat sends, finished runs and errors. Resets to null after the
+ * animation window; back-to-back reactions restart the keyframes via a
+ * null-frame bounce.
+ */
+function usePetReaction(): PetReaction | null {
+  const [reaction, setReaction] = useState<PetReaction | null>(null);
+  useEffect(() => {
+    let timer: number | null = null;
+    const unsubscribe = subscribePetReactions((r) => {
+      setReaction(null);
+      requestAnimationFrame(() => setReaction(r));
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => setReaction(null), 1600);
+    });
+    return () => {
+      unsubscribe();
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, []);
+  return reaction;
+}
 
 const METERS: Array<{
   key: keyof Pick<PetState, "health" | "hunger" | "bloat" | "stress">;
@@ -329,15 +355,20 @@ function PetSprite({
   visualMood,
   style,
   compact = false,
+  reaction = null,
 }: {
   variant: PetVariant;
   visualMood: string;
   style: CSSProperties;
   compact?: boolean;
+  /** momentary expression riding over the mood (celebrate / wince / attentive). */
+  reaction?: PetReaction | null;
 }) {
   return (
     <div
-      className={`pet-pixel ${compact ? "pet-pixel--starter" : ""} pet-pixel--${visualMood}`}
+      className={`pet-pixel ${compact ? "pet-pixel--starter" : ""} pet-pixel--${visualMood} ${
+        reaction ? `pet-pixel--react-${reaction}` : ""
+      }`}
       style={style}
       aria-hidden={compact}
       aria-label={compact ? undefined : `aios pixel pet mood ${visualMood}`}
@@ -367,6 +398,7 @@ function PetSprite({
 
 export function PetPane() {
   const [state, setState] = useState(() => getPetState());
+  const reaction = usePetReaction();
   const [showHatchOnboarding, setShowHatchOnboarding] = useState(() => !hasSavedVariant() && !readOnboardingDone());
   const [variant, setVariant] = useState(readVariant);
   const [accent, setAccentState] = useState<Accent>(getAccent);
@@ -489,7 +521,7 @@ export function PetPane() {
             <span className="pet-job-z pet-job-z-b" />
           </div>
           <div className={`pet-world-avatar pet-world-avatar--${activity.activity}`}>
-            <PetSprite variant={variant} visualMood={visualMood} style={spriteStyle} />
+            <PetSprite variant={variant} visualMood={visualMood} style={spriteStyle} reaction={reaction} />
           </div>
           <div className="pet-world-floor">
             <span />
@@ -548,6 +580,7 @@ export function PetDashboardCompanion({
   onTalkToJarvis: (seed: string) => void;
 }) {
   const [state, setState] = useState(() => getPetState());
+  const reaction = usePetReaction();
   const [variant] = useState(readVariant);
 
   useEffect(() => {
@@ -595,7 +628,7 @@ export function PetDashboardCompanion({
             <span className="pet-job-z pet-job-z-b" />
           </div>
           <div className={`pet-world-avatar pet-world-avatar--${activity.activity}`}>
-            <PetSprite variant={variant} visualMood={visualMood} style={spriteStyle} />
+            <PetSprite variant={variant} visualMood={visualMood} style={spriteStyle} reaction={reaction} />
           </div>
           <div className="pet-world-floor">
             <span />
