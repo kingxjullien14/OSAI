@@ -28,6 +28,7 @@ import {
   GripVertical,
   Home,
   Layers,
+  Mic,
   Maximize2,
   Minimize2,
   MessageSquare,
@@ -83,7 +84,9 @@ import {
   type LiveChat,
 } from "./lib/chat";
 import { detectProviders } from "./lib/providerDetect";
-import { initTheme } from "./lib/theme";
+import { initTheme, setTheme } from "./lib/theme";
+import { dictateCancel, dictateStart, dictateStop } from "./lib/voice";
+import { parseConductor, type ConductorStep } from "./lib/conductor";
 import { monitorStart, monitorStop } from "./lib/monitor";
 import {
   MONEY_AGENTS,
@@ -129,7 +132,7 @@ import { SidebarUsage } from "./components/SidebarUsage";
 import { trapTab, useExitState, ExitGate } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
-import { MOD, chord, isApple } from "./lib/platform";
+import { MOD, chord, fmtChord, isApple } from "./lib/platform";
 import { homeDir, startupOpenPane } from "./lib/fs";
 import { detectProject, listProjects, type ProjectInfo } from "./lib/run";
 import { loadProjectsStore, mergeProjects, subscribeProjects } from "./lib/projects";
@@ -1594,6 +1597,16 @@ function App() {
       } else if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if (mod && e.shiftKey && e.key.toLowerCase() === "j") {
+        // ⌘⇧J — Conductor push-to-talk toggle (start listening / run the plan).
+        // Plain ⌘J stays the focused-pane dictation (VoiceButton).
+        e.preventDefault();
+        void conductorToggleRef.current();
+      } else if (e.key === "Escape" && conductorStateRef.current === "listening") {
+        // Esc while the conductor listens cancels the recording (before the
+        // maximize-restore Esc below can swallow it).
+        e.preventDefault();
+        conductorCancelRef.current();
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "f") {
         // ⌘⇧F — global content search (must come BEFORE the bare ⌘F fullscreen
         // branch below, which also keys on "f").
@@ -2364,6 +2377,124 @@ function App() {
   useEffect(() => {
     openMoneyAgentChatRef.current = openMoneyAgentChat;
   }, [openMoneyAgentChat]);
+
+  // ── W4-8: Conductor — speak a workspace into existence ─────────────────
+  // mod+shift+J toggles push-to-talk (whisper pre-flight from W4-1 means a
+  // dead server fails BEFORE recording). The transcript routes through the
+  // pure parser in lib/conductor.ts into existing primitives — spawns cascade
+  // 160ms apart so you watch your words build the layout. Nothing touches the
+  // model's context (guardrail 3); a plan that parses to nothing falls back
+  // to seeding a chat with the whole transcript (the most useful catch-all).
+  const [conductorState, setConductorState] = useState<"idle" | "listening" | "working">("idle");
+  const conductorStateRef = useRef(conductorState);
+  conductorStateRef.current = conductorState;
+  const executeConductorPlan = useCallback(
+    (steps: ConductorStep[], transcript: string) => {
+      let delay = 0;
+      let done = 0;
+      const unclear: string[] = [];
+      const fire = (fn: () => void) => {
+        setTimeout(fn, delay);
+        delay += 160;
+        done += 1;
+      };
+      for (const s of steps) {
+        switch (s.kind) {
+          case "spawn":
+            fire(() =>
+              spawn(
+                s.pane === "terminal"
+                  ? { type: "shell" }
+                  : s.pane === "browser"
+                    ? { type: "browser", url: s.url }
+                    : s.pane === "chat"
+                      ? { type: "chat" }
+                      : s.pane === "agents"
+                        ? { type: "money-agents" }
+                        : { type: s.pane },
+                s.pane,
+              ),
+            );
+            break;
+          case "run":
+            fire(() => spawn({ type: "shell", cmd: s.cmd }, s.cmd.slice(0, 28)));
+            break;
+          case "ask":
+            fire(() => spawn({ type: "chat", seed: s.text }, "chat"));
+            break;
+          case "workspace": {
+            const ws = workspaces.find((w) => w.name === s.name);
+            if (ws) fire(() => applyWorkspace(ws));
+            else unclear.push(s.name);
+            break;
+          }
+          case "theme":
+            fire(() => setTheme(s.theme));
+            break;
+          case "home":
+            fire(() => {
+              setMaximizedKey((m) => {
+                if (m) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
+                return null;
+              });
+              setHiddenKeys(panesRef.current.map((p) => p.key));
+            });
+            break;
+          case "unknown":
+            if (s.text) unclear.push(s.text);
+            break;
+        }
+      }
+      if (done === 0 && transcript.trim()) {
+        // nothing orchestratable — hand the words to a chat instead of dying
+        spawn({ type: "chat", seed: transcript.trim() }, "chat");
+        flash("conductor: sent to a chat");
+        return;
+      }
+      flash(
+        `conductor: ${done} step${done === 1 ? "" : "s"}${
+          unclear.length ? ` · ${unclear.length} unclear` : ""
+        }`,
+      );
+    },
+    [spawn, workspaces, applyWorkspace, flash],
+  );
+  const conductorToggle = useCallback(async () => {
+    if (conductorStateRef.current === "listening") {
+      setConductorState("working");
+      try {
+        const text = await dictateStop();
+        const steps = parseConductor(text, { workspaces: workspaces.map((w) => w.name) });
+        executeConductorPlan(steps, text);
+      } catch (e) {
+        flash(`conductor: ${String((e as Error)?.message ?? e)}`);
+      } finally {
+        setConductorState("idle");
+      }
+      return;
+    }
+    if (conductorStateRef.current !== "idle") return;
+    try {
+      await dictateStart(); // pre-flights whisper BEFORE the mic arms
+      setConductorState("listening");
+    } catch (e) {
+      flash(String((e as Error)?.message ?? e));
+    }
+  }, [workspaces, executeConductorPlan, flash]);
+  const conductorToggleRef = useRef(conductorToggle);
+  useEffect(() => {
+    conductorToggleRef.current = conductorToggle;
+  }, [conductorToggle]);
+  const conductorCancel = useCallback(() => {
+    if (conductorStateRef.current !== "listening") return;
+    void dictateCancel();
+    setConductorState("idle");
+    flash("conductor: cancelled");
+  }, [flash]);
+  const conductorCancelRef = useRef(conductorCancel);
+  useEffect(() => {
+    conductorCancelRef.current = conductorCancel;
+  }, [conductorCancel]);
   const moneyAgentChatStates = useMemo(() => {
     const out: Partial<Record<(typeof MONEY_AGENTS)[number]["id"], MoneyAgentChatState>> = {};
     for (const agent of loadConfiguredMoneyAgents()) {
@@ -2850,6 +2981,25 @@ function App() {
         />
       )}
 
+      {/* conductor pill — listening / executing state, top-center */}
+      {conductorState !== "idle" && (
+        <div className="toast-in absolute left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
+          <Mic
+            size={13}
+            className={
+              conductorState === "listening"
+                ? "animate-pulse text-[var(--color-accent)]"
+                : "text-[var(--color-muted)]"
+            }
+          />
+          <span className="text-[12px] text-[var(--color-text)]">
+            {conductorState === "listening" ? "conductor listening…" : "conducting…"}
+          </span>
+          <span className="font-mono text-[10px] text-[var(--color-faint)]">
+            {fmtChord(["mod", "shift", "J"])} run · esc cancel
+          </span>
+        </div>
+      )}
       {toast && (
         // .toast-in/out own the -50% X in their keyframes; keyed by message so
         // a replacing flash re-plays the entrance. (was .modal-in — a modal's

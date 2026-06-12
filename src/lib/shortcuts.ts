@@ -33,6 +33,7 @@ export function shortcutGroups(): ShortcutGroup[] {
         { keys: [MOD, "T"], action: "new pane", note: `${MOD}+N too · browser-aware` },
         { keys: ["F5"], action: "run current project" },
         { keys: [MOD, "J"], action: "dictate (push-to-talk)" },
+        { keys: [MOD, SHIFT, "J"], action: "conductor", note: "speak a layout + plan into existence" },
       ],
     },
     {
