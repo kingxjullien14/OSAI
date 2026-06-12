@@ -1423,6 +1423,9 @@ export function Settings({
                       onChange={(v) => patch({ notificationQuietMode: v })}
                     />
                   </Row>
+                  <Row label="soundscape" sub="whisper-quiet cues when a run finishes or fails (synthesized, off by default)">
+                    <Toggle checked={s.soundscape} onChange={(v) => patch({ soundscape: v })} />
+                  </Row>
                   <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/25 p-3">
                     <div className="text-[11px] font-medium text-[var(--color-text)]">next control layer</div>
                     <p className="mt-1 text-[11px] leading-snug text-[var(--color-muted)]">

@@ -163,6 +163,7 @@ import {
   type ScrollIntent,
 } from "../lib/chatScroll";
 import { invoke, isTauriRuntime } from "../lib/tauri";
+import { playCue } from "../lib/sound";
 import { PaneDropZone } from "./PaneDropZone";
 import { CopyButton, trapTab } from "./ui";
 import { reportDiag } from "../lib/diag";
@@ -1609,6 +1610,8 @@ export function ChatPane({
           durationMs,
           ok: !Boolean(ev.is_error),
         });
+        // soundscape (opt-in, default off): a soft cue when the run lands
+        playCue(ev.is_error ? "fail" : "done");
         setTurns((prev) => [
           ...prev,
           { kind: "result", id: uid(), text: foot, cost: costNum, tokens, durationMs, ok: !Boolean(ev.is_error) },

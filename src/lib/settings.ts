@@ -45,6 +45,10 @@ export interface AppSettings {
   // voice — local whisper.cpp transcription endpoint (dictation POSTs here).
   whisperUrl: string;
 
+  // soundscape — whisper-quiet synthesized cues when a run finishes/fails.
+  // OFF by default: an opt-in nicety, never a notification channel.
+  soundscape: boolean;
+
   // memory
   graphPhysicsStrength: number; // 0..100
 
@@ -103,6 +107,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   defaultSocketName: "adletic",
   whisperUrl: "http://localhost:9000/inference",
+  soundscape: false,
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
 
