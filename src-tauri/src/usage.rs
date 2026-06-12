@@ -7,14 +7,31 @@ use std::io::Write;
 use std::process::Stdio;
 
 /// Treat the statusline file as live only when it was written recently —
-/// yesterday's snapshot showing up as today's 5h window is worse than no data.
+/// an ancient snapshot showing up as today's windows is worse than no data.
+/// 24h: generous because each window also self-describes via `resets_at`
+/// (see `windowed` — an expired window zeroes itself).
 pub(crate) fn fresh_enough(path: &str) -> bool {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.elapsed().ok())
-        .map(|age| age.as_secs() < 3 * 3600)
+        .map(|age| age.as_secs() < 24 * 3600)
         .unwrap_or(false)
+}
+
+/// A rate-limit window whose `resets_at` is already in the past has rolled
+/// over — the snapshot's used% belongs to the PREVIOUS window. Report the
+/// truth for now: 0% used, no pending reset. (User-reported: the 5h window
+/// showed the old session's 78% with "resets now".)
+pub(crate) fn windowed(pct: Option<f64>, resets_at: Option<i64>) -> (Option<f64>, Option<i64>) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match resets_at {
+        Some(t) if t <= now => (pct.map(|_| 0.0), None),
+        _ => (pct, resets_at),
+    }
 }
 
 /// Returns the raw usage payload as JSON, or `null` if not yet written.
@@ -58,10 +75,11 @@ pub fn claude_usage() -> Value {
     };
     let win = |k: &str| -> Value {
         let w = &rl[k];
-        json!({
-            "pct": w.get("used_percentage").and_then(|x| x.as_f64()),
-            "resetsAt": w.get("resets_at").and_then(|x| x.as_i64()),
-        })
+        let (pct, resets_at) = windowed(
+            w.get("used_percentage").and_then(|x| x.as_f64()),
+            w.get("resets_at").and_then(|x| x.as_i64()),
+        );
+        json!({ "pct": pct, "resetsAt": resets_at })
     };
     json!({
         "fiveHour": win("five_hour"),

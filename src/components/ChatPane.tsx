@@ -57,6 +57,7 @@ import {
   Search,
   ShieldQuestion,
   Sparkles,
+  Quote,
   Square,
   Target,
   Terminal,
@@ -1008,6 +1009,48 @@ export function ChatPane({
   // model change or unmount). Closure-independent, so no stale-model.id race.
   const skipResyncTeardownRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ── snippet context: select reply text → attach it as a one-shot context ──
+  // Each snippet rides the NEXT send as its own [context snippet] block (an
+  // explicit user attachment — not per-turn auto-injection, per guardrail 3).
+  const [snippets, setSnippets] = useState<{ id: string; text: string }[]>([]);
+  const snippetsRef = useRef(snippets);
+  snippetsRef.current = snippets;
+  const [snipTip, setSnipTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const onTranscriptMouseUp = useCallback(() => {
+    // rAF: the selection finalizes after mouseup.
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() ?? "";
+      const root = scrollRef.current;
+      if (!sel || sel.isCollapsed || text.length < 4 || !root) {
+        setSnipTip(null);
+        return;
+      }
+      const { anchorNode, focusNode } = sel;
+      if (!anchorNode || !focusNode || !root.contains(anchorNode) || !root.contains(focusNode)) {
+        setSnipTip(null);
+        return;
+      }
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      const host = root.getBoundingClientRect();
+      setSnipTip({
+        x: Math.min(Math.max(rect.left - host.left + rect.width / 2, 70), host.width - 70),
+        y: rect.top - host.top + root.scrollTop,
+        text: text.slice(0, 4000),
+      });
+    });
+  }, []);
+  // the tip follows the selection's life: collapse anywhere → gone.
+  useEffect(() => {
+    if (!snipTip) return;
+    const onSel = () => {
+      const s = window.getSelection();
+      if (!s || s.isCollapsed) setSnipTip(null);
+    };
+    document.addEventListener("selectionchange", onSel);
+    return () => document.removeEventListener("selectionchange", onSel);
+  }, [snipTip]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   // index into `turns` of the assistant bubble currently being streamed
   const streamingTurnId = useRef<string | null>(null);
@@ -1931,6 +1974,16 @@ export function ChatPane({
       if (goal.trim()) wire = GOAL_PREFIX(goal.trim()) + wire;
       if (planMode) wire = PLAN_PREFIX + wire;
       if (effectiveBudget === "ultracode") wire = ULTRA_PREFIX + wire;
+      // user-attached selection snippets ride THIS send only (explicit, one-shot
+      // context — not per-turn injection), each as its own labeled block.
+      const snips = snippetsRef.current;
+      if (snips.length) {
+        const ctx = snips
+          .map((s, i) => `[context snippet ${i + 1}]\n${s.text}`)
+          .join("\n\n");
+        wire = `${ctx}\n\n${wire}`;
+        setSnippets([]);
+      }
       lastSentRef.current = display;
       // feed the autocomplete history (dedup, newest first, capped).
       if (display.trim()) {
@@ -2948,6 +3001,24 @@ export function ChatPane({
                 <span className="truncate">{attachedMemories.length} memories attached</span>
               </span>
             )}
+            {snippets.map((s) => (
+              <span
+                key={s.id}
+                className="fade-in-up inline-flex max-w-[230px] items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]"
+                title={s.text}
+              >
+                <Quote size={12} className="shrink-0 text-[var(--color-muted)]" />
+                <span className="truncate">{s.text.replace(/\s+/g, " ").slice(0, 42)}</span>
+                <button
+                  type="button"
+                  onClick={() => setSnippets((prev) => prev.filter((x) => x.id !== s.id))}
+                  className="ml-0.5 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                  title="remove this context snippet"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
           </div>
         )}
 
@@ -3579,6 +3650,7 @@ export function ChatPane({
       handoffPanelOpen,
       hasDraft,
       empty,
+      snippets,
       send,
       stop,
       enqueue,
@@ -3809,7 +3881,31 @@ export function ChatPane({
       onKeyDown={onPaneKeyDown}
       className="relative flex h-full min-h-0 w-full flex-col bg-[var(--color-bg)] outline-none"
     >
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 overflow-y-auto"
+        onMouseUp={onTranscriptMouseUp}
+        onScroll={() => snipTip && setSnipTip(null)}
+      >
+        {/* floating "attach selection" affordance — one click turns the
+            selected reply text into a context snippet on the next send. */}
+        {snipTip && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setSnippets((prev) => [...prev, { id: uid(), text: snipTip.text }]);
+              setSnipTip(null);
+              window.getSelection()?.removeAllRanges();
+            }}
+            className="scale-in absolute z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 px-2.5 py-1 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] transition-colors hover:border-[var(--color-accent)]/50"
+            style={{ left: snipTip.x, top: Math.max(snipTip.y - 34, 4) }}
+            title="attach the selected text as a context snippet on your next message"
+          >
+            <Quote size={11} className="text-[var(--color-muted)]" />
+            add as context
+          </button>
+        )}
         <div className="mx-auto flex max-w-2xl flex-col gap-5 px-6 py-8">
           {resumedTitle && (
             <div className="flex justify-center">
@@ -3969,8 +4065,14 @@ function UsageStrip({
   onWindowChange: (window: "fiveHour" | "sevenDay") => void;
   engine: string;
 }) {
-  const current = usage?.[window].pct ?? null;
-  const initial = baseline?.[window].pct ?? current;
+  // a window whose reset time has PASSED rolled over — the cached used%
+  // belongs to the previous window (the "5h 78% · resets now" bug). Render
+  // the truth: 0% used, fresh window, until the next live report.
+  const rawResets = usage?.[window].resetsAt ?? null;
+  const expired = rawResets != null && rawResets * 1000 <= Date.now();
+  const rawPct = usage?.[window].pct ?? null;
+  const current = expired ? (rawPct != null ? 0 : null) : rawPct;
+  const initial = expired ? 0 : (baseline?.[window].pct ?? current);
   // nothing yet (claude before its statusline tick / codex before its first
   // rate-limit push) → say so quietly instead of hiding the whole strip.
   if (current == null)
@@ -3984,13 +4086,13 @@ function UsageStrip({
       </div>
     );
   const stack = current != null && initial != null ? usageStack(current, initial) : null;
-  const reset = usage?.[window].resetsAt ? resetIn(usage[window].resetsAt) : "";
+  const reset = expired ? "fresh window" : rawResets ? resetIn(rawResets) : "";
   const remaining = stack ? 100 - stack.total : null;
   const paceRisk =
-    (engine === "codex" || engine === "spark") && usage
+    (engine === "codex" || engine === "spark") && usage && !expired
       ? usagePaceRisk({
           pct: current,
-          resetsAt: usage[window].resetsAt,
+          resetsAt: rawResets,
           windowSeconds: window === "fiveHour" ? 5 * 3600 : 7 * 24 * 3600,
         })
       : null;
@@ -4043,7 +4145,7 @@ function UsageStrip({
               {paceRisk.title}
             </span>
           )}
-          {reset && <span className="shrink-0">resets {reset}</span>}
+          {reset && <span className="shrink-0">{expired ? reset : `resets ${reset}`}</span>}
         </>
       ) : (
         <span className="flex-1" />

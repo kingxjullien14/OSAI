@@ -2112,10 +2112,12 @@ fn claude_usage_event() -> Option<String> {
     let rl = v.get("rate_limits")?;
     let win = |k: &str| -> serde_json::Value {
         let w = &rl[k];
-        json!({
-            "pct": w.get("used_percentage").and_then(|x| x.as_f64()),
-            "resets_at": w.get("resets_at").and_then(|x| x.as_i64()),
-        })
+        // an expired window's used% belongs to the PREVIOUS window — zero it.
+        let (pct, resets_at) = crate::usage::windowed(
+            w.get("used_percentage").and_then(|x| x.as_f64()),
+            w.get("resets_at").and_then(|x| x.as_i64()),
+        );
+        json!({ "pct": pct, "resets_at": resets_at })
     };
     Some(
         json!({
