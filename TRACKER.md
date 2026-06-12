@@ -82,7 +82,10 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Motion** (`965d27d`) — smooth jump-to-latest, .disclose diff expansion with show-less
 - [x] **Activity Glow + repeat-last** (`a1476cf`) — breathing chrome seam on streaming panes; Ctrl+Shift+K re-fires the last command
 
+- [x] **Claude usage live + account-global** (`7e3a953`, user-reported) — OAuth usage endpoint (the /usage panel's own source) replaces the stale statusline file (now fallback); chat strip + sidebar share one global source; verified live (39%/31%)
+
 ## Still open (the long tail)
+- [ ] per-model 7d windows (the endpoint also returns seven_day_sonnet etc.) in the model picker / sidebar
 - [ ] FileFinder/GlobalSearch full ARIA mirror + focus traps across modals
 - [ ] grid-reflow transition (needs a not-while-dragging gate in ResizableGrid)
 - [ ] Workspaces (saved layouts), resume rail on the hero, living pet wiring, soundscape
