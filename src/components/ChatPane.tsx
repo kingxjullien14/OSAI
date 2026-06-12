@@ -1181,6 +1181,19 @@ export function ChatPane({
   const usageProvider = usageProviderKey(model);
   const usageLabel = usageProviderLabel(model);
 
+  // ── per-turn wall-clock times (unix ms) ────────────────────────────────────
+  // Live turns are stamped on arrival; resumed turns are seeded with their REAL
+  // transcript times by transcriptToTurns (NaN = file had none — never faked as
+  // "now"). Ref'd Map: stable across renders, read at render time for the
+  // hover times + day separators.
+  const turnTimesRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const m = turnTimesRef.current;
+    for (const t of turns) {
+      if (!m.has(t.id)) m.set(t.id, Date.now());
+    }
+  }, [turns]);
+
   // ── hero resume rail ────────────────────────────────────────────────────────
   // The empty hero offers the last few sessions one click away (the /resume
   // picker stays the full-list path). Fetched once per pane while the hero is
@@ -2553,13 +2566,19 @@ export function ChatPane({
 
   /** Map saved transcript turns into the live transcript model (static bubbles).
    *  User turns run through the session-label sanitizer so resumed CLI slash
-   *  turns repaint as "/usage", not raw <command-name> XML (user-reported). */
+   *  turns repaint as "/usage", not raw <command-name> XML (user-reported).
+   *  Each minted id gets its REAL transcript time in `turnTimes` (NaN when the
+   *  file has none — the live stamper must not fake-date old turns "now"). */
   const transcriptToTurns = useCallback((rows: ChatTurnInfo[]): Turn[] => {
-    return rows.map((r) =>
-      r.role === "user"
-        ? { kind: "user", id: uid(), text: cleanSessionLabel(r.text) }
-        : { kind: "assistant", id: uid(), text: r.text, streaming: false },
-    );
+    return rows.map((r) => {
+      const at = r.ts != null ? r.ts * 1000 : undefined;
+      const turn: Turn =
+        r.role === "user"
+          ? { kind: "user", id: uid(), text: cleanSessionLabel(r.text), createdAt: at }
+          : { kind: "assistant", id: uid(), text: r.text, streaming: false, createdAt: at };
+      turnTimesRef.current.set(turn.id, at ?? NaN);
+      return turn;
+    });
   }, []);
 
   const resumeSession = useCallback(
@@ -3882,6 +3901,19 @@ export function ChatPane({
     return null;
   }, [blocks]);
 
+  /** Wall-clock for a block (unix ms) — the turn's own createdAt (sends +
+   *  resumed transcripts) first, then the arrival stamp; null when unknown
+   *  (NaN-seeded resumed turns whose transcript carried no timestamp). */
+  const blockTime = (b: RenderBlock): number | null => {
+    if (b.kind !== "activity") {
+      const c = (b.turn as { createdAt?: number }).createdAt;
+      if (c != null && Number.isFinite(c)) return c;
+    }
+    const id = b.kind === "activity" ? b.tools[0]?.id : b.turn.id;
+    const t = id != null ? turnTimesRef.current.get(id) : undefined;
+    return t != null && Number.isFinite(t) ? t : null;
+  };
+
   // ── render ──────────────────────────────────────────────────────────────────
 
   if (empty) {
@@ -4095,52 +4127,72 @@ export function ChatPane({
               <ResumedNote title={resumedTitle} onClear={() => setResumedTitle(null)} />
             </div>
           )}
-          {blocks.map((b, i) =>
-            b.kind === "activity" ? (
-              <ActivityGroup
-                key={b.id}
-                tools={b.tools}
-                durationMs={b.durationMs}
-                // live only on the final activity group, while a turn is in
-                // flight and it hasn't been closed by a result yet
-                live={streaming && b.durationMs == null && i === lastActivityIdx}
-                elapsedMs={liveStart != null ? now - liveStart : 0}
-                phase={runEventState.phase}
-              />
-            ) : b.kind === "user" ? (
-              // non-streaming blocks ARRIVE (fade-in-up) — streaming surfaces
-              // stay unwrapped so token appends never retrigger an entrance.
-              <div key={b.id} className="fade-in-up">
-                <UserBubble
-                  turn={b.turn}
-                  streaming={streaming}
-                  isLast={b.id === lastUserId}
-                  onRegenerate={() => regenerate(b.turn.text)}
-                  onEdit={editMessage}
-                />
-              </div>
-            ) : b.kind === "assistant" ? (
-              <AssistantBubble
-                key={b.id}
-                turn={b.turn}
-                onButton={(label) => {
-                  if (!streaming && sessionIdRef.current != null) dispatch(label);
-                }}
-                disabled={streaming}
-                onOpenUrl={onOpenUrl}
-              />
-            ) : b.kind === "thinking" ? (
-              <ThinkingBlock key={b.id} turn={b.turn} />
-            ) : b.kind === "approval" ? (
-              <div key={b.id} className="fade-in-up">
-                <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
-              </div>
-            ) : (
-              <div key={b.id} className="fade-in-up">
-                <ResultFooter turn={b.turn} onRetry={retryTurn} />
-              </div>
-            ),
-          )}
+          {(() => {
+            // same elements as before, built in a loop so a quiet day rule can
+            // slip in whenever the wall-clock day changes mid-transcript
+            // (resumed sessions span days; "yesterday" deserves a seam).
+            const out: React.ReactNode[] = [];
+            let prevDay: string | null = null;
+            blocks.forEach((b, i) => {
+              const t = blockTime(b);
+              if (t != null) {
+                const day = new Date(t).toDateString();
+                if (prevDay != null && day !== prevDay) {
+                  out.push(<DaySeparator key={`day-${b.id}`} at={t} />);
+                }
+                prevDay = day;
+              }
+              out.push(
+                b.kind === "activity" ? (
+                  <ActivityGroup
+                    key={b.id}
+                    tools={b.tools}
+                    durationMs={b.durationMs}
+                    // live only on the final activity group, while a turn is in
+                    // flight and it hasn't been closed by a result yet
+                    live={streaming && b.durationMs == null && i === lastActivityIdx}
+                    elapsedMs={liveStart != null ? now - liveStart : 0}
+                    phase={runEventState.phase}
+                  />
+                ) : b.kind === "user" ? (
+                  // non-streaming blocks ARRIVE (fade-in-up) — streaming surfaces
+                  // stay unwrapped so token appends never retrigger an entrance.
+                  <div key={b.id} className="fade-in-up">
+                    <UserBubble
+                      turn={b.turn}
+                      at={t}
+                      streaming={streaming}
+                      isLast={b.id === lastUserId}
+                      onRegenerate={() => regenerate(b.turn.text)}
+                      onEdit={editMessage}
+                    />
+                  </div>
+                ) : b.kind === "assistant" ? (
+                  <AssistantBubble
+                    key={b.id}
+                    turn={b.turn}
+                    at={t}
+                    onButton={(label) => {
+                      if (!streaming && sessionIdRef.current != null) dispatch(label);
+                    }}
+                    disabled={streaming}
+                    onOpenUrl={onOpenUrl}
+                  />
+                ) : b.kind === "thinking" ? (
+                  <ThinkingBlock key={b.id} turn={b.turn} />
+                ) : b.kind === "approval" ? (
+                  <div key={b.id} className="fade-in-up">
+                    <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
+                  </div>
+                ) : (
+                  <div key={b.id} className="fade-in-up">
+                    <ResultFooter turn={b.turn} onRetry={retryTurn} />
+                  </div>
+                ),
+              );
+            });
+            return out;
+          })()}
           {/* turn in flight with neither streamed text nor a live activity group
               yet (the very first beat) → the bare working timer */}
           {streaming &&
@@ -4910,14 +4962,48 @@ function ResultFooter({
   );
 }
 
+/** "today" / "yesterday" / "wed 11 jun" for the transcript's day rules. */
+function dayLabel(at: number): string {
+  const d = new Date(at);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  if (d.toDateString() === today.toDateString()) return "today";
+  if (d.toDateString() === yesterday.toDateString()) return "yesterday";
+  return d
+    .toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+    .toLowerCase();
+}
+
+/** "14:32" hover stamp shared by both bubbles' action rows. */
+function turnClock(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Quiet hairline + day label where the transcript crosses midnight (resumed
+ *  sessions span days; "yesterday" deserves a seam). */
+function DaySeparator({ at }: { at: number }) {
+  return (
+    <div role="separator" aria-label={dayLabel(at)} className="flex items-center gap-3 py-0.5">
+      <span className="h-px flex-1 bg-[var(--color-border)]" />
+      <span className="font-mono text-[10px] lowercase tracking-wide text-[var(--color-faint)]">
+        {dayLabel(at)}
+      </span>
+      <span className="h-px flex-1 bg-[var(--color-border)]" />
+    </div>
+  );
+}
+
 function UserBubble({
   turn,
+  at,
   streaming,
   isLast,
   onRegenerate,
   onEdit,
 }: {
   turn: Extract<Turn, { kind: "user" }>;
+  /** wall-clock of the turn (send time / transcript time); null = unknown. */
+  at?: number | null;
   streaming: boolean;
   isLast: boolean;
   onRegenerate: () => void;
@@ -4934,9 +5020,9 @@ function UserBubble({
         {turn.text}
       </div>
       <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-        {turn.createdAt != null && (
-          <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]">
-            {new Date(turn.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        {at != null && (
+          <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]" title={new Date(at).toLocaleString()}>
+            {turnClock(at)}
           </span>
         )}
         <CopyButton text={turn.text} title="copy message" />
@@ -5055,11 +5141,14 @@ function CadencedShimmer({ children }: { children: string }) {
 
 function AssistantBubble({
   turn,
+  at,
   onButton,
   disabled,
   onOpenUrl,
 }: {
   turn: Extract<Turn, { kind: "assistant" }>;
+  /** wall-clock of the turn (arrival / transcript time); null = unknown. */
+  at?: number | null;
   onButton: (label: string) => void;
   disabled: boolean;
   onOpenUrl?: (url: string) => void;
@@ -5094,6 +5183,11 @@ function AssistantBubble({
       )}
       {!turn.streaming && body.trim() && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          {at != null && (
+            <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]" title={new Date(at).toLocaleString()}>
+              {turnClock(at)}
+            </span>
+          )}
           <CopyButton text={body} title="copy response" />
         </div>
       )}

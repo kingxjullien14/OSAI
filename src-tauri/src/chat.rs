@@ -211,7 +211,7 @@ fn claude_bin() -> String {
         }
     }
     // Try the user's HOME-based installs (native installer / nvm current).
-    if let Ok(home) = std::env::var("HOME") {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let native = format!("{home}/.local/bin/claude");
         if std::path::Path::new(&native).exists() {
             return native;
@@ -316,7 +316,7 @@ fn codex_native_bin() -> Option<String> {
     let rel = format!(
         "lib/node_modules/@openai/codex/node_modules/@openai/{pkg}/vendor/{triple}/bin/codex"
     );
-    let home = std::env::var("HOME").ok()?;
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
     // nvm global: newest version dir whose vendored native binary exists.
     let nvm = format!("{home}/.nvm/versions/node");
     let entries = std::fs::read_dir(&nvm).ok()?;
@@ -456,7 +456,7 @@ fn codex_chat_home(fast_requested: bool) -> Option<String> {
         return None;
     }
 
-    let home = std::env::var("HOME").ok()?;
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
     let real = std::env::var("CODEX_HOME")
         .ok()
         .filter(|s| !s.is_empty())
@@ -724,7 +724,7 @@ pub fn chat_start(
             cmd.current_dir(dir);
         }
         _ => {
-            if let Ok(home) = std::env::var("HOME") {
+            if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
                 cmd.current_dir(home);
             }
         }
@@ -986,7 +986,7 @@ fn run_per_turn(sess: Arc<ChatSession>, app: AppHandle, text: String) -> Result<
             cmd.current_dir(dir);
         }
         None => {
-            if let Ok(home) = std::env::var("HOME") {
+            if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
                 cmd.current_dir(home);
             }
         }
@@ -1115,7 +1115,7 @@ fn codex_appserver_bin() -> String {
             return p;
         }
     }
-    if let Ok(home) = std::env::var("HOME") {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let standalone = format!("{home}/.codex-chat/packages/standalone/current/codex");
         if std::path::Path::new(&standalone).exists() {
             return standalone;
@@ -1277,7 +1277,7 @@ fn start_codex_appserver(
             cmd.current_dir(d);
         }
         None => {
-            if let Ok(home) = std::env::var("HOME") {
+            if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
                 cmd.current_dir(home);
             }
         }
@@ -2549,6 +2549,18 @@ pub struct ChatSessionInfo {
 pub struct ChatTurn {
     pub role: String, // "user" | "assistant"
     pub text: String,
+    /// Unix seconds of the turn (from the transcript line's `timestamp`),
+    /// when the file carries one — drives hover times + day separators.
+    pub ts: Option<i64>,
+}
+
+/// The `timestamp` field both claude transcripts and codex rollouts stamp on
+/// every JSONL line (RFC3339) → unix seconds.
+fn line_ts(v: &serde_json::Value) -> Option<i64> {
+    let s = v.get("timestamp").and_then(|t| t.as_str())?;
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|t| t.timestamp())
 }
 
 fn now_secs() -> u64 {
@@ -2559,7 +2571,7 @@ fn now_secs() -> u64 {
 }
 
 fn sessions_store() -> Option<std::path::PathBuf> {
-    let home = std::env::var("HOME").ok()?;
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
     Some(std::path::PathBuf::from(home).join(".aios/state/chat-sessions.json"))
 }
 
@@ -2647,7 +2659,7 @@ pub fn record_chat_session(
 #[tauri::command]
 pub fn list_chat_sessions(limit: Option<u32>) -> Vec<ChatSessionInfo> {
     let mut store = load_store();
-    if let Ok(home) = std::env::var("HOME") {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let home = std::path::Path::new(&home);
         for session in &mut store {
             if session.engine.is_empty() {
@@ -2665,7 +2677,7 @@ pub fn list_chat_sessions(limit: Option<u32>) -> Vec<ChatSessionInfo> {
     // Enrich ONLY the returned (post-truncate) entries with their most-recent
     // user message, for the picker's "where you left off" preview. Bounded to
     // the visible window so we never read hundreds of transcripts.
-    if let Ok(home) = std::env::var("HOME") {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let home = std::path::Path::new(&home);
         for session in &mut store {
             session.last_user = last_user_text(home, &session.id).unwrap_or_default();
@@ -2724,7 +2736,7 @@ fn last_user_text(home: &std::path::Path, id: &str) -> Option<String> {
 /// so resuming a gpt-5.x chat repaints its history instead of showing blank.
 #[tauri::command]
 pub fn read_chat_transcript(id: String) -> Vec<ChatTurn> {
-    let Ok(home) = std::env::var("HOME") else {
+    let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) else {
         return Vec::new();
     };
     // ── claude: ~/.claude/projects/*/<id>.jsonl ──
@@ -2783,6 +2795,7 @@ fn parse_claude_transcript(text: &str) -> Vec<ChatTurn> {
             turns.push(ChatTurn {
                 role: role.to_string(),
                 text: text_acc,
+                ts: line_ts(&v),
             });
         }
     }
@@ -3049,6 +3062,7 @@ fn parse_codex_rollout(text: &str) -> Vec<ChatTurn> {
                 turns.push(ChatTurn {
                     role: "user".to_string(),
                     text: text_acc,
+                    ts: line_ts(&v),
                 });
             }
             // assistant side — event_msg / agent_message / message:".."
@@ -3062,6 +3076,7 @@ fn parse_codex_rollout(text: &str) -> Vec<ChatTurn> {
                         turns.push(ChatTurn {
                             role: "assistant".to_string(),
                             text: t.to_string(),
+                            ts: line_ts(&v),
                         });
                     }
                 }

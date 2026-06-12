@@ -107,6 +107,8 @@ export async function recordChatSession(
 export interface ChatTurnInfo {
   role: "user" | "assistant";
   text: string;
+  /** Unix seconds from the transcript line, when the file carries one. */
+  ts?: number | null;
 }
 
 /** Loads a past session's conversation (user/assistant text) to repaint it. */
