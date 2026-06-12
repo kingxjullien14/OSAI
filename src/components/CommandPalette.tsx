@@ -10,7 +10,7 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "re
  *  Caps DOM churn so typing stays smooth even with hundreds of commands. */
 const MAX_RESULTS = 50;
 
-import { Brain, CornerDownLeft, MessageSquare, Search } from "lucide-react";
+import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Search } from "lucide-react";
 import { reportUsage } from "../lib/diag";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
@@ -51,6 +51,10 @@ export interface Command {
   keywords?: string;
   /** Verb shown on the selected row's ⏎ chip ("open" / "resume" / "attach"). */
   actionLabel?: string;
+  /** Destructive/external commands carry a visible marker (never accent). */
+  danger?: string;
+  /** Currently unavailable — rendered dimmed; running it explains why. */
+  disabled?: boolean;
   run: () => void;
 }
 
@@ -72,6 +76,16 @@ export function fuzzyMatch(query: string, title: string): { score: number; idx: 
     const b = t[pos - 1];
     return b === " " || b === "-" || b === "/" || b === ":" || b === "_" || b === ".";
   };
+  // cost cap: the DP is quadratic-ish in (q,t) — degrade to a plain substring
+  // match on pathological inputs instead of stalling a keystroke.
+  if (q.length > 48 || t.length > 240) {
+    const at = t.indexOf(q);
+    if (at < 0) return null;
+    return {
+      score: (isBoundary(at) ? 7 : 1) - at * 0.05,
+      idx: Array.from({ length: q.length }, (_, i) => at + i),
+    };
+  }
   // per-char points for matching q[qi] at `pos`, given the previous match `prev`
   // and the current contiguous-run length (escalating run bonus, as before).
   const charPts = (pos: number, prev: number, run: number): number => {
@@ -437,7 +451,8 @@ export function CommandPalette({
                       }}
                       className={`relative flex w-full items-center gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-2 text-left transition-colors ${
                         active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel-2)]/50"
-                      }`}
+                      } ${c.disabled ? "opacity-50" : ""}`}
+                      title={c.disabled ? "unavailable right now — running it explains why" : undefined}
                     >
                       {c.icon && (
                         <span
@@ -453,6 +468,13 @@ export function CommandPalette({
                       <span className="min-w-0 flex-1 truncate text-[13.5px] text-[var(--color-text)]">
                         <Highlight text={c.title} idx={c._idx} />
                       </span>
+                      {c.danger && (
+                        <AlertTriangle
+                          size={11}
+                          className="shrink-0 text-[var(--color-danger)]"
+                          aria-label={`caution: ${c.danger}`}
+                        />
+                      )}
                       {c.subtitle && (
                         <span className="shrink-0 truncate font-mono text-[10.5px] text-[var(--color-faint)]">
                           {c.subtitle}

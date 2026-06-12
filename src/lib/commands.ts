@@ -75,6 +75,8 @@ export function commandToPaletteCommand(
     group?: string;
     actionLabel?: string;
     subtitle?: string;
+    /** Failure sink — a command that returns ok:false says WHY out loud. */
+    notify?: (message: string) => void;
   },
 ): PaletteCommand {
   return {
@@ -85,8 +87,14 @@ export function commandToPaletteCommand(
     icon: command.icon,
     keywords: command.keywords.join(" "),
     actionLabel: options.actionLabel,
+    danger: command.danger !== "none" ? command.danger : undefined,
+    disabled: !command.enabled(options.context),
     run: () => {
-      void runCommand(command, options.context);
+      void runCommand(command, options.context).then((result) => {
+        if (result && result.ok === false) {
+          options.notify?.(result.error ?? result.message ?? `${command.label} failed`);
+        }
+      });
     },
   };
 }

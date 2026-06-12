@@ -40,6 +40,8 @@ export interface AppCommandDeps {
   setSettingsOpen: (open: boolean) => void;
   setHiddenKeys: (keys: string[]) => void;
   setMaximizedKey: (key: string | null) => void;
+  /** Surface a command failure to the user (toast) — silent no-ops erode trust. */
+  notify?: (message: string) => void;
 }
 
 interface RegistryEntry {
@@ -62,6 +64,7 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
       group: entry.group,
       actionLabel: entry.actionLabel,
       subtitle: entry.command.description,
+      notify: deps.notify,
     });
 
   const registry: RegistryEntry[] = [

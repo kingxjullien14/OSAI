@@ -1745,6 +1745,7 @@ function App() {
 
   const commands: Command[] = useMemo(() => {
     return buildAppCommands({
+      notify: flash,
       activeKey,
       panesCount: panes.length,
       home,
