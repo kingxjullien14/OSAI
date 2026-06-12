@@ -49,6 +49,7 @@ import {
   Layers,
   Search,
   Sparkles,
+  SquareStack,
   Target,
   Terminal,
 } from "lucide-react";
@@ -64,6 +65,7 @@ import type { ProjectInfo } from "../lib/run";
 import type { SidebarItem, SidebarState } from "../lib/sidebar";
 import type { UsageExtras } from "../lib/stats";
 import { ProviderBlock, useUsageRates } from "./dashboard/UsageGlance";
+import { listWorkspaces, subscribeWorkspaces, type Workspace } from "../lib/workspaces";
 import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
 
@@ -90,6 +92,7 @@ export function IdleControlCenter({
   onResumeLast,
   resumeLabel,
   onTalkToJarvis,
+  onApplyWorkspace,
 }: {
   projects: ProjectInfo[];
   sidebar: SidebarState;
@@ -112,6 +115,8 @@ export function IdleControlCenter({
   resumeLabel?: string;
   /** seed a fresh chat pane with the command-line text (spawns a chat). */
   onTalkToJarvis: (seed: string) => void;
+  /** restore a saved workspace (named pane layout) from its launch-row chip. */
+  onApplyWorkspace?: (ws: Workspace) => void;
 }) {
   // ── derived state — declared BEFORE any JSX/hook that reads them (TDZ-safe) ──
   const recent = [...projects].sort((a, b) => b.mtime - a.mtime).slice(0, 5);
@@ -130,6 +135,11 @@ export function IdleControlCenter({
 
   const { claude, codex, hasClaude, hasCodex } = useUsageRates();
   const hasUsage = hasClaude || hasCodex;
+
+  // saved workspaces — read straight from the store (localStorage) so the
+  // chips appear/refresh without prop threading; App only supplies the apply.
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(listWorkspaces);
+  useEffect(() => subscribeWorkspaces(() => setWorkspaces(listWorkspaces())), []);
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -224,6 +234,23 @@ export function IdleControlCenter({
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--color-border)] pt-3">
+            {/* workspace chips — one click rebuilds a saved pane layout */}
+            {onApplyWorkspace && workspaces.length > 0 && (
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {workspaces.slice(0, 4).map((ws) => (
+                  <button
+                    key={ws.name}
+                    type="button"
+                    onClick={() => onApplyWorkspace(ws)}
+                    title={`restore workspace · ${ws.panes.length} ${ws.panes.length === 1 ? "pane" : "panes"}`}
+                    className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
+                  >
+                    <SquareStack size={11} className="shrink-0 text-[var(--color-muted)]" />
+                    {ws.name}
+                  </button>
+                ))}
+              </div>
+            )}
             {pinned.length > 0 && (
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {pinned.map((item) => (

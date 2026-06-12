@@ -2598,6 +2598,7 @@ function App() {
                 oracles={oracles}
                 projects={projects}
                 sidebar={sidebar}
+                onApplyWorkspace={applyWorkspace}
                 onSpawn={spawn}
                 onAttachOracle={addOracle}
                 onOpenProject={(p) => spawn({ type: "shell", cwd: p.root }, p.name)}

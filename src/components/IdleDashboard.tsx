@@ -29,6 +29,7 @@ import {
   type MemoryFocus,
 } from "../lib/dashboard";
 import type { AiosNotification } from "../lib/notifications";
+import type { Workspace } from "../lib/workspaces";
 import { IdleControlCenter } from "./IdleControlCenter";
 import { reportDiag } from "../lib/diag";
 
@@ -52,6 +53,8 @@ interface IdleDashboardProps {
   onTalkToJarvis: (seed: string) => void;
   onOpenNotificationTarget: (item: AiosNotification) => void;
   onClearNotification: (id: string) => void;
+  /** restore a saved workspace (named pane layout) from its launch-row chip. */
+  onApplyWorkspace?: (ws: Workspace) => void;
 }
 
 export function IdleDashboard({
@@ -68,6 +71,7 @@ export function IdleDashboard({
   resumeLabel,
   notifications,
   onTalkToJarvis,
+  onApplyWorkspace,
 }: IdleDashboardProps) {
   const [extras, setExtras] = useState<UsageExtras | null>(null);
   const [rate, setRate] = useState<IdleRate | null>(null);
@@ -133,6 +137,7 @@ export function IdleDashboard({
       onResumeLast={onResumeLast}
       resumeLabel={resumeLabel}
       onTalkToJarvis={onTalkToJarvis}
+      onApplyWorkspace={onApplyWorkspace}
     />
   );
 }
