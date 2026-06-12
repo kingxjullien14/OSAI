@@ -49,6 +49,10 @@ interface IdleDashboardProps {
   onOpenPalette: () => void;
   onResumeLast?: () => void;
   resumeLabel?: string;
+  /** "pick up where you left off" — panes to bring back (all-hidden or a
+   *  stored layout); null = nothing to resume, the pill hides. */
+  resumeLayout?: { count: number; labels: string[] } | null;
+  onResumeLayout?: () => void;
   notifications: AiosNotification[];
   onTalkToJarvis: (seed: string) => void;
   onOpenNotificationTarget: (item: AiosNotification) => void;
@@ -69,6 +73,8 @@ export function IdleDashboard({
   onOpenPalette,
   onResumeLast,
   resumeLabel,
+  resumeLayout,
+  onResumeLayout,
   notifications,
   onTalkToJarvis,
   onApplyWorkspace,
@@ -136,6 +142,8 @@ export function IdleDashboard({
       onOpenPalette={onOpenPalette}
       onResumeLast={onResumeLast}
       resumeLabel={resumeLabel}
+      resumeLayout={resumeLayout}
+      onResumeLayout={onResumeLayout}
       onTalkToJarvis={onTalkToJarvis}
       onApplyWorkspace={onApplyWorkspace}
     />

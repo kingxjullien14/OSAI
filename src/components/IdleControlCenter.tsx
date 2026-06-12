@@ -36,6 +36,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -91,6 +92,8 @@ export function IdleControlCenter({
   onOpenPalette,
   onResumeLast,
   resumeLabel,
+  resumeLayout,
+  onResumeLayout,
   onTalkToJarvis,
   onApplyWorkspace,
 }: {
@@ -113,6 +116,9 @@ export function IdleControlCenter({
   /** resume the most recent chat session (omitted when there are none). */
   onResumeLast?: () => void;
   resumeLabel?: string;
+  /** "pick up where you left off" — panes to bring back; null hides the pill. */
+  resumeLayout?: { count: number; labels: string[] } | null;
+  onResumeLayout?: () => void;
   /** seed a fresh chat pane with the command-line text (spawns a chat). */
   onTalkToJarvis: (seed: string) => void;
   /** restore a saved workspace (named pane layout) from its launch-row chip. */
@@ -183,8 +189,33 @@ export function IdleControlCenter({
             <HeroClock />
           </div>
 
+          {/* "pick up where you left off" — one keystroke back to the panes you
+              rested (home anchor / hidden-all) or the last stored layout. Hides
+              itself when there's nothing to resume. */}
+          {resumeLayout && onResumeLayout && (
+            <button
+              type="button"
+              onClick={onResumeLayout}
+              title={resumeLayout.labels.join(" · ")}
+              className="aios-fade-in pill press flex items-center gap-1.5"
+              style={{ animationDelay: "70ms" }}
+            >
+              <History size={11} className="shrink-0 text-[var(--color-muted)]" />
+              pick up where you left off
+              <span className="font-mono text-[10px] text-[var(--color-faint)]">
+                {resumeLayout.count} pane{resumeLayout.count === 1 ? "" : "s"}
+              </span>
+            </button>
+          )}
+
           {/* command line — the one obvious primary action */}
-          <CommandLine onSeedChat={onTalkToJarvis} onOpenPalette={onOpenPalette} />
+          <CommandLine
+            onSeedChat={onTalkToJarvis}
+            onOpenPalette={onOpenPalette}
+            projects={projects}
+            onOpenProject={onOpenProject}
+            onSpawn={onSpawn}
+          />
 
           {/* usage glance — claude + codex, quiet, side-by-side */}
           {hasUsage && (
@@ -347,9 +378,15 @@ const LAST_SEED_KEY = "aios.home.lastSeed";
 function CommandLine({
   onSeedChat,
   onOpenPalette,
+  projects,
+  onOpenProject,
+  onSpawn,
 }: {
   onSeedChat: (seed: string) => void;
   onOpenPalette: () => void;
+  projects: ProjectInfo[];
+  onOpenProject: (p: ProjectInfo) => void;
+  onSpawn: (kind: AppDef["kind"], label: string) => void;
 }) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -361,10 +398,68 @@ function CommandLine({
     return () => clearTimeout(t);
   }, []);
 
+  // type-ahead intents — the line reads what you're typing and offers the
+  // direct route: `$…` → a terminal, `/` → the palette, plain text → matching
+  // recent projects. Chips, not interception: Enter still seeds a chat (the
+  // line's contract) EXCEPT for the explicit `$`/`/` prefixes where a chat
+  // seed is clearly not the intent; Tab (or click) takes the top chip.
+  const intents = useMemo(() => {
+    const text = value.trim();
+    if (!text) return [] as { id: string; icon: ReactNode; label: string; hint?: string; run: () => void }[];
+    const out: { id: string; icon: ReactNode; label: string; hint?: string; run: () => void }[] = [];
+    if (text.startsWith("$")) {
+      const cmd = text.slice(1).trim();
+      out.push({
+        id: "term",
+        icon: <Terminal size={11} className="shrink-0 text-[var(--color-muted)]" />,
+        label: cmd ? `run in a terminal: ${cmd}` : "open a terminal",
+        run: () => {
+          onSpawn(cmd ? ({ type: "shell", cmd } as AppDef["kind"]) : ({ type: "shell" } as AppDef["kind"]), cmd || "terminal");
+          setValue("");
+        },
+      });
+      return out;
+    }
+    if (text.startsWith("/")) {
+      out.push({
+        id: "palette",
+        icon: <Search size={11} className="shrink-0 text-[var(--color-muted)]" />,
+        label: "open the command palette",
+        run: () => {
+          onOpenPalette();
+          setValue("");
+        },
+      });
+      return out;
+    }
+    const q = text.toLowerCase();
+    for (const p of projects) {
+      if (!p.name.toLowerCase().includes(q)) continue;
+      out.push({
+        id: `proj:${p.root}`,
+        icon: <FolderGit2 size={11} className="shrink-0 text-[var(--color-muted)]" />,
+        label: `open ${p.name}`,
+        hint: p.root,
+        run: () => {
+          onOpenProject(p);
+          setValue("");
+        },
+      });
+      if (out.length >= 2) break;
+    }
+    return out;
+  }, [value, projects, onOpenProject, onOpenPalette, onSpawn]);
+
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text) {
       onOpenPalette();
+      return;
+    }
+    // explicit prefixes route to their intent — seeding a chat with "$ls"
+    // or "/" is never what was meant.
+    if ((text.startsWith("$") || text.startsWith("/")) && intents[0]) {
+      intents[0].run();
       return;
     }
     try {
@@ -374,7 +469,7 @@ function CommandLine({
     }
     onSeedChat(text);
     setValue("");
-  }, [value, onSeedChat, onOpenPalette]);
+  }, [value, onSeedChat, onOpenPalette, intents]);
 
   // ↑ in the empty line recalls what you last launched (chat-style history,
   // depth 1 — the home is a launcher, not a transcript).
@@ -416,6 +511,10 @@ function CommandLine({
             if (e.key === "ArrowUp" && !value) {
               e.preventDefault();
               recallLast();
+            } else if (e.key === "Tab" && !e.shiftKey && intents[0]) {
+              // Tab takes the top intent chip (Enter keeps the chat contract)
+              e.preventDefault();
+              intents[0].run();
             }
           }}
           spellCheck={false}
@@ -436,9 +535,31 @@ function CommandLine({
           </kbd>
         )}
       </div>
+      {/* type-ahead intent chips — the direct route for what you're typing */}
+      {intents.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
+          {intents.map((it, i) => (
+            <button
+              key={it.id}
+              type="button"
+              onClick={it.run}
+              title={it.hint}
+              className="pill press aios-fade-in flex items-center gap-1.5"
+            >
+              {it.icon}
+              <span className="max-w-[260px] truncate">{it.label}</span>
+              {i === 0 && (
+                <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-panel-2)] px-1 font-mono text-[9px] text-[var(--color-faint)]">
+                  tab
+                </kbd>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       {/* which agent this line launches — no more mystery composer */}
       <div className="mt-2 text-center font-mono text-[11px] text-[var(--color-faint)]">
-        {engineLabel} · enter to start · ↑ last · {chord("K")} for everything
+        {engineLabel} · enter to start · ↑ last · $ terminal · {chord("K")} for everything
       </div>
     </form>
   );

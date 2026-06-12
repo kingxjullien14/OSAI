@@ -230,6 +230,10 @@ interface Pane {
   kind: PaneContent;
 }
 
+/** Drop intent while drag-reordering: insertion at an edge, exchange in the
+ *  middle. Computed from the pointer's position within the hovered pane. */
+type PaneDropZoneKind = "before" | "after" | "swap";
+
 const isTerminal = (k: PaneContent): k is PaneKind =>
   k.type === "shell" || k.type === "oracle" || k.type === "tmux";
 
@@ -493,6 +497,10 @@ function App() {
   // drag is pure DOM layered over still-live webviews, tracked via each pane's own
   // pointer-enter over its HTML title strip (the original AIOS approach).
   const [dragActiveKey, setDragActiveKey] = useState<string | null>(null);
+  // snap zone within the hovered target: pointer in the left ~30% → place
+  // BEFORE it, right ~30% → AFTER it, middle → swap (the original gesture).
+  const [dropZone, setDropZone] = useState<PaneDropZoneKind | null>(null);
+  const paneDragZoneRef = useRef<PaneDropZoneKind | null>(null);
   // focus spotlight (⌘./Ctrl+.) — dim every pane but the active one.
   const [focusSpotlight, setFocusSpotlight] = useState(false);
   // activity glow — the set of chat panes with a live run (chrome breathes).
@@ -544,6 +552,26 @@ function App() {
     });
     setActiveKey(fromKey);
   }, []);
+  // snap-to-zone placement: pull the dragged pane out and re-insert it before/
+  // after the target — an INSERTION, where swap is an exchange. With the grid
+  // auto-placing by array order this is the whole window-manager move; the
+  // grid-template transition glides everything into place.
+  const placePane = useCallback(
+    (fromKey: string, toKey: string, zone: "before" | "after") => {
+      setPanes((cur) => {
+        const a = cur.findIndex((p) => p.key === fromKey);
+        if (a < 0) return cur;
+        const next = [...cur];
+        const [moved] = next.splice(a, 1);
+        const b = next.findIndex((p) => p.key === toKey);
+        if (b < 0) return cur;
+        next.splice(zone === "before" ? b : b + 1, 0, moved);
+        return next;
+      });
+      setActiveKey(fromKey);
+    },
+    [],
+  );
   // pointerdown on a pane's title strip → arm a drag. The strip captures the
   // pointer once armed so moves keep flowing even over native-webview panes,
   // and the target is hit-tested from the DOM under the cursor (every pane
@@ -573,11 +601,25 @@ function App() {
           }
         }
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
-        const overKey = el?.closest?.("[data-pane-key]")?.getAttribute("data-pane-key") ?? null;
+        const overEl = el?.closest?.("[data-pane-key]") ?? null;
+        const overKey = overEl?.getAttribute("data-pane-key") ?? null;
         const over = overKey && overKey !== d.from ? overKey : null;
         if (paneDragOverRef.current !== over) {
           paneDragOverRef.current = over;
           setDropTargetKey(over);
+        }
+        // zone within the target: left ~30% → before, right ~30% → after,
+        // middle → swap. Edges are insertion (window-manager placement);
+        // center keeps the original exchange gesture.
+        let zone: PaneDropZoneKind | null = null;
+        if (over && overEl) {
+          const r = (overEl as HTMLElement).getBoundingClientRect();
+          const fx = r.width > 0 ? (ev.clientX - r.left) / r.width : 0.5;
+          zone = fx < 0.3 ? "before" : fx > 0.7 ? "after" : "swap";
+        }
+        if (paneDragZoneRef.current !== zone) {
+          paneDragZoneRef.current = zone;
+          setDropZone(zone);
         }
       };
       const finish = (commit: boolean) => {
@@ -586,8 +628,10 @@ function App() {
         window.removeEventListener("pointercancel", onCancel);
         const d = paneDragRef.current;
         const over = paneDragOverRef.current;
+        const zone = paneDragZoneRef.current;
         paneDragRef.current = null;
         paneDragOverRef.current = null;
+        paneDragZoneRef.current = null;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         try {
@@ -597,7 +641,11 @@ function App() {
         }
         setDragActiveKey(null);
         setDropTargetKey(null);
-        if (commit && d?.armed && over && over !== d.from) swapPanes(d.from, over);
+        setDropZone(null);
+        if (commit && d?.armed && over && over !== d.from) {
+          if (zone === "before" || zone === "after") placePane(d.from, over, zone);
+          else swapPanes(d.from, over);
+        }
       };
       const onUp = () => finish(true);
       const onCancel = () => finish(false);
@@ -605,7 +653,7 @@ function App() {
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
     },
-    [swapPanes],
+    [swapPanes, placePane],
   );
   // TRUE video fullscreen: a child webview's HTML fullscreen only fills its rect.
   // When a video enters fullscreen we maximize the pane (webview → whole window)
@@ -1849,6 +1897,36 @@ function App() {
     [panes, cols, rows, flash],
   );
 
+  // "pick up where you left off" on the idle home: when every pane is hidden
+  // (e.g. via the sidebar home anchor) the pill un-hides them all; when none
+  // are open but a layout survives in storage (boot with reopenLastLayout off)
+  // it rehydrates that layout. Hidden-all is the common case — close-all wipes
+  // the stored layout by design, so there's rarely a stale restore to offer.
+  const allPanesHidden = panes.length > 0 && panes.every((p) => hiddenKeys.includes(p.key));
+  const storedLayout = useMemo(() => (panes.length === 0 ? loadLayout() : []), [panes.length]);
+  const resumeLayoutInfo = useMemo(() => {
+    if (allPanesHidden) return { count: panes.length, labels: panes.map((p) => p.label) };
+    if (panes.length === 0 && storedLayout.length > 0) {
+      return { count: storedLayout.length, labels: storedLayout.map((p) => p.label) };
+    }
+    return null;
+  }, [allPanesHidden, panes, storedLayout]);
+  const onResumeLayout = useCallback(() => {
+    if (panes.length > 0) {
+      setHiddenKeys([]);
+      const first = panes[0]?.key ?? null;
+      focusedPane.current = first;
+      setActiveKey(first);
+      return;
+    }
+    if (storedLayout.length === 0) return;
+    setPanes(storedLayout);
+    setHiddenKeys([]);
+    const first = storedLayout[0]?.key ?? null;
+    focusedPane.current = first;
+    setActiveKey(first);
+  }, [panes, storedLayout]);
+
   const applyWorkspace = useCallback(
     (ws: Workspace) => {
       const hydrated = hydrateSavedPanes(ws.panes);
@@ -2650,6 +2728,8 @@ function App() {
           </div>
         )}
 
+        {/* (resume-layout pill data is computed just above the idle mount — see
+            resumeLayoutInfo/onResumeLayout, threaded through IdleDashboard) */}
         <main className="relative min-h-0 flex-1">
           {(() => {
             if (webMirrorMode) {
@@ -2680,6 +2760,8 @@ function App() {
                 onOpenPalette={() => setPaletteOpen(true)}
                 onResumeLast={chats.length ? () => resumeChat(chats[0]) : undefined}
                 resumeLabel={chats[0]?.title}
+                resumeLayout={resumeLayoutInfo}
+                onResumeLayout={onResumeLayout}
                 notifications={notifications}
                 onTalkToJarvis={talkToJarvis}
                 onOpenNotificationTarget={openNotificationTarget}
@@ -2716,6 +2798,7 @@ function App() {
                   hidden={hiddenKeys.includes(pane.key)}
                   style={paneStyle}
                   dropTarget={dropTargetKey === pane.key}
+                  dropZone={dropTargetKey === pane.key ? dropZone : null}
                   closing={closingKeys.includes(pane.key)}
                   onClose={() => requestClose(pane.key)}
                   onToggleMax={() => toggleMax(pane.key)}
@@ -4266,6 +4349,7 @@ function PaneCard({
   hidden,
   style,
   dropTarget,
+  dropZone,
   onClose,
   onToggleMax,
   onToggleHide,
@@ -4305,6 +4389,8 @@ function PaneCard({
   hidden?: boolean;
   style?: CSSProperties;
   dropTarget?: boolean;
+  /** snap zone under the drag pointer (only meaningful while dropTarget). */
+  dropZone?: PaneDropZoneKind | null;
   onClose: () => void;
   onToggleMax?: () => void;
   onToggleHide?: () => void;
@@ -4696,11 +4782,32 @@ function PaneCard({
       </div>
       {dropTarget && (
         // pane-REORDER target affordance (path drops have their own PaneDropZone
-        // overlays) — says what release will actually do: swap the two panes.
-        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-[var(--color-accent)]/[0.06]">
-          <span className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 font-mono text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
-            release to swap panes
-          </span>
+        // overlays) — zone-aware: edges read as INSERTION (accent bar on the
+        // receiving edge + washed half), center keeps the original swap. The
+        // label always says exactly what release will do.
+        <div className="pointer-events-none absolute inset-0 z-20">
+          {dropZone === "before" ? (
+            <>
+              <div className="absolute inset-y-0 left-0 w-1/3 bg-[var(--color-accent)]/[0.08]" />
+              <div className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--color-accent)]" />
+            </>
+          ) : dropZone === "after" ? (
+            <>
+              <div className="absolute inset-y-0 right-0 w-1/3 bg-[var(--color-accent)]/[0.08]" />
+              <div className="absolute inset-y-2 right-0 w-[3px] rounded-full bg-[var(--color-accent)]" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-[var(--color-accent)]/[0.06]" />
+          )}
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 font-mono text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+              {dropZone === "before"
+                ? "release to place before"
+                : dropZone === "after"
+                  ? "release to place after"
+                  : "release to swap panes"}
+            </span>
+          </div>
         </div>
       )}
     </div>
