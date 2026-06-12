@@ -1164,6 +1164,26 @@ export function ChatPane({
   const usageProvider = usageProviderKey(model);
   const usageLabel = usageProviderLabel(model);
 
+  // ── hero resume rail ────────────────────────────────────────────────────────
+  // The empty hero offers the last few sessions one click away (the /resume
+  // picker stays the full-list path). Fetched once per pane while the hero is
+  // up; null = not loaded yet (render nothing, no skeleton — it's optional).
+  const [heroSessions, setHeroSessions] = useState<ChatSessionInfo[] | null>(null);
+  useEffect(() => {
+    if (!empty || heroSessions != null) return;
+    let alive = true;
+    listChatSessions(8)
+      .then((s) => {
+        if (alive) setHeroSessions(s);
+      })
+      .catch(() => {
+        if (alive) setHeroSessions([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [empty, heroSessions]);
+
   // ── voice dictation bridge (P0) ────────────────────────────────────────────
   // App registers each pane's writer here; ⌘J dictation pushes text to the
   // focused pane. For a chat pane we append into the composer instead of a PTY.
@@ -3930,6 +3950,61 @@ export function ChatPane({
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+          {/* resume rail: the last few conversations one click away — quiet
+              rows under the deck, gone (with it) on the first keystroke. */}
+          {!hasDraft && !resumedTitle && heroSessions != null && heroSessions.length > 0 && (
+            <div className="fade-in-up mt-6 pb-8" style={{ animationDelay: "160ms" }}>
+              <div className="mb-1.5 flex items-baseline justify-between px-1">
+                <span className="font-mono text-[10px] lowercase tracking-[0.14em] text-[var(--color-faint)]">
+                  or pick up where you left off
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverlay("resume");
+                    void loadResumeSessions();
+                  }}
+                  className="font-mono text-[10px] lowercase text-[var(--color-faint)] transition-colors hover:text-[var(--color-text-2)]"
+                >
+                  all sessions →
+                </button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {heroSessions.slice(0, 3).map((s) => {
+                  const engine = s.engine || "claude";
+                  const color = engineColorVar(engine);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => resumeSession(s)}
+                      title={(s.last_user || "").trim() || s.title}
+                      className="surface-card press group flex items-center gap-2.5 px-3 py-2 text-left"
+                    >
+                      <RotateCcw
+                        size={13}
+                        className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">
+                        {s.title || "untitled session"}
+                      </span>
+                      <span
+                        style={{ color, borderColor: `color-mix(in srgb, ${color} 40%, transparent)` }}
+                        className="shrink-0 rounded border px-1 py-0.5 font-mono text-[9px]"
+                      >
+                        {engine}
+                      </span>
+                      {s.mtime ? (
+                        <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
+                          {fmtRelativeTime(s.mtime)}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
