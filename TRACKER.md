@@ -89,14 +89,17 @@ Legend: `[x]` shipped (commit referenced) · `[~]` in progress · `[ ]` open
 - [x] **Token ratchet tightened** (`586fb35`) — text-white 6→0 (accent-fg CTAs, themed avatar scrim), shadow-2xl 16→3 (--aios-shadow-pop; floor = locked TerminalComposer)
 - [x] **Docs reorg committed** (`6fdfb7f`) — user moved secondary plans/notes into misc/; live docs (TRACKER, PLAN-superapp-uiux, README, WINDOWS*) stay at root
 
-## Still open (the long tail, deduped 2026-06-12)
-- [ ] Resume rail on the empty chat hero (recent sessions one click away — /resume data already wired)
-- [ ] Workspaces (saved layouts + palette commands + morph)
-- [ ] Living pet wiring (react to terminal/agent activity), soundscape (optional, default off)
-- [ ] accent-hover discipline pass — 30 `hover:border-accent` sites, per-spot judgment (primary affordances keep accent, decoration → border-strong)
-- [ ] superapp-pane §11 leftovers — remaining pane menus onto `.surface-pop`, poll-swap transitions (cast/mirror rosters)
-- [ ] "not installed" model rows could explain *why* (which binary is missing + how to get it)
-- [ ] homescreen final touches — command line onto `.surface-pop`, day-aware greeting clause
+- [x] **Resume rail on the empty hero** (`6525b41`) — last 3 sessions one click away (engine chip + age, "all sessions →" opens the /resume picker); vanishes with the starter deck on first keystroke
+- [x] **Pane menus onto `.surface-pop` + honest "not installed"** (`61f2029`) — browser suggest/downloads/bookmarks, cast roster, files project picker converge on the shared popover surface; disabled model rows' tooltips name the missing CLI + the install one-liner
+- [x] **Accent-hover discipline** (`a4f2804`) — 30 → 10 per DESIGN.md §6: decoration (rows/chips/floats/secondary buttons) hovers `border-strong`; accent survives only on true primary/add affordances; ratchet pinned at 10 with rationale
+- [x] **Homescreen final touches** — verified already shipped (focus-on-mount, engine hint line, weekday greeting, composer-grade command line); stale line removed
+
+## Still open (the long tail)
+- [ ] **Workspaces** — save/restore named layouts + palette commands + morph transition (biggest remaining feature)
+- [ ] **Living pet wiring** — pet reacts to terminal/agent activity (build green = celebrate, stack trace = wince)
+- [ ] **Soundscape** — optional, default off
+- [ ] poll-swap transitions on cast/mirror rosters (macOS-gated panes — low priority on the Windows daily driver)
+- [ ] ratchet floors if ever unlockable: accent-hover 10 (all true primaries), shadow-2xl 3 (locked TerminalComposer)
 
 ## Verification gates (every batch)
 `npx tsc --noEmit` · `npm run test:chatpane` · `cargo check` (Rust batches) · `npm run build` (per wave) · manual run at the end
