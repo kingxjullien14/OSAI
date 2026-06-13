@@ -54,6 +54,11 @@ export interface AppSettings {
   // OFF by default: an opt-in nicety, never a notification channel.
   soundscape: boolean;
 
+  // funFx — the W5-5 personality layer: click sparks, pet confetti on a long
+  // clean run, the liveness ripple. ON by default (it's the signature delight);
+  // reduce-motion still overrides it. One switch for the whole playful tier.
+  funFx: boolean;
+
   // memory
   graphPhysicsStrength: number; // 0..100
 
@@ -114,6 +119,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   primaryOracleId: "firaz",
   whisperUrl: "http://localhost:9000/inference",
   soundscape: false,
+  funFx: true,
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
 

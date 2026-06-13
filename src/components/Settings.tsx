@@ -1465,6 +1465,9 @@ export function Settings({
                   <Row label="soundscape" sub="whisper-quiet cues when a run finishes or fails (synthesized, off by default)">
                     <Toggle checked={s.soundscape} onChange={(v) => patch({ soundscape: v })} />
                   </Row>
+                  <Row label="playful effects" sub="click sparks, the pet's confetti on a long clean run, the liveness ripple — reduce-motion always wins">
+                    <Toggle checked={s.funFx} onChange={(v) => patch({ funFx: v })} />
+                  </Row>
                   <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/25 p-3">
                     <div className="text-[11px] font-medium text-[var(--color-text)]">next control layer</div>
                     <p className="mt-1 text-[11px] leading-snug text-[var(--color-muted)]">

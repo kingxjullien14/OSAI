@@ -85,6 +85,24 @@ function maybeBubble(kind: string, text: string, cooldownMs: number) {
   bubbleListeners.forEach((l) => l(bubble));
 }
 
+/** Confetti — the pet's ONE celebratory burst, fired from the idle companion
+ *  tile on a long clean run. Rate-limited like bubbles so it's an event, not a
+ *  habit; the visual layer (PetDashboardCompanion) gates it on the funFx
+ *  setting + reduce-motion before drawing (W5-5). */
+type ConfettiListener = () => void;
+const confettiListeners = new Set<ConfettiListener>();
+export function subscribePetConfetti(listener: ConfettiListener): () => void {
+  confettiListeners.add(listener);
+  return () => confettiListeners.delete(listener);
+}
+let confettiLastAt = 0;
+function maybeConfetti(cooldownMs: number) {
+  const t = now();
+  if (t - confettiLastAt < cooldownMs) return;
+  confettiLastAt = t;
+  confettiListeners.forEach((l) => l());
+}
+
 const STORAGE_KEY = "aios.pet.state.v1";
 const TICK_MS = 10000;
 
@@ -299,6 +317,7 @@ export function onPetResult(input: PetResultInput = {}) {
     maybeBubble("wince", "ouch — that run failed", 10 * 60_000);
   } else if ((input.durationMs ?? 0) > 120_000) {
     maybeBubble("longrun", "that was a long one — clean finish", 20 * 60_000);
+    maybeConfetti(20 * 60_000);
   }
   apply((s) => {
     const stressFromTokens = scoreFromTokens(input.tokens);

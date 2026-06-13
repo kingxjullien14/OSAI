@@ -73,12 +73,16 @@ import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
 import { setPaletteMorphSource } from "../lib/paletteMorph";
 import { BlurText } from "./fx/BlurText";
+import { Confetti } from "./fx/Confetti";
 import { DotPattern } from "./fx/DotPattern";
 import { NumberTicker } from "./fx/NumberTicker";
+import { Ripple } from "./fx/Ripple";
 import { Spotlight } from "./fx/Spotlight";
 import { spotlightMove } from "./fx/spotlightGlow";
+import { useFunFx } from "./fx/funFx";
 import { useRotatingPlaceholder } from "./fx/useRotatingPlaceholder";
 import { useVanish } from "./fx/useVanish";
+import { subscribePetConfetti } from "../lib/pet";
 
 const PetDashboardCompanion = lazy(() =>
   import("./PetPane").then((mod) => ({ default: mod.PetDashboardCompanion })),
@@ -166,6 +170,12 @@ export function IdleControlCenter({
     activeAgents * 0.45 + Math.min(dirtyProjects, 3) * 0.12 + (unread > 0 ? 0.18 : 0),
   );
 
+  // personality layer (W5-5): the ripple rides high liveness; confetti bursts
+  // when the pet earns it (long clean run). Both gate on funFx + reduce-motion.
+  const funFx = useFunFx();
+  const [confettiKey, setConfettiKey] = useState(0);
+  useEffect(() => subscribePetConfetti(() => setConfettiKey((k) => k + 1)), []);
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* masked dot grid — quiet texture under the hero (pure SVG, no motion) */}
@@ -200,9 +210,12 @@ export function IdleControlCenter({
         className="aios-pet-mini aios-fade-in pointer-events-auto absolute right-5 top-5 z-20 hidden cursor-pointer sm:block"
         style={{ animationDelay: "260ms" }}
       >
+        {/* liveness ripple behind + earned confetti over the companion tile */}
+        {funFx && liveness > 0.4 && <Ripple />}
         <Suspense fallback={null}>
           <PetDashboardCompanion onOpenPet={onOpenPet} onTalkToJarvis={onTalkToJarvis} />
         </Suspense>
+        <Confetti trigger={confettiKey} />
       </div>
 
       {/* ── centred hero stack: clock → command → usage. Generous breathing room.

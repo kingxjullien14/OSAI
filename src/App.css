@@ -620,6 +620,16 @@ select:focus-visible,
   will-change: transform;
 }
 
+/* W5-5 .aios-ripple — whisper-faint concentric rings behind the idle pet
+   companion at high liveness (fx/Ripple). The component only mounts under
+   funFx (so reduce-motion never renders it); the guard freezes this anyway. */
+@keyframes aios-ripple {
+  0% { transform: scale(0.7); opacity: 0; }
+  35% { opacity: 0.22; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.aios-ripple { animation: aios-ripple 3.4s var(--aios-ease-out) infinite; }
+
 /* idle-home corner pet — the one playful touch, compact + low-key. Reuses the
    full PetDashboardCompanion but strips its head text + action row and shrinks
    the world to a small glass tile in the corner so it never clutters the calm

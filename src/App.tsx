@@ -132,6 +132,7 @@ import { SidebarUsage } from "./components/SidebarUsage";
 import { AnimatePresence, m } from "motion/react";
 
 import { BorderBeam } from "./components/fx/BorderBeam";
+import { ClickSpark } from "./components/fx/ClickSpark";
 import { dockMagnifyMove, dockMagnifyReset } from "./components/fx/dockMagnify";
 import { HoverBorderGradient } from "./components/fx/HoverBorderGradient";
 import { spotlightMove } from "./components/fx/spotlightGlow";
@@ -2975,6 +2976,10 @@ function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
+
+      {/* global click sparks (W5-5) — pooled canvas, fires on .press controls;
+          self-gates on funFx + reduce-motion. */}
+      <ClickSpark />
 
       {/* conductor pill — listening / executing state, top-center */}
       <AnimatePresence>
