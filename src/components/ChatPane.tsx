@@ -170,6 +170,10 @@ import { CopyButton, trapTab } from "./ui";
 import { RunCinema } from "./RunCinema";
 import { reportDiag } from "../lib/diag";
 import { pushNotification } from "../lib/notifications";
+import { BlurFade } from "./fx/BlurFade";
+import { Magnet } from "./fx/Magnet";
+import { SplitText } from "./fx/SplitText";
+import { TiltCard } from "./fx/TiltCard";
 
 // ── transcript model ──────────────────────────────────────────────────────
 
@@ -3805,16 +3809,18 @@ export function ChatPane({
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={send}
-                disabled={action.disabled}
-                className="btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
-                title={action.title}
-              >
-                <ArrowUp size={16} />
-                {action.label}
-              </button>
+              <Magnet>
+                <button
+                  type="button"
+                  onClick={send}
+                  disabled={action.disabled}
+                  className="aios-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
+                  title={action.title}
+                >
+                  <ArrowUp size={16} />
+                  {action.label}
+                </button>
+              </Magnet>
             )}
             </div>
           </div>
@@ -4189,14 +4195,26 @@ export function ChatPane({
           <div className="helper-line mb-2.5 text-center" style={{ animationDelay: "60ms" }}>
             {timeGreeting()}, {displayName()}
           </div>
+          {/* per-word spring rise (SplitText); keyed by fresh/resume so it
+              fires once per state, not on every transcript re-render. */}
           <h1 className="hero-title mb-6 text-center">
-            {resumedTitle ? (
-              "picking up where we left off"
-            ) : (
-              <>
-                what should we <span className="aios-greet-name">work</span> on?
-              </>
-            )}
+            <SplitText
+              key={resumedTitle ? "resume" : "fresh"}
+              startDelay={0.08}
+              words={
+                resumedTitle
+                  ? ["picking", "up", "where", "we", "left", "off"]
+                  : [
+                      "what",
+                      "should",
+                      "we",
+                      <span key="work" className="aios-greet-name">
+                        work
+                      </span>,
+                      "on?",
+                    ]
+              }
+            />
           </h1>
           {resumedTitle && (
             <div className="mb-4 flex justify-center">
@@ -4245,25 +4263,28 @@ export function ChatPane({
           {!hasDraft && (
             <div className="stagger mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
               {starterDeck.map(({ icon: Icon, label, sub, prompt }) => (
-                <button
-                  key={label}
-                  type="button"
-                  disabled={!started}
-                  onClick={() => {
-                    setInput(prompt);
-                    taRef.current?.focus();
-                  }}
-                  className="surface-card lift group flex flex-col items-start gap-2 px-3.5 py-3 text-left disabled:opacity-50"
-                >
-                  <Icon
-                    size={16}
-                    className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
-                  />
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-[12.5px] font-medium text-[var(--color-text)]">{label}</span>
-                    <span className="text-[11px] text-[var(--color-faint)]">{sub}</span>
-                  </span>
-                </button>
+                // TiltCard owns the hover motion (3D tilt + mouse-follow glare),
+                // so the button drops `lift` to avoid a double transform.
+                <TiltCard key={label} className="rounded-[var(--aios-radius-lg)]">
+                  <button
+                    type="button"
+                    disabled={!started}
+                    onClick={() => {
+                      setInput(prompt);
+                      taRef.current?.focus();
+                    }}
+                    className="surface-card group flex h-full w-full flex-col items-start gap-2 px-3.5 py-3 text-left disabled:opacity-50"
+                  >
+                    <Icon
+                      size={16}
+                      className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
+                    />
+                    <span className="flex flex-col leading-tight">
+                      <span className="text-[12.5px] font-medium text-[var(--color-text)]">{label}</span>
+                      <span className="text-[11px] text-[var(--color-faint)]">{sub}</span>
+                    </span>
+                  </button>
+                </TiltCard>
               ))}
             </div>
           )}
@@ -4440,23 +4461,26 @@ export function ChatPane({
                   <ResultFooter turn={b.turn} onRetry={retryTurn} />
                 );
               // Every block gets a ref'd wrapper (find jumps + minimap geometry).
-              // Entrances (fade-in-up) stay on the NON-streaming kinds only, as
-              // before, so token appends never retrigger an entrance.
-              const entrance =
-                b.kind === "user" || b.kind === "approval" || b.kind === "result"
-                  ? "fade-in-up"
-                  : "";
+              // Settled kinds get the BlurFade entrance (W5-3, replacing the CSS
+              // fade-in-up); streaming kinds stay a plain div so token appends
+              // never retrigger an entrance.
+              const animates =
+                b.kind === "user" || b.kind === "approval" || b.kind === "result";
+              const setBlockEl = (el: HTMLElement | null) => {
+                if (el) blockElsRef.current.set(b.id, el);
+                else blockElsRef.current.delete(b.id);
+              };
+              const blockClass = findCurrentId === b.id ? "find-current" : "";
               out.push(
-                <div
-                  key={b.id}
-                  ref={(el) => {
-                    if (el) blockElsRef.current.set(b.id, el);
-                    else blockElsRef.current.delete(b.id);
-                  }}
-                  className={`${entrance} ${findCurrentId === b.id ? "find-current" : ""}`}
-                >
-                  {inner}
-                </div>,
+                animates ? (
+                  <BlurFade key={b.id} ref={setBlockEl} className={blockClass}>
+                    {inner}
+                  </BlurFade>
+                ) : (
+                  <div key={b.id} ref={setBlockEl} className={blockClass}>
+                    {inner}
+                  </div>
+                ),
               );
             });
             return out;

@@ -131,6 +131,7 @@ import { basename as pathBasename } from "./lib/paths.ts";
 import { SidebarUsage } from "./components/SidebarUsage";
 import { AnimatePresence, m } from "motion/react";
 
+import { BorderBeam } from "./components/fx/BorderBeam";
 import { modalPop, overlayFade, paneExit, toastPop } from "./components/fx/motionTokens";
 import { trapTab } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
@@ -2972,7 +2973,9 @@ function App() {
       {/* conductor pill — listening / executing state, top-center */}
       <AnimatePresence>
       {conductorState !== "idle" && (
-        <m.div {...toastPop()} className="absolute left-1/2 top-4 z-50 flex items-center gap-2 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
+        <m.div {...toastPop()} className="absolute left-1/2 top-4 z-50 flex items-center gap-2 overflow-hidden rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
+          {/* the beam laps the pill while the conductor listens/executes */}
+          <BorderBeam duration={4} size={40} />
           <Mic
             size={13}
             className={
@@ -3299,20 +3302,25 @@ function NotificationCenter({
           </button>
         </div>
       </div>
-      {/* .stagger: the panel mounts fresh per open, so rows cascade once
-          (capped at 5 delays) instead of appearing as a slab */}
-      <div className="stagger min-h-0 flex-1 overflow-y-auto p-2">
+      {/* AnimatedList (W5-3): new items spring in at the top and the stack
+          settles via `layout` (activates once W5-4 swaps to domMax); exits
+          slide out. Replaces the capped CSS .stagger. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {notifications.length === 0 ? (
           <div className="grid h-28 place-items-center rounded-md border border-dashed border-[var(--color-border)] text-[11px] text-[var(--color-faint)]">
             no notifications yet
           </div>
         ) : (
-          notifications.map((item) => (
-            <div
+          <AnimatePresence initial={false}>
+          {notifications.map((item) => (
+            <m.div
               key={item.id}
-              className={`group flex gap-2 rounded-md px-2 py-2 transition-colors hover:bg-[var(--color-panel-2)] ${
-                item.read ? "opacity-65" : ""
-              }`}
+              layout
+              initial={{ opacity: 0, y: -12, scale: 0.97 }}
+              animate={{ opacity: item.read ? 0.65 : 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 14, transition: { duration: 0.16 } }}
+              transition={{ type: "spring", stiffness: 380, damping: 32 }}
+              className="group flex gap-2 rounded-md px-2 py-2 transition-colors hover:bg-[var(--color-panel-2)]"
             >
               <span
                 className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
@@ -3360,8 +3368,9 @@ function NotificationCenter({
               >
                 <X size={12} />
               </button>
-            </div>
-          ))
+            </m.div>
+          ))}
+          </AnimatePresence>
         )}
       </div>
     </div>
@@ -4685,15 +4694,13 @@ function PaneCard({
           esc to restore
         </div>
       )}
+      {/* activity glow (W5-3 BorderBeam): an accent light laps the pane border
+          while an agent run streams here — the upgrade of the old breathing
+          seam. z-30 so it reads above the chrome edge; reduce-motion → a static
+          accent ring (handled inside BorderBeam). Skipped while maximized (no
+          rounded border to ride). */}
+      {busy && !maximized && <BorderBeam className="z-30" duration={7} />}
       <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2.5">
-        {/* activity glow — a quiet breathing seam while an agent run streams
-            in this pane: ambient awareness, no dialog (reduce-motion safe). */}
-        {busy && (
-          <span
-            aria-hidden
-            className="mascot-idle pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-[var(--color-accent)]/60 to-transparent"
-          />
-        )}
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
           onPointerDown={(e) => {

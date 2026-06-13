@@ -585,6 +585,30 @@ select:focus-visible,
   pointer-events: none;
 }
 
+/* W5-3 .aios-shimmer — Magic UI ShimmerButton treatment, hover-ONLY (idle
+   shimmer violates calm). A single light sweep crosses on hover; the master
+   reduce-motion guard freezes it. Pair with the accent send CTA only (§6). */
+@keyframes aios-shimmer-sweep { from { transform: translateX(-160%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
+.aios-shimmer { position: relative; overflow: hidden; }
+.aios-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-accent-fg) 38%, transparent),
+    transparent
+  );
+  transform: translateX(-160%) skewX(-18deg);
+  opacity: 0;
+}
+.aios-shimmer:hover::after {
+  opacity: 1;
+  animation: aios-shimmer-sweep 0.9s var(--aios-ease-out);
+}
+
 /* idle-home corner pet — the one playful touch, compact + low-key. Reuses the
    full PetDashboardCompanion but strips its head text + action row and shrinks
    the world to a small glass tile in the corner so it never clutters the calm
