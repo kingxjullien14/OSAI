@@ -65,11 +65,20 @@ import type { AiosNotification } from "../lib/notifications";
 import type { ProjectInfo } from "../lib/run";
 import type { SidebarItem, SidebarState } from "../lib/sidebar";
 import type { UsageExtras } from "../lib/stats";
+import { AnimatePresence, m } from "motion/react";
+
 import { ProviderBlock, useUsageRates } from "./dashboard/UsageGlance";
 import { listWorkspaces, subscribeWorkspaces, type Workspace } from "../lib/workspaces";
 import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
 import { setPaletteMorphSource } from "../lib/paletteMorph";
+import { BlurText } from "./fx/BlurText";
+import { DotPattern } from "./fx/DotPattern";
+import { NumberTicker } from "./fx/NumberTicker";
+import { Spotlight } from "./fx/Spotlight";
+import { spotlightMove } from "./fx/spotlightGlow";
+import { useRotatingPlaceholder } from "./fx/useRotatingPlaceholder";
+import { useVanish } from "./fx/useVanish";
 
 const PetDashboardCompanion = lazy(() =>
   import("./PetPane").then((mod) => ({ default: mod.PetDashboardCompanion })),
@@ -159,6 +168,10 @@ export function IdleControlCenter({
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
+      {/* masked dot grid — quiet texture under the hero (pure SVG, no motion) */}
+      <DotPattern />
+      {/* one-shot accent spotlight sweep on arrival, settling over the blobs */}
+      <Spotlight />
       {/* faint ambient drift — identity, not decoration; reduce-motion kills it */}
       <div
         className="pointer-events-none absolute inset-0 overflow-hidden"
@@ -286,8 +299,9 @@ export function IdleControlCenter({
                     key={ws.name}
                     type="button"
                     onClick={() => onApplyWorkspace(ws)}
+                    onMouseMove={spotlightMove}
                     title={`restore workspace · ${ws.panes.length} ${ws.panes.length === 1 ? "pane" : "panes"}`}
-                    className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
+                    className="aios-spotlight flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
                   >
                     <SquareStack size={11} className="shrink-0 text-[var(--color-muted)]" />
                     {ws.name}
@@ -302,7 +316,8 @@ export function IdleControlCenter({
                     key={item.id}
                     type="button"
                     onClick={() => onOpenSidebarItem(item)}
-                    className="rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
+                    onMouseMove={spotlightMove}
+                    className="aios-spotlight rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
                   >
                     {item.label}
                   </button>
@@ -339,11 +354,23 @@ function Greeting() {
   const h = now.getHours();
   const part =
     h < 5 ? "still up" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+  // per-word blur-rise entrance (BlurText); the trailing word is the gradient
+  // name node so it keeps its accent shimmer. Keyed by part+name so a time-of-
+  // day flip or rename replays the entrance once (not on the 30s tick).
+  const partWords = part.split(" ");
+  const words: ReactNode[] = [
+    ...partWords.map((w, i) => (i === partWords.length - 1 ? `${w},` : w)),
+    <span key="name" className="aios-greet-name">
+      {name}
+    </span>,
+  ];
   return (
     <div className="aios-fade-in flex flex-col items-center gap-1">
-      <span className="text-[15px] font-medium tracking-tight text-[var(--color-text-2)]">
-        {part}, <span className="aios-greet-name">{name}</span>
-      </span>
+      <BlurText
+        key={`${part}|${name}`}
+        words={words}
+        className="text-[15px] font-medium tracking-tight text-[var(--color-text-2)]"
+      />
       <span className="font-mono text-[11px] tracking-[0.08em] text-[var(--color-muted)]">
         {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }).toLowerCase()}
       </span>
@@ -381,6 +408,14 @@ function HeroClock() {
 /** Last launched seed (↑ recall in the empty command line, depth 1). */
 const LAST_SEED_KEY = "aios.home.lastSeed";
 
+/** Rotating placeholder carousel — the line teaches its own grammar. */
+const PHRASES = [
+  "start something… ask, launch, or resume",
+  "$ run a command in a terminal",
+  "open a project by name",
+  "/ for the command palette",
+];
+
 /**
  * The single primary action. Looks + feels like the chat-pane composer surface:
  * rounded glass (radius-xl), focus glow + accent top-edge sheen, accent caret,
@@ -404,6 +439,12 @@ function CommandLine({
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
+
+  // Aceternity placeholders-and-vanish, split across two fx hooks: the rotating
+  // placeholder carousel (overlaid as an animated span, native placeholder
+  // blanked) + the canvas dissolve on submit. Both reduce-motion-safe.
+  const { canvasRef, vanishing, vanish } = useVanish(inputRef);
+  const ph = useRotatingPlaceholder(PHRASES, value.trim().length === 0);
 
   // the home's primary affordance receives focus on arrival — type-to-start,
   // no click required (it never stole focus before).
@@ -489,9 +530,12 @@ function CommandLine({
     } catch {
       /* quota / unavailable — recall just won't work */
     }
+    // dissolve the typed text (eye candy over the now-empty input) while the
+    // chat seeds immediately — vanish is fire-and-forget + reduce-motion-safe.
+    void vanish(text);
     onSeedChat(text);
     setValue("");
-  }, [value, onSeedChat, openPaletteMorphed, intents]);
+  }, [value, onSeedChat, openPaletteMorphed, intents, vanish]);
 
   // ↑ in the empty line recalls what you last launched (chat-style history,
   // depth 1 — the home is a launcher, not a transcript).
@@ -528,24 +572,52 @@ function CommandLine({
           size={17}
           className="shrink-0 text-[var(--color-muted)] transition-colors group-focus-within/cmd:text-[var(--color-accent)]"
         />
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp" && !value) {
-              e.preventDefault();
-              recallLast();
-            } else if (e.key === "Tab" && !e.shiftKey && intents[0]) {
-              // Tab takes the top intent chip (Enter keeps the chat contract)
-              e.preventDefault();
-              intents[0].run();
-            }
-          }}
-          spellCheck={false}
-          placeholder="start something… ask, launch, or resume"
-          className="min-w-0 flex-1 bg-transparent font-sans text-[15px] leading-relaxed text-[var(--color-text)] caret-[var(--color-accent)] placeholder:text-[var(--color-faint)] focus:outline-none"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp" && !value) {
+                e.preventDefault();
+                recallLast();
+              } else if (e.key === "Tab" && !e.shiftKey && intents[0]) {
+                // Tab takes the top intent chip (Enter keeps the chat contract)
+                e.preventDefault();
+                intents[0].run();
+              }
+            }}
+            spellCheck={false}
+            /* native placeholder blanked — the rotating overlay below owns it */
+            placeholder=""
+            aria-label={ph.text}
+            className="w-full bg-transparent font-sans text-[15px] leading-relaxed text-[var(--color-text)] caret-[var(--color-accent)] focus:outline-none"
+            style={{ opacity: vanishing ? 0 : 1 }}
+          />
+          {/* rotating placeholder — animated overlay (AnimatePresence), shown
+              only while empty; pointer-events-none so it never blocks the caret */}
+          {value.length === 0 && !vanishing && (
+            <AnimatePresence mode="wait">
+              <m.span
+                key={ph.index}
+                aria-hidden
+                className="aios-cmd-ph absolute inset-y-0 left-0 flex items-center font-sans text-[15px] leading-relaxed text-[var(--color-faint)]"
+                initial={{ opacity: 0, y: "0.6em" }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: "-0.6em" }}
+                transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {ph.text}
+              </m.span>
+            </AnimatePresence>
+          )}
+          {/* vanish canvas — dissolving text on submit; sized to the input */}
+          <canvas
+            ref={canvasRef}
+            className="aios-cmd-vanish absolute left-0 top-0"
+            style={{ opacity: vanishing ? 1 : 0 }}
+          />
+        </div>
         {hasContent ? (
           <button
             type="submit"
@@ -608,7 +680,7 @@ function AmbientLine({
     parts.push(
       <span key="streak" className="inline-flex items-center gap-1.5">
         <Flame size={13} className="aios-flame text-[var(--color-accent)]" fill="currentColor" />
-        <span className="font-mono text-[var(--color-text-2)]">{Math.round(streak)}</span>
+        <NumberTicker value={streak} className="font-mono text-[var(--color-text-2)]" />
         <span>day streak{bestStreak > streak ? ` · best ${bestStreak}` : ""}</span>
       </span>,
     );
@@ -693,8 +765,9 @@ function RecentProjects({
             <button
               key={p.root}
               onClick={() => onOpen(p)}
+              onMouseMove={spotlightMove}
               title={drift ? `open terminal in ${p.root}\n${drift}` : `open terminal in ${p.root}`}
-              className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+              className="aios-spotlight group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
             >
               <FolderGit2 size={13} className="shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-accent)]" />
               <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">
@@ -749,8 +822,9 @@ function QuickActions({
           key={action.label}
           type="button"
           onClick={action.run}
+          onMouseMove={spotlightMove}
           title={action.title}
-          className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+          className="aios-spotlight group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
         >
           <span className="text-[var(--color-muted)] group-hover:text-[var(--color-accent)]">{action.icon}</span>
           <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">{action.label}</span>

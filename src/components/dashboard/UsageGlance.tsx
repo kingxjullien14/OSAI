@@ -25,6 +25,7 @@ import {
 } from "../../lib/dashboard";
 import { usagePaceRisk, type UsagePaceRisk } from "../../lib/usagePace";
 import { reportDiag } from "../../lib/diag";
+import { NumberTicker } from "../fx/NumberTicker";
 
 const FIVE_HOURS = 5 * 3600;
 const SEVEN_DAYS = 7 * 24 * 3600;
@@ -57,7 +58,8 @@ function UsageBar({
         <span className="flex items-baseline gap-1.5">
           {reset && <span className="text-[var(--color-faint)]">resets {reset}</span>}
           <span className="font-mono text-[var(--color-text-2)]">
-            {Math.round(showRemaining ? 100 - pct : pct)}%{showRemaining ? " left" : ""}
+            <NumberTicker value={showRemaining ? 100 - pct : pct} suffix="%" />
+            {showRemaining ? " left" : ""}
           </span>
         </span>
       </div>
@@ -127,7 +129,8 @@ function ModelRows({
             <div className="flex items-baseline justify-between gap-2 text-[10px]">
               <span className="truncate lowercase text-[var(--color-muted)]">{name}</span>
               <span className="shrink-0 font-mono text-[var(--color-text-2)]">
-                {tag} {Math.round(showRemaining ? 100 - pct : pct)}%{showRemaining ? " left" : ""}
+                {tag} <NumberTicker value={showRemaining ? 100 - pct : pct} suffix="%" />
+                {showRemaining ? " left" : ""}
               </span>
             </div>
             <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">

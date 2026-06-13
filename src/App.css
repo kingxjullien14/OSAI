@@ -538,16 +538,51 @@ select:focus-visible,
 /* (the bento .aios-tile family lived here — deleted with the bento layout;
    grep confirms zero component references. PLAN §6 P0 dead-code item.) */
 
-/* greeting name — accent gradient text so the hero line carries brand colour. */
+/* greeting name — accent gradient text so the hero line carries brand colour.
+   W5-2: the gradient is now oversized + slowly panned (AnimatedGradientText
+   shimmer, accent→highlight, 8s, breath-quiet) — the master reduce-motion
+   guard freezes the pan. */
+@keyframes aios-greet-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 .aios-greet-name {
   background-image: linear-gradient(
     92deg,
     var(--color-accent),
-    color-mix(in srgb, var(--color-accent) 55%, var(--color-highlight))
+    color-mix(in srgb, var(--color-accent) 45%, var(--color-highlight)),
+    var(--color-accent)
   );
+  background-size: 200% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
+  animation: aios-greet-shimmer 8s linear infinite;
+}
+
+/* .aios-spotlight — mouse-follow glow for NEUTRAL rows/chips (the CardSpotlight
+   pattern reduced to a CSS var radial; fx/spotlight.ts writes --spot-x/y on
+   pointermove). Low-alpha --color-text, never accent (accent = primary only,
+   DESIGN.md §6). border-radius:inherit clips the wash to the host's corners. */
+.aios-spotlight { position: relative; }
+.aios-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--aios-dur-base) var(--aios-ease-out);
+  background: radial-gradient(
+    180px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    color-mix(in srgb, var(--color-text) 6%, transparent),
+    transparent 60%
+  );
+}
+.aios-spotlight:hover::before { opacity: 1; }
+
+/* W5-2 command line: rotating placeholder overlay + the vanish canvas both sit
+   over the input; neither ever intercepts the caret. */
+.aios-cmd-ph,
+.aios-cmd-vanish {
+  pointer-events: none;
 }
 
 /* idle-home corner pet — the one playful touch, compact + low-key. Reuses the
