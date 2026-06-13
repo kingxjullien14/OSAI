@@ -15,7 +15,11 @@ import {
   Sun,
 } from "lucide-react";
 
+import { AnimatePresence, m } from "motion/react";
+
 import { loadSettings, saveSettings } from "../lib/settings";
+import { HoverBorderGradient } from "./fx/HoverBorderGradient";
+import { SPRING } from "./fx/motionTokens";
 import { trapTab } from "./ui";
 import { defaultAiForProvider, engineForProvider, type ChatEngine } from "../lib/chat";
 import { detectProviders, type ProviderStatus } from "../lib/providerDetect";
@@ -101,8 +105,17 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   }
 
   const last = STEPS.length - 1;
-  const next = () => (step >= last ? finish() : setStep((s) => s + 1));
-  const back = () => setStep((s) => Math.max(0, s - 1));
+  // slide direction for the step transition (1 = forward, -1 = back).
+  const [dir, setDir] = useState(1);
+  const next = () => {
+    setDir(1);
+    if (step >= last) finish();
+    else setStep((s) => s + 1);
+  };
+  const back = () => {
+    setDir(-1);
+    setStep((s) => Math.max(0, s - 1));
+  };
 
   // Esc anywhere = skip-and-persist.
   useEffect(() => {
@@ -131,24 +144,36 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
         aria-label="welcome to aios"
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
-        {/* progress pips */}
+        {/* progress pips — width springs as the active step advances */}
         <div className="mb-5 flex items-center justify-center gap-1.5">
           {STEPS.map((s, i) => (
-            <span
+            <m.span
               key={s}
-              className="h-1.5 rounded-full transition-all"
-              style={{
-                width: i === step ? 22 : 6,
-                background:
-                  i <= step ? "var(--color-accent)" : "var(--color-border-strong)",
-                transitionDuration: "var(--aios-dur-base)",
-              }}
+              className="h-1.5 rounded-full"
+              style={{ background: i <= step ? "var(--color-accent)" : "var(--color-border-strong)" }}
+              initial={false}
+              animate={{ width: i === step ? 22 : 6 }}
+              transition={SPRING}
             />
           ))}
         </div>
 
-        {/* step body (re-keyed so each step animates in) */}
-        <div key={step} className="fade-in-up min-h-[230px]">
+        {/* step body — horizontal slide+fade between steps (direction-aware) */}
+        <div className="relative min-h-[230px]">
+          <AnimatePresence mode="wait" custom={dir} initial={false}>
+            <m.div
+              key={step}
+              custom={dir}
+              variants={{
+                enter: (d: number) => ({ opacity: 0, x: d * 40 }),
+                center: { opacity: 1, x: 0 },
+                exit: (d: number) => ({ opacity: 0, x: -d * 40 }),
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            >
           {step === 0 && (
             <div className="flex flex-col items-center text-center">
               <span className="brand-logo mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
@@ -337,6 +362,8 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           )}
+            </m.div>
+          </AnimatePresence>
         </div>
 
         {/* footer */}
@@ -348,14 +375,16 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           >
             {step === 0 ? "skip setup" : "back"}
           </button>
-          <button
-            type="button"
-            onClick={next}
-            className="btn-glow flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-[var(--color-accent-fg)]"
-          >
-            {step === 0 ? "get started" : step === last ? "enter aios" : "continue"}
-            <ArrowRight size={14} />
-          </button>
+          <HoverBorderGradient radius="rounded-[var(--aios-radius-pill)]">
+            <button
+              type="button"
+              onClick={next}
+              className="btn-glow flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-[var(--color-accent-fg)]"
+            >
+              {step === 0 ? "get started" : step === last ? "enter aios" : "continue"}
+              <ArrowRight size={14} />
+            </button>
+          </HoverBorderGradient>
         </div>
       </div>
     </div>

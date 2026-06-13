@@ -609,6 +609,17 @@ select:focus-visible,
   animation: aios-shimmer-sweep 0.9s var(--aios-ease-out);
 }
 
+/* W5-4 .aios-dock-icon — proximity magnify on the icons-only rail. The scale
+   var is written by fx/dockMagnify on pointermove; transform doesn't reflow,
+   so icons grow over the gap like a dock. Master guard freezes the transition
+   under reduce-motion (and the move handler bails, so the var stays 1). */
+.aios-dock-icon {
+  transform: scale(var(--dock-scale, 1));
+  transform-origin: center;
+  transition: transform var(--aios-dur-fast) var(--aios-ease-out);
+  will-change: transform;
+}
+
 /* idle-home corner pet — the one playful touch, compact + low-key. Reuses the
    full PetDashboardCompanion but strips its head text + action row and shrinks
    the world to a small glass tile in the corner so it never clutters the calm

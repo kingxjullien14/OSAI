@@ -132,6 +132,9 @@ import { SidebarUsage } from "./components/SidebarUsage";
 import { AnimatePresence, m } from "motion/react";
 
 import { BorderBeam } from "./components/fx/BorderBeam";
+import { dockMagnifyMove, dockMagnifyReset } from "./components/fx/dockMagnify";
+import { HoverBorderGradient } from "./components/fx/HoverBorderGradient";
+import { spotlightMove } from "./components/fx/spotlightGlow";
 import { modalPop, overlayFade, paneExit, toastPop } from "./components/fx/motionTokens";
 import { trapTab } from "./components/ui";
 import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
@@ -2708,6 +2711,9 @@ function App() {
               className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2 ${
                 topBarHidden ? "pt-8" : ""
               }`}
+              {...(iconsOnly
+                ? { onPointerMove: dockMagnifyMove, onPointerLeave: dockMagnifyReset }
+                : {})}
             >
               {/* home anchor — the brand mark is also the way BACK: one click
                   rests every pane to the idle home (they stay in the OPEN list
@@ -2725,7 +2731,7 @@ function App() {
                   }}
                   title="back to the idle home (panes stay restorable in OPEN)"
                   className={`group flex shrink-0 items-center rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--color-panel-2)] ${
-                    iconsOnly ? "justify-center" : "gap-2"
+                    iconsOnly ? "aios-dock-icon justify-center" : "gap-2"
                   }`}
                 >
                   <Home size={13} className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]" />
@@ -3747,7 +3753,7 @@ function SidebarRow({
       <button
         onClick={onSpawn}
         className={`flex min-w-0 flex-1 items-center text-[13px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)] ${
-          iconsOnly ? "min-h-11 justify-center px-0 py-2" : "gap-2.5 py-1.5 pr-1 text-left"
+          iconsOnly ? "aios-dock-icon min-h-11 justify-center px-0 py-2" : "gap-2.5 py-1.5 pr-1 text-left"
         }`}
       >
         {isLink && item.iconName === "favicon" && item.faviconUrl && !favBroken ? (
@@ -4089,13 +4095,15 @@ function SaveWorkspaceModal({
               >
                 cancel
               </button>
-              <button
-                type="submit"
-                disabled={!clean}
-                className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {overwrites ? "overwrite" : "save"}
-              </button>
+              <HoverBorderGradient radius="rounded-lg">
+                <button
+                  type="submit"
+                  disabled={!clean}
+                  className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {overwrites ? "overwrite" : "save"}
+                </button>
+              </HoverBorderGradient>
             </div>
           </div>
         </form>
@@ -4224,20 +4232,32 @@ function PaneOverview({
       {/* the gallery — empty space stays click-to-close (cards stop their own
           propagation), so a stray click anywhere dims out of Mission Control */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6">
-        {/* .stagger: cards fan in on each open (the overview fully unmounts on
-            close, so the cascade replays per open, capped at 5 delays) */}
-        <div className="stagger flex flex-wrap items-center justify-center gap-6">
+        {/* variants stagger (W5-4): cards fan in on each open (the overview
+            fully unmounts on close, so the cascade replays per open) — no
+            nth-child cap, plays nice with the modal's own AnimatePresence. */}
+        <m.div
+          className="flex flex-wrap items-center justify-center gap-6"
+          variants={{ show: { transition: { staggerChildren: 0.028 } } }}
+          initial="hidden"
+          animate="show"
+        >
           {panes.map((p, i) => {
             const hidden = hiddenKeys.includes(p.key);
             const isSel = i === sel;
             const Glyph = PANE_GLYPH[p.kind.type] ?? Layers;
             return (
-              <div key={p.key} className="flex flex-col items-center gap-2" style={{ width: cardW }}>
+              <m.div
+                key={p.key}
+                className="flex flex-col items-center gap-2"
+                style={{ width: cardW }}
+                variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+              >
                 <button
                   onMouseEnter={() => setSel(i)}
+                  onMouseMove={spotlightMove}
                   onMouseDown={(e) => { e.stopPropagation(); onPick(p.key); }}
                   style={{ width: cardW }}
-                  className={`group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[var(--color-pane)] text-left shadow-[var(--aios-shadow-pop)] transition-all duration-150 hover:-translate-y-1 ${
+                  className={`aios-spotlight group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[var(--color-pane)] text-left shadow-[var(--aios-shadow-pop)] transition-all duration-150 hover:-translate-y-1 ${
                     isSel
                       ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/60 scale-[1.02]"
                       : "border-[var(--color-border-strong)] hover:border-[var(--color-accent)]/40"
@@ -4277,10 +4297,10 @@ function PaneOverview({
                 <span className={`max-w-full truncate text-[12px] ${isSel ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}`}>
                   {p.label}
                 </span>
-              </div>
+              </m.div>
             );
           })}
-        </div>
+        </m.div>
       </div>
     </m.div>
       )}

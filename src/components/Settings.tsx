@@ -7,6 +7,7 @@ import {
   type ComponentType,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -44,6 +45,7 @@ import { listProjects, type ProjectInfo } from "../lib/run";
 import { AnimatePresence, m } from "motion/react";
 
 import { modalPop, overlayFade } from "./fx/motionTokens";
+import { SlidingIndicator } from "./fx/SlidingIndicator";
 import { trapTab } from "./ui";
 import {
   loadProjectsStore,
@@ -1045,6 +1047,17 @@ export function Settings({
     if (open) requestAnimationFrame(() => dialogRef.current?.focus());
   }, [open]);
 
+  // sliding nav indicator: measure the active row's offset within the rows
+  // container so the highlight glides between sections (W5-4, no layoutId).
+  const navRowsRef = useRef<HTMLDivElement>(null);
+  const [navRect, setNavRect] = useState({ top: 0, height: 0 });
+  useLayoutEffect(() => {
+    const c = navRowsRef.current;
+    if (!c) return;
+    const el = c.querySelector<HTMLElement>(`[data-nav-id="${section}"]`);
+    if (el) setNavRect({ top: el.offsetTop, height: el.offsetHeight });
+  }, [section, open]);
+
   /** Persist + update local state in one move. */
   const patch = (p: Partial<AppSettings>) => setS(saveSettings(p));
 
@@ -1076,23 +1089,30 @@ export function Settings({
             <img src="/mascot.png" alt="" className="h-5 w-5 rounded-full object-cover" />
             <span className="text-[12px] font-medium text-[var(--color-text)]">settings</span>
           </div>
-          {NAV.map(({ id, label, icon: Icon }) => {
-            const active = id === section;
-            return (
-              <button
-                key={id}
-                onClick={() => setSection(id)}
-                className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors"
-                style={{
-                  background: active ? "var(--color-accent-soft)" : "transparent",
-                  color: active ? "var(--color-accent)" : "var(--color-text-2)",
-                }}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
-            );
-          })}
+          {/* rows wrapper is `relative` so the gliding indicator can sit behind
+              the buttons and animate to the active row's measured offset */}
+          <div ref={navRowsRef} className="relative flex flex-col gap-0.5">
+            <SlidingIndicator
+              top={navRect.top}
+              height={navRect.height}
+              className="rounded-lg bg-[var(--color-accent-soft)]"
+            />
+            {NAV.map(({ id, label, icon: Icon }) => {
+              const active = id === section;
+              return (
+                <button
+                  key={id}
+                  data-nav-id={id}
+                  onClick={() => setSection(id)}
+                  className="relative z-10 flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors"
+                  style={{ color: active ? "var(--color-accent)" : "var(--color-text-2)" }}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         {/* content */}
