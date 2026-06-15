@@ -95,6 +95,7 @@ import { homeDir } from "../lib/fs";
 import { basename, dirname, toFileUrl } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
+import { normalizeUrl } from "../lib/urlNormalize";
 
 // Extensions the WKWebView can render in-page as a navigation target. Everything
 // else (a .docx, .xlsx, …) goes to the in-app viewer pane instead.
@@ -123,31 +124,6 @@ function originOf(u: string): string | null {
   } catch {
     return null;
   }
-}
-
-// Hosts that are dev/loopback → treat as a URL (not a search) AND default to
-// http:// (local dev servers rarely have TLS). `localhost`, `127.0.0.1`,
-// `[::1]`, and any bare `host:port` (a digits-only port after a colon) qualify.
-const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?::\d+)?(?:[/?#]|$)/i;
-// `something:1234` or `1.2.3.4:8080` — a bare host with an explicit port, no
-// scheme. These are almost always dev servers, so treat as a URL not a search.
-const HOST_PORT = /^[\w.-]+:\d{1,5}(?:[/?#]|$)/;
-// A bare IPv4 (with optional port already covered above) → URL.
-const BARE_IP = /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:[/?#]|$)/;
-
-function normalizeUrl(input: string): string {
-  const t = input.trim();
-  if (!t) return "";
-  if (/^https?:\/\//i.test(t)) return t;
-  // file:// / about: / other explicit schemes pass through untouched.
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t) || /^about:/i.test(t)) return t;
-  // localhost / loopback / bare IPv4 / host:port → a real URL. Loopback + bare
-  // IPs default to http:// (dev servers); a named host:port also http:// since
-  // it's the dev-server shape. Everything else (a public host) keeps https://.
-  if (LOOPBACK_HOST.test(t) || BARE_IP.test(t)) return `http://${t}`;
-  if (HOST_PORT.test(t)) return `http://${t}`;
-  if (/^[\w-]+(\.[\w-]+)+/.test(t)) return `https://${t}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
 }
 
 const DEFAULT_URL = "https://google.com";

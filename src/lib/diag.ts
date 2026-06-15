@@ -157,6 +157,42 @@ export function reportDiag(
   }
 }
 
+/** Per-scope rate limit for the user-visible side of `reportError` (the
+ *  console.warn). One failing scope (e.g. a polling loop against a dead backend)
+ *  must not spam the console — it surfaces once per scope per window, while every
+ *  distinct error still lands in the diag ring via `reportDiag` (which has its
+ *  own per-signature session dedupe). Adapted from ferazfhansurie@1023914. */
+const ERROR_WARN_WINDOW_MS = 5 * 60 * 1000;
+const lastWarnByScope = new Map<string, number>();
+
+/** Repo-wide replacement for silent `.catch(() => {})`:
+ *
+ *    somePromise.catch((e) => reportError("browser.nav", e));
+ *
+ *  Non-throwing: (1) console.warn with a `[scope]` prefix, rate-limited to once
+ *  per scope per ERROR_WARN_WINDOW_MS so a failing loop can't spam; (2) records
+ *  the error into the local diag sink via `reportDiag`. Like everything here it
+ *  MUST NOT throw — failures to report are swallowed so observability never
+ *  becomes a new crash source. */
+export function reportError(
+  scope: string,
+  err: unknown,
+  ctx?: Record<string, unknown>,
+): void {
+  try {
+    const now = Date.now();
+    const last = lastWarnByScope.get(scope) ?? 0;
+    if (now - last >= ERROR_WARN_WINDOW_MS) {
+      lastWarnByScope.set(scope, now);
+      // eslint-disable-next-line no-console
+      console.warn(`[${scope}]`, err);
+    }
+  } catch {
+    /* never throw */
+  }
+  reportDiag(scope, err, ctx); // already internally try/caught + deduped
+}
+
 /** Light usage event — kind:"usage". Fire-and-forget, seeds the "what I use"
  *  prioritization. Carries only the feature/action enums, never argument values
  *  or typed text. */
