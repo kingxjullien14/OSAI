@@ -55,7 +55,7 @@ function AttachAppsPaneInner({
   }, [refresh]);
 
   const visible = useMemo(
-    () => apps.filter((app) => app.bundle_id !== "com.adletic.aios"),
+    () => apps.filter((app) => app.bundle_id !== "com.julnazz.aios"),
     [apps],
   );
 

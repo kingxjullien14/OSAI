@@ -875,6 +875,19 @@ function App() {
 
     win
       .onCloseRequested(async (event) => {
+        // Windows/Linux: by default X quits (no dock/tray idiom). If the user
+        // enabled "minimize to tray", hide to the tray instead and keep running
+        // — the tray icon's Show/Quit (lib.rs) make it recoverable + quittable.
+        if (!isApple) {
+          if (loadSettings().minimizeToTray) {
+            event.preventDefault();
+            await win.hide().catch((e) => reportDiag("app.window", e, { action: "hideToTray" }));
+          }
+          return;
+        }
+        // macOS apps live in the dock — X backgrounds the window (hide + keep
+        // busy chats running, reachable again via the Reopen event). (Per-pane
+        // busy-chat prompts still guard closing individual chat panes.)
         const detachedNow = detachBusyChats(true);
         let alreadyBackgrounded = false;
         try {

@@ -59,6 +59,12 @@ export interface AppSettings {
   // reduce-motion still overrides it. One switch for the whole playful tier.
   funFx: boolean;
 
+  // minimizeToTray — when ON, closing the window (X) hides AIOS to the system
+  // tray and keeps it running (the tray icon's Show/Quit bring it back or
+  // exit) instead of quitting. OFF by default → X quits. macOS keeps its dock
+  // behavior regardless. Windows/Linux only.
+  minimizeToTray: boolean;
+
   // memory
   graphPhysicsStrength: number; // 0..100
 
@@ -120,6 +126,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisperUrl: "http://localhost:9000/inference",
   soundscape: false,
   funFx: true,
+  minimizeToTray: false,
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
 

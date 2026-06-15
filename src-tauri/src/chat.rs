@@ -2383,8 +2383,10 @@ pub fn list_chat_live() -> Vec<LiveChat> {
     })
 }
 
-/// True while any chat backend has an in-flight turn. Used by the app lifecycle
-/// guard so app-level quit (cmd+q/menu quit) cannot silently kill generation.
+/// True while any chat backend has an in-flight turn. Used by the macOS-only
+/// app-lifecycle guard so app-level quit cannot silently kill generation
+/// (Windows/Linux quit on close, so the guard — and this fn — compile out).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn has_busy_sessions() -> bool {
     with_sessions(|m| m.values().any(|s| s.busy.load(Ordering::SeqCst)))
 }

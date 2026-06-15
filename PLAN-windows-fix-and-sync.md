@@ -134,6 +134,14 @@ do it inline — optionally refactor them onto the helper for consistency.
 
 ## Part 2 — Fixes & features worth replicating from the branch
 
+> **SHIPPED 2026-06-14** (hand-ported; unrelated histories so no cherry-pick):
+> Batch A browser urlNormalize + reportError `f218ca5` · Batch B pty wave-1C
+> `1f18894` · Batch C editor save-conflict UX `b9a7765` · **LSP (TS/JS + Rust)
+> `910dd5d`** (Windows-adapted: node_bin Windows arm, rust-analyzer/.exe + PATH
+> resolution, `.no_window()` on every server spawn). Each gated (cargo/tsc/
+> tests/build) green. LSP needs server binaries installed to light up — see the
+> commit body. Remaining catalog below is reference for anything not yet pulled.
+
 **Constraint:** unrelated histories → no cherry-pick. Each is a manual port, and
 our `App.tsx` / `ChatPane.tsx` have diverged hard (Waves 4–5), so UI-heavy ones
 will need hand-merging, not diff-apply. Recommendation tiers below.

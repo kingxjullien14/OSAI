@@ -1178,6 +1178,15 @@ export function Settings({
                     />
                   </Row>
                   <Row
+                    label="minimize to tray"
+                    sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
+                  >
+                    <Toggle
+                      checked={s.minimizeToTray}
+                      onChange={(v) => patch({ minimizeToTray: v })}
+                    />
+                  </Row>
+                  <Row
                     label="dictation server"
                     sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
                   >
@@ -1584,7 +1593,7 @@ export function Settings({
                       AIOS cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v0.1.0
+                      v1.0.0 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">

@@ -24,6 +24,7 @@ mod telemetry;
 mod usage;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
 #[tauri::command]
@@ -235,6 +236,43 @@ pub fn run() {
             if let Err(e) = build_app_menu(app.handle()) {
                 eprintln!("[aios menu] failed to install app menu: {e}");
             }
+
+            // System tray: a Show / Quit menu + left-click-to-show, so a window
+            // hidden by the "minimize to tray" setting (or the macOS dock
+            // background) is always recoverable AND quittable. Created on every
+            // platform; harmless when unused. Soft-fail — a tray that won't
+            // build must never block startup.
+            let tray_menu = MenuBuilder::new(app.handle())
+                .item(&MenuItemBuilder::with_id("tray_show", "Show AIOS").build(app.handle())?)
+                .item(&PredefinedMenuItem::separator(app.handle())?)
+                .item(&MenuItemBuilder::with_id("tray_quit", "Quit AIOS").build(app.handle())?)
+                .build()?;
+            let mut tray = TrayIconBuilder::with_id("aios-tray")
+                .tooltip("AIOS")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "tray_show" => show_main_window(app),
+                    // a real quit — bypasses the macOS busy-keep-alive arm.
+                    "tray_quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
+                    }
+                });
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray = tray.icon(icon);
+            }
+            if let Err(e) = tray.build(app.handle()) {
+                eprintln!("[aios tray] failed to build tray icon: {e}");
+            }
             Ok(())
         })
         .on_menu_event(|app, event| handle_menu_event(app, event.id().0.as_str()))
@@ -374,14 +412,22 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| match event {
+        // `_app` (not `app`): the only consumers are the macOS-gated arms below,
+        // so on Windows/Linux the param is unused — the underscore keeps it
+        // warning-free there while staying usable in the mac arms.
+        .run(|_app, event| match event {
+            // macOS only: a busy agent keeps the app alive in the dock (X just
+            // hides the window; Reopen brings it back). Windows/Linux have no
+            // dock/tray here, so preventing exit would make X do nothing and
+            // leave an unquittable ghost — there, the app must quit on close.
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::ExitRequested { api, .. } if chat::has_busy_sessions() => {
                 api.prevent_exit();
-                show_main_window(app);
+                show_main_window(_app);
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
-                show_main_window(app);
+                show_main_window(_app);
             }
             // App is exiting — kill any GUI-spawned language servers so node /
             // rust-analyzer processes never outlive the cockpit as orphans.
@@ -392,6 +438,7 @@ pub fn run() {
         });
 }
 
+// Called by the tray (all platforms) + the macOS dock arms.
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_window("main") {
         let _ = window.show();
