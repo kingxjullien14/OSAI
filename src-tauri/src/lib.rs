@@ -23,6 +23,8 @@ mod stats;
 mod telemetry;
 mod usage;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
@@ -30,6 +32,20 @@ use tauri::{Emitter, Manager};
 #[tauri::command]
 fn read_telemetry() -> telemetry::Telemetry {
     telemetry::collect()
+}
+
+/// Whether closing the window hides to the tray (Windows/Linux) instead of
+/// quitting. The frontend mirrors the `minimizeToTray` setting into this via
+/// `set_close_to_tray`. macOS ignores it (it keeps the dock background). The
+/// AUTHORITATIVE close behavior lives in Rust (`on_window_event` below) so it
+/// can't be defeated by JS event-bridge timing — the earlier frontend-only
+/// `onCloseRequested` approach didn't reliably let the window close.
+#[derive(Default)]
+struct CloseToTray(AtomicBool);
+
+#[tauri::command]
+fn set_close_to_tray(state: tauri::State<CloseToTray>, enabled: bool) {
+    state.0.store(enabled, Ordering::SeqCst);
 }
 
 /// Builds the native macOS app menu and installs it.
@@ -210,6 +226,29 @@ pub fn run() {
         .manage(pty::PtyState::new())
         // App-cast (ScreenCaptureKit "native app as a pane" spike) session map.
         .manage(appcast::AppCastState::default())
+        // close-to-tray flag (mirrors the minimizeToTray setting; see below).
+        .manage(CloseToTray::default())
+        // AUTHORITATIVE window-close behavior (not the JS handler): on
+        // Windows/Linux, hide to the tray when the setting is on, otherwise let
+        // the window close (→ app exits). macOS is left to the frontend's dock
+        // logic. This is what actually makes X quit on Windows.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(not(target_os = "macos"))]
+                if window
+                    .app_handle()
+                    .state::<CloseToTray>()
+                    .0
+                    .load(Ordering::SeqCst)
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                // else (or on macOS): do nothing here — the close proceeds and
+                // the app exits, or the frontend's mac handler takes over.
+                let _ = (window, api);
+            }
+        })
         .setup(|app| {
             // Boot the local-first diagnostics store (Phase 0+1): resolve the
             // per-bundle app-data dir (portable — a fork gets its own dir, no
@@ -301,6 +340,7 @@ pub fn run() {
             lsp::lsp_stop,
             lsp::lsp_status,
             lsp::lsp_find_root,
+            set_close_to_tray,
             oracles::list_oracles,
             oracles::list_tmux_sessions,
             oracles::create_oracle,

@@ -147,7 +147,7 @@ import { loadProjectsStore, mergeProjects, subscribeProjects } from "./lib/proje
 import { isHttpPaneTarget, resolvePaneFileTarget, targetLabel } from "./lib/paneRouting";
 import { buildAppCommands } from "./lib/appCommands";
 import type { AgentAction } from "./lib/agentActions";
-import { isTauriRuntime } from "./lib/tauri";
+import { invoke, isTauriRuntime } from "./lib/tauri";
 import { reportDiag, reportUsage } from "./lib/diag";
 import {
   ensureMirrorPairing,
@@ -875,16 +875,11 @@ function App() {
 
     win
       .onCloseRequested(async (event) => {
-        // Windows/Linux: by default X quits (no dock/tray idiom). If the user
-        // enabled "minimize to tray", hide to the tray instead and keep running
-        // — the tray icon's Show/Quit (lib.rs) make it recoverable + quittable.
-        if (!isApple) {
-          if (loadSettings().minimizeToTray) {
-            event.preventDefault();
-            await win.hide().catch((e) => reportDiag("app.window", e, { action: "hideToTray" }));
-          }
-          return;
-        }
+        // Windows/Linux close behavior is OWNED BY RUST (on_window_event +
+        // the CloseToTray flag in lib.rs) — authoritative, immune to JS event
+        // timing. Do nothing here so the native close proceeds (→ the app
+        // quits) or Rust hides it to the tray when the setting is on.
+        if (!isApple) return;
         // macOS apps live in the dock — X backgrounds the window (hide + keep
         // busy chats running, reachable again via the Reopen event). (Per-pane
         // busy-chat prompts still guard closing individual chat panes.)
@@ -919,6 +914,19 @@ function App() {
       unlisten?.();
     };
   }, [flash]);
+
+  // Mirror the minimizeToTray setting into the Rust close flag (boot + on every
+  // settings change), so the authoritative on_window_event handler knows whether
+  // to hide-to-tray or quit. Windows/Linux only matters; harmless elsewhere.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    const sync = () =>
+      invoke("set_close_to_tray", { enabled: loadSettings().minimizeToTray }).catch((e) =>
+        reportDiag("app.window", e, { action: "setCloseToTray" }),
+      );
+    sync();
+    return subscribeSettings(sync);
+  }, []);
 
   const spawn = useCallback((kind: PaneContent, label: string): string => {
     const key = nextKey();

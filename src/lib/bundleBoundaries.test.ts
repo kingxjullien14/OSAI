@@ -203,7 +203,7 @@ test("web shell guards tauri-only runtime APIs", () => {
   assert.match(tauri, /function isTauriRuntime/);
   assert.match(tauri, /__TAURI_INTERNALS__/);
   assert.match(tauri, /Promise\.reject\(new Error\(`tauri runtime unavailable/);
-  assert.match(app, /import \{ isTauriRuntime \} from "\.\/lib\/tauri"/);
+  assert.match(app, /import \{[^}]*\bisTauriRuntime\b[^}]*\} from "\.\/lib\/tauri"/);
   assert.match(app, /if \(!isTauriRuntime\(\)\) return;\s+void getCurrentWindow\(\)\.startDragging\(\)\.catch/);
   assert.match(app, /if \(!isTauriRuntime\(\)\) return;\s+let disposed = false/);
   assert.match(app, /const win = getCurrentWindow\(\)/);
