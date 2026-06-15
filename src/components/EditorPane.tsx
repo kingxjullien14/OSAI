@@ -11,6 +11,14 @@ import { fileMtime, readTextFile, SaveConflictError, writeTextFile } from "../li
 import { chord } from "../lib/platform";
 import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { languageForPath } from "../lib/editorLanguage";
+import {
+  lspAcquire,
+  lspDidSave,
+  lspRelease,
+  lspStatusForPath,
+  onLspStatus,
+  type LspStatusEvent,
+} from "../lib/lsp/manager";
 import { openFileInPane, registerPaneDropSink } from "../lib/paneBus";
 import { PaneDropZone } from "./PaneDropZone";
 import { Skeleton } from "./ui";
@@ -74,6 +82,8 @@ export function EditorPane({
   const [conflict, setConflict] = useState(false);
   // "show diff" overlay (disk version vs the live buffer) while in conflict.
   const [diffOpen, setDiffOpen] = useState(false);
+  // Language-server status for THIS file (null = no server involved → no pill).
+  const [lsp, setLsp] = useState<LspStatusEvent | null>(null);
 
   // mtime captured at load (and re-based after each successful save). Drives the
   // save-conflict guard so an AI/human edit underneath us can't be clobbered.
@@ -85,6 +95,8 @@ export function EditorPane({
   // re-base it).
   const busyRef = useRef(false);
   const diffHostRef = useRef<HTMLDivElement>(null);
+  // in-flight LSP acquire for this path — cleanup chains release behind it.
+  const lspAcquireRef = useRef<Promise<void> | null>(null);
   // keep the latest save fn reachable from the monaco keybinding closure
   const saveRef = useRef<() => void>(() => {});
   const savingRef = useRef(false);
@@ -119,6 +131,11 @@ export function EditorPane({
       // open, its model already reflects unsaved edits — reuse it (don't reset to
       // the freshly-read disk content, which would drop those edits).
       const model = acquireModel(monaco, path, content);
+
+      // LSP didOpen (TRACK B). Async (resolves the workspace root + may boot a
+      // server); the cleanup releases AFTER the acquire settles so the
+      // refcounts pair correctly even when the pane closes mid-boot.
+      lspAcquireRef.current = lspAcquire(path, model).catch(() => {});
 
       editor = monaco.editor.create(hostRef.current, {
         model,
@@ -166,6 +183,7 @@ export function EditorPane({
           setDirty(false);
           setSavedAt(Date.now());
           setConflict(false);
+          lspDidSave(path); // tsserver/rust-analyzer re-check dependents promptly
         } catch (e) {
           if (disposed) return;
           if (e instanceof SaveConflictError) {
@@ -196,6 +214,11 @@ export function EditorPane({
 
     return () => {
       disposed = true;
+      // LSP didClose — awaited past the in-flight acquire so open/close always
+      // pair (a pane closed during server boot must not leak a doc ref).
+      const acquired = lspAcquireRef.current;
+      lspAcquireRef.current = null;
+      if (acquired) void acquired.finally(() => lspRelease(path));
       // Detach the model from the editor BEFORE disposing the editor so the
       // editor doesn't dispose a model another pane may still be using; then
       // release our ref-count (disposes the model only when the last pane drops it).
@@ -205,6 +228,13 @@ export function EditorPane({
       if (monacoRef) releaseModel(monacoRef, path);
     };
   }, [path, line, col]);
+
+  // status pill: re-query this file's server status on every manager event
+  // (events are coarse + rare — starting/ready/failed transitions).
+  useEffect(() => {
+    setLsp(lspStatusForPath(path));
+    return onLspStatus(() => setLsp(lspStatusForPath(path)));
+  }, [path]);
 
   // a tiny ⌘S affordance that also works when focus is in the header — scoped
   // to THIS pane (a window-wide listener made every open editor save at once).
@@ -379,6 +409,27 @@ export function EditorPane({
         </span>
         {dirty && !conflict && <span className="font-mono text-[10px] text-[var(--color-faint)]">{chord("S")} to save</span>}
         <span className="flex-1" />
+        {/* LSP status pill (TRACK B): only rendered once a server is involved */}
+        {lsp && lsp.status !== "stopped" && (
+          <span
+            className="flex items-center gap-1 rounded-full border border-[var(--color-border)] px-1.5 py-px font-mono text-[9.5px] text-[var(--color-faint)]"
+            title={`${lsp.lang} lsp · ${lsp.status}${lsp.detail ? ` — ${lsp.detail}` : ""}`}
+          >
+            <span
+              className={
+                "inline-block h-1.5 w-1.5 rounded-full " +
+                (lsp.status === "ready"
+                  ? "bg-[var(--color-success)]"
+                  : lsp.status === "starting"
+                    ? "animate-pulse bg-[var(--color-accent)]"
+                    : lsp.status === "failed"
+                      ? "bg-[var(--color-danger)]"
+                      : "bg-[var(--color-faint)]")
+              }
+            />
+            {lsp.status === "ready" ? "lsp" : lsp.status === "starting" ? "lsp…" : lsp.status === "none" ? "no lsp" : "lsp ✕"}
+          </span>
+        )}
         <button
           onClick={() => openPath(path).catch((e) => reportDiag("editor.open", e, { action: "openPath" }))}
           className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"

@@ -11,6 +11,7 @@ mod chat;
 mod device;
 mod diag;
 mod files;
+mod lsp;
 mod mac_apps;
 mod memory;
 mod monitor;
@@ -255,6 +256,13 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_reap_terminals,
+            // LSP supervisor (lsp.rs) — process spawn + framed pipe; protocol
+            // intelligence lives in src/lib/lsp/ on the TS side.
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
+            lsp::lsp_status,
+            lsp::lsp_find_root,
             oracles::list_oracles,
             oracles::list_tmux_sessions,
             oracles::create_oracle,
@@ -374,6 +382,11 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 show_main_window(app);
+            }
+            // App is exiting — kill any GUI-spawned language servers so node /
+            // rust-analyzer processes never outlive the cockpit as orphans.
+            tauri::RunEvent::Exit => {
+                lsp::kill_all_servers();
             }
             _ => {}
         });

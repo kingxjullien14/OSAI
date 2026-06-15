@@ -138,6 +138,27 @@ pub(crate) fn node_bin() -> Option<String> {
             }
         }
     }
+    #[cfg(windows)]
+    {
+        // Windows GUI apps inherit the user PATH, so node is usually reachable;
+        // probe the standard installer dir + PATH, then nvm-windows.
+        let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
+        let fixed = format!(r"{pf}\nodejs\node.exe");
+        if std::path::Path::new(&fixed).exists() {
+            return Some(fixed);
+        }
+        if let Ok(path) = std::env::var("PATH") {
+            for dir in path.split(';') {
+                if dir.is_empty() {
+                    continue;
+                }
+                let p = std::path::Path::new(dir).join("node.exe");
+                if p.exists() {
+                    return Some(p.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
     None
 }
 
