@@ -58,6 +58,7 @@ import {
   ShieldQuestion,
   Sparkles,
   Quote,
+  SlidersHorizontal,
   Square,
   Target,
   Terminal,
@@ -1035,7 +1036,7 @@ export function ChatPane({
   }, [input, cwd, memoryPanelOpen]);
 
   // open-dropdown tracking (single source so only one is open)
-  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced">(
+  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced" | "behavior">(
     null,
   );
 
@@ -3646,7 +3647,18 @@ export function ChatPane({
                   <Mic size={13} /> dictate
                 </span>
               </MenuItem>
-              <div className="mt-1 border-t border-[var(--color-border)] px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+            </Dropdown>
+            {/* agent behavior — access · context · effort, split out of the
+                wrench so neither dropdown is a long cluttered scroll. */}
+            <Dropdown
+              open={openMenu === "behavior"}
+              onToggle={() => setOpenMenu(openMenu === "behavior" ? null : "behavior")}
+              align="right"
+              triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+              trigger={<SlidersHorizontal size={15} />}
+              label="agent behavior — access, context, effort"
+            >
+              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 access
               </div>
               {PERMISSION_MODES.map((p) => (
@@ -3725,53 +3737,85 @@ export function ChatPane({
                 </>
               }
             >
-              {pickerModels.map((m) => {
-                const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
-                return (
-                  <MenuItem
-                    key={m.id}
-                    active={m.id === model.id}
-                    disabled={m.disabled}
-                    title={m.note}
-                    onClick={() => {
-                      if (m.disabled) return;
-                      setModel(m);
-                      // picking a model sets it as the global default (sticks
-                      // across panes + restarts). engine omitted = claude.
-                      // defaultAi is derived from the provider so "send to AI"
-                      // routing can never drift onto a different engine.
-                      const provider = `${m.engine ?? "claude"}-cli`;
-                      saveSettings({
-                        chatModel: m.id,
-                        chatProvider: provider,
-                        defaultAi: defaultAiForProvider(provider),
-                      });
-                      setOpenMenu(null);
-                    }}
-                  >
-                    <span className="flex items-center gap-2">
-                      {m.label}
-                      {m.disabled && m.note && (
-                        // chip stays terse ("not installed"); the row tooltip
-                        // carries the full why + the install one-liner.
-                        <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
-                          {m.note.split(" — ")[0]}
-                        </span>
-                      )}
-                      {win && (
-                        <span
-                          className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
-                          title={`this model's own ${win.tag === "7d" ? "weekly" : "5-hour"} window${
-                            win.resetsAt ? ` · resets ${resetIn(win.resetsAt)}` : ""
-                          }`}
-                        >
-                          {win.tag} {Math.round(Math.min(Math.max(100 - win.pct, 0), 100))}% left
-                        </span>
-                      )}
-                    </span>
-                  </MenuItem>
+              {(() => {
+                // group the flat model list by client (codex / claude / other)
+                // with section headers; surface groups that have an installed
+                // model first so the picker never leads with a wall of
+                // "not installed" rows.
+                const order = [
+                  { engine: "codex", label: "codex" },
+                  { engine: "claude", label: "claude" },
+                  { engine: "opencode", label: "other" },
+                ];
+                const groups = order
+                  .map((g) => ({
+                    ...g,
+                    rows: pickerModels.filter((m) => (m.engine ?? "claude") === g.engine),
+                  }))
+                  .filter((g) => g.rows.length > 0);
+                groups.sort(
+                  (a, b) =>
+                    Number(b.rows.some((m) => !m.disabled)) -
+                    Number(a.rows.some((m) => !m.disabled)),
                 );
-              })}
+                return groups.flatMap(({ engine, label, rows }, gi) => [
+                  <div
+                    key={`grp-${engine}`}
+                    className={`px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)] ${
+                      gi > 0 ? "mt-1 border-t border-[var(--color-border)]" : ""
+                    }`}
+                  >
+                    {label}
+                  </div>,
+                  ...rows.map((m) => {
+                    const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
+                    return (
+                      <MenuItem
+                        key={m.id}
+                        active={m.id === model.id}
+                        disabled={m.disabled}
+                        title={m.note}
+                        onClick={() => {
+                          if (m.disabled) return;
+                          setModel(m);
+                          // picking a model sets it as the global default (sticks
+                          // across panes + restarts). engine omitted = claude.
+                          // defaultAi is derived from the provider so "send to AI"
+                          // routing can never drift onto a different engine.
+                          const provider = `${m.engine ?? "claude"}-cli`;
+                          saveSettings({
+                            chatModel: m.id,
+                            chatProvider: provider,
+                            defaultAi: defaultAiForProvider(provider),
+                          });
+                          setOpenMenu(null);
+                        }}
+                      >
+                        <span className="flex items-center gap-2">
+                          {m.label}
+                          {m.disabled && m.note && (
+                            // chip stays terse ("not installed"); the row tooltip
+                            // carries the full why + the install one-liner.
+                            <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
+                              {m.note.split(" — ")[0]}
+                            </span>
+                          )}
+                          {win && (
+                            <span
+                              className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
+                              title={`this model's own ${win.tag === "7d" ? "weekly" : "5-hour"} window${
+                                win.resetsAt ? ` · resets ${resetIn(win.resetsAt)}` : ""
+                              }`}
+                            >
+                              {win.tag} {Math.round(Math.min(Math.max(100 - win.pct, 0), 100))}% left
+                            </span>
+                          )}
+                        </span>
+                      </MenuItem>
+                    );
+                  }),
+                ]);
+              })()}
             </Dropdown>
 
             {voicePhase === "transcribing" ? (
