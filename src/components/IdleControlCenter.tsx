@@ -218,10 +218,14 @@ export function IdleControlCenter({
         <Confetti trigger={confettiKey} />
       </div>
 
-      {/* ── centred hero stack: clock → command → usage. Generous breathing room.
-          Caps at a comfortable reading width and floats slightly above centre. */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-8">
-        <div className="flex w-full max-w-[760px] flex-col items-center gap-9">
+      {/* one centred, scrollable deck: the hero (clock + command + usage) AND
+          the launch row, centred as ONE group via min-h-full + justify-center.
+          This scrolls cleanly when tall (top stays reachable — no clipped
+          greeting) and keeps the launch row adjacent to the content instead of
+          slammed to the bottom with a dead band above it. */}
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col items-center justify-center gap-7 px-6 py-10">
+          <div className="flex w-full max-w-[760px] flex-col items-center gap-6">
           {/* greeting + clock — the focal point */}
           <div className="flex flex-col items-center gap-3 text-center">
             <Greeting />
@@ -286,13 +290,12 @@ export function IdleControlCenter({
 
           {/* one quiet ambient line — streak · focus · ctx */}
           <AmbientLine streak={streak} bestStreak={extras?.longestStreak ?? 0} focus={focus} ctxPct={ctxPct} />
-        </div>
-      </div>
+          </div>
 
-      {/* ── launch row — pinned to the bottom: recent · quick · pinned + status ── */}
-      <div className="relative z-10 shrink-0 border-t border-[var(--color-border)] px-6 pb-4 pt-4 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3">
-          <div className="grid gap-x-10 gap-y-4 lg:grid-cols-2">
+          {/* launch row — recent · quick + chips/status, the base of the deck */}
+          <div className="w-full border-t border-[var(--color-border)] pt-4">
+            <div className="flex w-full flex-col gap-2.5">
+              <div className="grid gap-x-10 gap-y-2.5 sm:grid-cols-2">
             <RecentProjects projects={recent} pulse={pulse} onOpen={onOpenProject} />
             <QuickActions
               onSpawn={onSpawn}
@@ -345,6 +348,8 @@ export function IdleControlCenter({
               onOpenMoneyAgents={onOpenMoneyAgents}
               onRevealSidebar={onRevealSidebar}
             />
+              </div>
+            </div>
           </div>
         </div>
       </div>
