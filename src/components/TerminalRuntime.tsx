@@ -38,7 +38,10 @@ import { onPetError, onPetUsage, onPetUserMessage } from "../lib/pet";
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 function bracketed(text: string): string {
-  return `${PASTE_START}${text}${PASTE_END}`;
+  // Paste-breakout guard (wave-1C): strip any embedded end-marker so a crafted
+  // clipboard payload can't close the bracket early and run its tail as typed
+  // keystrokes. (The backend pty_paste applies the same sanitization.)
+  return `${PASTE_START}${text.split(PASTE_END).join("")}${PASTE_END}`;
 }
 import { TerminalComposer } from "./TerminalComposer";
 import { PaneDropZone } from "./PaneDropZone";

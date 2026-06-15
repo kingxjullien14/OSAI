@@ -113,9 +113,38 @@ export async function spawnTmux(
   return invoke<number>("pty_spawn_tmux", { onData, socket, session, cols, rows });
 }
 
-/** Writes input to a session's PTY stdin. */
+/**
+ * Payload of the backend `pty-exit` Tauri event (structured form), emitted when
+ * a session's reader thread exits (PTY closed / process died). The backend has
+ * already evicted the session by the time this fires, so any further ptyWrite /
+ * ptyPaste to `id` rejects with "dead or unknown".
+ *
+ * MIGRATION NOTE: the backend emits `pty-exit` TWICE per exit — first a legacy
+ * bare `number` (the session id, consumed by TerminalRuntime's existing
+ * listener), then this structured object. New listeners must filter with
+ * `typeof e.payload === "object"`.
+ */
+export interface PtyExitEvent {
+  id: number;
+  exitCode: number | null;
+}
+
+/**
+ * Writes input to a session's PTY stdin. Rejects with
+ * `"pty session <id> is dead or unknown"` when the session has exited or never
+ * existed (was a silent no-op before wave-1C).
+ */
 export async function ptyWrite(id: number, data: string): Promise<void> {
   return invoke("pty_write", { id, data });
+}
+
+/**
+ * Bracketed-paste write: the backend wraps `text` in ESC[200~ … ESC[201~ so
+ * multiline content lands as ONE atomic paste — use this instead of chunked
+ * ptyWrite timer hacks when pasting. Rejects like ptyWrite on a dead session.
+ */
+export async function ptyPaste(id: number, text: string): Promise<void> {
+  return invoke("pty_paste", { id, text });
 }
 
 /** Propagates a resize to a session's PTY. */

@@ -65,6 +65,19 @@ fn split_valid_utf8(buf: &[u8]) -> (String, Vec<u8>) {
     }
 }
 
+/// Structured payload for the `pty-exit` event (wave-1C, ported from
+/// ferazfhansurie@64899fe). Mirrored as `PtyExitEvent` in `src/lib/pty.ts`.
+/// `exit_code` is `None` when the child couldn't be reaped quickly (or the
+/// reader stopped while the child was still alive, e.g. the frontend dropped its
+/// channel on a webview reload). Emitted ALONGSIDE the legacy bare-`id` event so
+/// the existing TerminalRuntime listener keeps working until it adopts this shape.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyExit {
+    id: u32,
+    exit_code: Option<u32>,
+}
+
 /// Core spawn: opens a PTY, runs `cmd`, wires a reader thread → `on_data`, and
 /// registers the session. Returns the new session id.
 fn spawn_internal(
@@ -125,9 +138,32 @@ fn spawn_internal(
         }
         // Child exited / reader EOF: evict the session BEFORE announcing the
         // exit, so any pty_write racing the exit notification can't land on a
-        // dead master. Dropping the Arc<Session> here also frees the PTY master.
-        sessions.lock().remove(&id);
+        // dead master (post-eviction, pty_write returns Err("dead or unknown")
+        // so the frontend gets a real signal instead of a black hole). Dropping
+        // the Arc<Session> here also frees the PTY master.
+        let removed = sessions.lock().remove(&id);
+        // Resolve the exit code WITHOUT blocking indefinitely: after EOF the
+        // child has normally already exited, but if the reader stopped because
+        // the frontend dropped the channel the child may still be alive —
+        // `wait()` would park this thread forever. Bounded try_wait instead.
+        let mut exit_code: Option<u32> = None;
+        if let Some(s) = &removed {
+            let mut child = s.child.lock();
+            for _ in 0..5 {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        exit_code = Some(status.exit_code());
+                        break;
+                    }
+                    Ok(None) => thread::sleep(std::time::Duration::from_millis(50)),
+                    Err(_) => break,
+                }
+            }
+        }
+        // Dual-emit: 1) legacy bare id (existing TerminalRuntime listener),
+        // 2) structured PtyExit (the canonical shape going forward).
         let _ = app.emit("pty-exit", id);
+        let _ = app.emit("pty-exit", PtyExit { id, exit_code });
     });
 
     let session = Arc::new(Session {
@@ -415,15 +451,41 @@ pub fn pty_spawn_tmux(
     }
 }
 
-/// Writes raw input bytes to a session's PTY stdin.
+/// Writes raw input bytes to a session's PTY stdin. Errs on a dead/unknown
+/// session (instead of the old silent-Ok black hole) so the frontend gets a
+/// real signal when a write lands after the child exited.
 #[tauri::command]
 pub fn pty_write(state: State<PtyState>, id: u32, data: String) -> Result<(), String> {
     let session = state.sessions.lock().get(&id).cloned();
-    if let Some(s) = session {
-        let mut w = s.writer.lock();
-        w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        w.flush().map_err(|e| e.to_string())?;
-    }
+    let Some(s) = session else {
+        return Err(format!("pty session {id} is dead or unknown"));
+    };
+    let mut w = s.writer.lock();
+    w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    w.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Bracketed-paste write (wave-1C, ported from ferazfhansurie@64899fe): wraps
+/// `text` in `ESC[200~ … ESC[201~` so a multiline paste arrives at the app as
+/// ONE atomic paste instead of N typed lines — replacing the frontend's chunked
+/// write timer hacks. Safe for every pane we spawn: tmux-backed panes parse the
+/// markers themselves; raw zsh/bash/fish shells enable bracketed paste by
+/// default. Errs on a dead/unknown session like pty_write.
+#[tauri::command]
+pub fn pty_paste(state: State<PtyState>, id: u32, text: String) -> Result<(), String> {
+    let session = state.sessions.lock().get(&id).cloned();
+    let Some(s) = session else {
+        return Err(format!("pty session {id} is dead or unknown"));
+    };
+    // Paste-breakout guard: an embedded end-marker would terminate the bracket
+    // early and let the remainder of the text execute as typed keystrokes.
+    let sanitized = text.replace("\x1b[201~", "");
+    let mut w = s.writer.lock();
+    w.write_all(b"\x1b[200~").map_err(|e| e.to_string())?;
+    w.write_all(sanitized.as_bytes()).map_err(|e| e.to_string())?;
+    w.write_all(b"\x1b[201~").map_err(|e| e.to_string())?;
+    w.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 

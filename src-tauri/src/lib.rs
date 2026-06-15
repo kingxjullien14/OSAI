@@ -251,6 +251,7 @@ pub fn run() {
             // plain PTY on Windows — see pty::pty_spawn_terminal.
             pty::pty_spawn_terminal,
             pty::pty_write,
+            pty::pty_paste,
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_reap_terminals,
