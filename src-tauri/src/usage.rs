@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::process::Stdio;
 
+use crate::proc::NoWindow;
+
 /// Treat the statusline file as live only when it was written recently —
 /// an ancient snapshot showing up as today's windows is worse than no data.
 /// 24h: generous because each window also self-describes via `resets_at`
@@ -79,6 +81,7 @@ fn claude_usage_from_oauth() -> Option<Value> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .no_window()
         .spawn()
         .ok()?;
     // headers ride stdin (--config -) so the token never appears in argv.
@@ -287,6 +290,7 @@ fn codex_usage_from_wham() -> Option<Value> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .no_window()
         .spawn()
         .ok()?;
     child.stdin.as_mut()?.write_all(
@@ -338,6 +342,7 @@ fn codex_usage_from_sqlite() -> Value {
              WHERE feedback_log_body LIKE '%codex.rate_limits%used_percent%' \
              ORDER BY ts DESC LIMIT 1;",
         )
+        .no_window()
         .output();
     let body = match out {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),

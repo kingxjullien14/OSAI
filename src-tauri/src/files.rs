@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::proc::NoWindow;
+
 #[derive(Serialize)]
 pub struct DirEntry {
     name: String,
@@ -146,6 +148,7 @@ pub struct ShellSourceStatus {
 pub fn git_status(path: String) -> Result<GitStatus, String> {
     let root = match std::process::Command::new("git")
         .args(["-C", &path, "rev-parse", "--show-toplevel"])
+        .no_window()
         .output()
     {
         Ok(o) if o.status.success() => {
@@ -155,6 +158,7 @@ pub fn git_status(path: String) -> Result<GitStatus, String> {
     };
     let out = std::process::Command::new("git")
         .args(["-C", &root, "status", "--porcelain", "--ignored=no"])
+        .no_window()
         .output()
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
@@ -193,6 +197,7 @@ pub fn shell_source_status() -> Result<ShellSourceStatus, String> {
 
     let branch = std::process::Command::new("git")
         .args(["-C", &root, "rev-parse", "--abbrev-ref", "HEAD"])
+        .no_window()
         .output()
         .ok()
         .filter(|o| o.status.success())
@@ -227,6 +232,7 @@ fn find_shell_source_root() -> Option<String> {
     candidates.into_iter().find_map(|path| {
         let root = std::process::Command::new("git")
             .args(["-C", &path, "rev-parse", "--show-toplevel"])
+            .no_window()
             .output()
             .ok()
             .filter(|o| o.status.success())
@@ -294,6 +300,7 @@ pub fn git_pulse(paths: Vec<String>) -> Vec<RepoPulse> {
         // branch — "" if detached / not a repo
         let branch = match std::process::Command::new("git")
             .args(["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
+            .no_window()
             .output()
         {
             Ok(o) if o.status.success() => {
@@ -305,6 +312,7 @@ pub fn git_pulse(paths: Vec<String>) -> Vec<RepoPulse> {
         // dirty — count of porcelain status lines
         let dirty = match std::process::Command::new("git")
             .args(["-C", &path, "status", "--porcelain", "--ignored=no"])
+            .no_window()
             .output()
         {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -325,6 +333,7 @@ pub fn git_pulse(paths: Vec<String>) -> Vec<RepoPulse> {
                 "--left-right",
                 "@{upstream}...HEAD",
             ])
+            .no_window()
             .output()
         {
             if o.status.success() {
@@ -958,6 +967,7 @@ pub fn convert_office_to_pdf(path: String) -> Result<String, String> {
         .arg("--outdir")
         .arg(&out_dir)
         .arg(src)
+        .no_window()
         .output()
         .map_err(|e| format!("failed to launch soffice: {e}"))?;
 
@@ -1281,6 +1291,7 @@ fn search_with_rg(
         .arg(query)
         .arg(".")
         .current_dir(root)
+        .no_window()
         .output()
         .map_err(|e| format!("failed to launch rg: {e}"))?;
 

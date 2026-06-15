@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 use chrono::Local;
 use serde_json::{json, Value};
 
+use crate::proc::NoWindow;
+
 /// Cached JSONL-telemetry fallback for activity/tokens/favorite-model, used when
 /// neither ccusage nor `stats-cache.json` is available (the typical Windows
 /// case). Walking every `~/.claude/projects/**/*.jsonl` is expensive, so the
@@ -143,9 +145,11 @@ fn read_live_usage() -> Option<LiveUsage> {
             Some(n) => std::process::Command::new(n)
                 .arg(bin)
                 .args(["daily", "--json", "--offline"])
+                .no_window()
                 .output(),
             None => std::process::Command::new(bin)
                 .args(["daily", "--json", "--offline"])
+                .no_window()
                 .output(),
         };
         if let Ok(out) = spawned {

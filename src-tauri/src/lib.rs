@@ -16,6 +16,7 @@ mod memory;
 mod monitor;
 mod oracles;
 mod plugins;
+mod proc;
 mod pty;
 mod stats;
 mod telemetry;

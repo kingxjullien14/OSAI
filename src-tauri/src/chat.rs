@@ -48,6 +48,8 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
 
+use crate::proc::NoWindow;
+
 /// How many raw output lines a detached session keeps for replay on reattach.
 /// Generous enough to reconstruct a long agentic run; oldest lines drop first.
 const REPLAY_CAP: usize = 6000;
@@ -57,6 +59,10 @@ fn detach_child_process(cmd: &mut Command) {
     {
         cmd.process_group(0);
     }
+    // Windows: suppress the child's console window. Every chat engine spawn
+    // (claude / codex / opencode / app-server) routes through here, so this one
+    // line keeps a built app from flashing a conhost on each turn.
+    cmd.no_window();
 }
 
 /// Which CLI backend drives a chat session. `claude` is a single PERSISTENT
