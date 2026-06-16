@@ -3619,68 +3619,11 @@ export function ChatPane({
               />
             </div>
           )}
-          <div className="flex flex-wrap items-center justify-end gap-1.5 px-3 pb-3 pt-1">
-            {/* advanced controls stay available, but the composer stays clean. */}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {!empty && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setComposerCollapsed(true);
-                }}
-                className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-                title="hide composer"
-              >
-                <ChevronDown size={15} />
-              </button>
-            )}
-            <Dropdown
-              open={openMenu === "advanced"}
-              onToggle={() => setOpenMenu(openMenu === "advanced" ? null : "advanced")}
-              align="right"
-              triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-              trigger={<Wrench size={15} />}
-              label="tools & session controls"
-            >
-              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                tools
-              </div>
-              <MenuItem
-                onClick={() => {
-                  setResumeQuery("");
-                  setOverlay("resume");
-                  setOverlayIdx(0);
-                  void loadResumeSessions();
-                  setOpenMenu(null);
-                  setTimeout(() => resumeSearchRef.current?.focus(), 0);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <History size={13} /> resume session
-                </span>
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  imgInputRef.current?.click();
-                  setOpenMenu(null);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <ImageIcon size={13} /> attach image
-                </span>
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  void micStart();
-                  setOpenMenu(null);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <Mic size={13} /> dictate
-                </span>
-              </MenuItem>
-            </Dropdown>
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
+            {/* LEFT — the agent-control pills (access · context · effort ·
+                model). On the fresh hero they stagger in; the action buttons
+                (tools · send) sit in their own right-aligned group. */}
+            <div className={`flex min-w-0 flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
             {/* access · context · effort — each its own labeled pill (was a
                 single bundled "behavior" menu). One click, reads at a glance,
                 live value on the pill, accent ring while open. */}
@@ -3915,6 +3858,69 @@ export function ChatPane({
                   }),
                 ]);
               })()}
+            </Dropdown>
+            </div>
+            {/* RIGHT — tools + actions, right-aligned (collapse · tools · voice ·
+                send), kept apart from the control pills on the left. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {!empty && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
+                  setComposerCollapsed(true);
+                }}
+                className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                title="hide composer"
+              >
+                <ChevronDown size={15} />
+              </button>
+            )}
+            <Dropdown
+              open={openMenu === "advanced"}
+              onToggle={() => setOpenMenu(openMenu === "advanced" ? null : "advanced")}
+              align="right"
+              triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+              trigger={<Wrench size={15} />}
+              label="tools & session controls"
+            >
+              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+                tools
+              </div>
+              <MenuItem
+                onClick={() => {
+                  setResumeQuery("");
+                  setOverlay("resume");
+                  setOverlayIdx(0);
+                  void loadResumeSessions();
+                  setOpenMenu(null);
+                  setTimeout(() => resumeSearchRef.current?.focus(), 0);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <History size={13} /> resume session
+                </span>
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  imgInputRef.current?.click();
+                  setOpenMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <ImageIcon size={13} /> attach image
+                </span>
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  void micStart();
+                  setOpenMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Mic size={13} /> dictate
+                </span>
+              </MenuItem>
             </Dropdown>
 
             {voicePhase === "transcribing" ? (
