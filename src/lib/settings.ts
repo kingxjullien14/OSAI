@@ -83,6 +83,12 @@ export interface AppSettings {
   // provider-base sweep in PLAN-superapp-uiux.md §13 (depends on detect_providers).
   chatProvider: string;
   chatModel: string | null;
+  // Sticky composer controls — like chatModel, the last-picked effort / access /
+  // context persist across panes + restarts (null = the built-in default). So
+  // the composer pills remember how you like to operate.
+  chatEffort: string | null;
+  chatAccess: string | null;
+  chatContextBudget: string | null;
 
   // where "send to AI" actions route (notes pane "send", future quick-sends):
   //   "codex-code"  → a terminal pane running `codex`
@@ -144,6 +150,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   chatProvider: "codex-cli",
   chatModel: null,
+  chatEffort: null,
+  chatAccess: null,
+  chatContextBudget: null,
 
   defaultAi: "codex-code",
 

@@ -969,9 +969,19 @@ export function ChatPane({
     );
   }, [availEngines]);
 
-  const [permission, setPermission] = useState(PERMISSION_MODES[0]);
-  const [effort, setEffort] = useState<(typeof EFFORTS)[number]>(EFFORTS[1]);
-  const [contextBudget, setContextBudget] = useState<ContextBudgetMode>("agent");
+  // Sticky controls: seed from the last-picked values (settings) so the composer
+  // pills persist across panes + restarts, like the model does. null/unknown →
+  // the built-in default.
+  const [permission, setPermission] = useState(
+    () => PERMISSION_MODES.find((p) => p.id === loadSettings().chatAccess) ?? PERMISSION_MODES[0],
+  );
+  const [effort, setEffort] = useState<(typeof EFFORTS)[number]>(
+    () => EFFORTS.find((e) => e.id === loadSettings().chatEffort) ?? EFFORTS[1],
+  );
+  const [contextBudget, setContextBudget] = useState<ContextBudgetMode>(() => {
+    const saved = loadSettings().chatContextBudget;
+    return CONTEXT_BUDGETS.some((b) => b.id === saved) ? (saved as ContextBudgetMode) : "agent";
+  });
   const effectiveBudget: ContextBudgetMode =
     contextBudget === "ultracode" || effort.ultra ? "ultracode" : contextBudget;
   // running context size (prompt tokens of the latest turn) → composer indicator
@@ -3697,6 +3707,7 @@ export function ChatPane({
                   active={p.id === permission.id}
                   onClick={() => {
                     setPermission(p);
+                    saveSettings({ chatAccess: p.id });
                     setOpenMenu(null);
                   }}
                 >
@@ -3743,11 +3754,16 @@ export function ChatPane({
                   title={b.sub}
                   onClick={() => {
                     setContextBudget(b.id);
+                    saveSettings({ chatContextBudget: b.id });
                     if (b.id === "ultracode") {
                       const ultra = EFFORTS.find((ef) => ef.ultra);
-                      if (ultra) setEffort(ultra);
+                      if (ultra) {
+                        setEffort(ultra);
+                        saveSettings({ chatEffort: ultra.id });
+                      }
                     } else if (effort.ultra) {
                       setEffort(EFFORTS[1]);
+                      saveSettings({ chatEffort: EFFORTS[1].id });
                     }
                     setOpenMenu(null);
                   }}
@@ -3795,6 +3811,7 @@ export function ChatPane({
                   active={ef.id === effort.id}
                   onClick={() => {
                     setEffort(ef);
+                    saveSettings({ chatEffort: ef.id });
                     setOpenMenu(null);
                   }}
                 >
