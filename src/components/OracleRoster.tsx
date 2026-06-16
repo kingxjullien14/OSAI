@@ -157,7 +157,6 @@ export function OracleRoster({
   };
 
   if (iconsOnly) {
-    if (chatpaneAgentsOnly) return <>{moneyAgentsSlot}</>;
     return (
       <div className="flex flex-col items-center gap-1 border-t border-[var(--color-border)] pt-2">
         <button
@@ -192,17 +191,19 @@ export function OracleRoster({
               />
             </button>
           ))}
+        {/* detached terminals (reattach) as terminal icons */}
         {!collapsed &&
-          otherSessions.slice(0, 4).map((s) => (
+          reattachable.slice(0, 4).map((s) => (
             <button
               key={`${s.socket}/${s.name}`}
-              onClick={() => onAttachTmux(s.socket, s.name)}
+              onClick={() => onAttachTmux(s.socket, s.name, s.label?.trim() || s.name)}
               className="grid h-8 w-8 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title={`attach ${s.socket}:${s.name}`}
+              title={`reattach ${s.label?.trim() || s.name}`}
             >
               <Terminal size={13} />
             </button>
           ))}
+        {moneyAgentsSlot}
       </div>
     );
   }
@@ -223,7 +224,7 @@ export function OracleRoster({
               <span className="text-[var(--color-faint)]">({oracles.length})</span>
             )}
           </button>
-          {!collapsed && nativeReady && !chatpaneAgentsOnly && (
+          {!collapsed && nativeReady && (
             <div className="flex items-center gap-0.5">
               <button
                 onClick={() => setCreating((v) => !v)}
@@ -264,7 +265,7 @@ export function OracleRoster({
 
         {!collapsed && (
         <div className="flex flex-col gap-1">
-          {nativeReady && !defaultRunning && !chatpaneAgentsOnly && (
+          {nativeReady && !defaultRunning && (
             <button
               onClick={spawnDefault}
               disabled={spawning}
@@ -286,8 +287,7 @@ export function OracleRoster({
               </div>
             </button>
           )}
-          {!chatpaneAgentsOnly &&
-            visibleOracles.map((o) => (
+          {visibleOracles.map((o) => (
               <OracleRow
                 key={o.session}
                 oracle={o}
@@ -315,7 +315,7 @@ export function OracleRoster({
         </div>
         )}
 
-        {!collapsed && hiddenOracles.length > 0 && !chatpaneAgentsOnly && (
+        {!collapsed && hiddenOracles.length > 0 && (
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setShowHidden((v) => !v)}
