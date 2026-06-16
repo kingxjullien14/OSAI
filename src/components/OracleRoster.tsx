@@ -354,9 +354,10 @@ export function OracleRoster({
       {/* ---- detached terminals (reattach surface) ---- */}
       {/* AIOS's own `aios-term-*` sessions that have no open pane right now —
           close a pane (or the whole app) and its session keeps running here, so
-          you can pop it back into a new pane. Always shown (not behind a toggle)
-          since this is the headline "reattach what I closed" affordance. */}
-      {!collapsed && reattachable.length > 0 && !chatpaneAgentsOnly && (
+          you can pop it back into a new pane. Shown even in chatpaneAgentsOnly
+          (the focused sidebar mode) because reattaching what you closed is a
+          headline feature; only the misc "other sessions" list stays hidden there. */}
+      {!collapsed && reattachable.length > 0 && (
         <div className="flex flex-col gap-1">
           <div className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">
             reattach ({reattachable.length})
