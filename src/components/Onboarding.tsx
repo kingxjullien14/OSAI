@@ -7,18 +7,27 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
+  FileCode,
+  Folder,
+  Globe,
+  MessageSquare,
   Monitor,
   Moon,
   Plug,
   RefreshCw,
   Sparkles,
   Sun,
+  Terminal,
 } from "lucide-react";
 
 import { AnimatePresence, m } from "motion/react";
 
 import { loadSettings, saveSettings } from "../lib/settings";
 import { HoverBorderGradient } from "./fx/HoverBorderGradient";
+import { BorderBeam } from "./fx/BorderBeam";
+import { BlurFade } from "./fx/BlurFade";
+import { SplitText } from "./fx/SplitText";
+import { DotPattern } from "./fx/DotPattern";
 import { SPRING } from "./fx/motionTokens";
 import { trapTab } from "./ui";
 import { defaultAiForProvider, engineForProvider, type ChatEngine } from "../lib/chat";
@@ -175,15 +184,50 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             >
           {step === 0 && (
-            <div className="flex flex-col items-center text-center">
-              <span className="brand-logo mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                <Sparkles size={26} />
+            <div className="relative flex flex-col items-center text-center">
+              {/* ambient texture — pure SVG, masked to the center, no motion */}
+              <DotPattern className="opacity-60" gap={20} />
+              {/* brand mark: accent-soft tile with a single light travelling its rim */}
+              <span className="brand-logo relative mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <Sparkles size={28} />
+                <BorderBeam duration={6} size={44} />
               </span>
-              <h1 className="hero-title mb-2">welcome to aios</h1>
-              <p className="max-w-[320px] text-[14px] leading-relaxed text-[var(--color-text-2)]">
-                a calm, agent-first workspace — chat, terminal, browser and files,
-                working together. let's set it up in a few quick steps.
+              <h1 className="hero-title mb-2">
+                <SplitText
+                  words={[
+                    "welcome",
+                    "to",
+                    <span key="brand" className="text-[var(--color-accent)]">
+                      AIOS
+                    </span>,
+                  ]}
+                  startDelay={0.08}
+                />
+              </h1>
+              <p className="mb-5 max-w-[320px] text-[14px] leading-relaxed text-[var(--color-text-2)]">
+                a calm, agent-first workspace — chat, terminal, browser, files and a
+                code editor, working together. let's set it up in a few quick steps.
               </p>
+              {/* what's inside — the five surfaces, eased in as one quiet block */}
+              <BlurFade className="flex flex-wrap items-center justify-center gap-1.5">
+                {(
+                  [
+                    { icon: MessageSquare, label: "chat" },
+                    { icon: Terminal, label: "terminal" },
+                    { icon: Globe, label: "browser" },
+                    { icon: Folder, label: "files" },
+                    { icon: FileCode, label: "editor" },
+                  ] as const
+                ).map((f) => (
+                  <span
+                    key={f.label}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-2.5 py-1 text-[11.5px] text-[var(--color-text-2)]"
+                  >
+                    <f.icon size={12} className="text-[var(--color-accent)]" />
+                    {f.label}
+                  </span>
+                ))}
+              </BlurFade>
             </div>
           )}
 
