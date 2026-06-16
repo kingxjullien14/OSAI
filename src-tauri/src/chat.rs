@@ -3114,7 +3114,7 @@ enabled = true
 command = "node"
 
 [mcp_servers.memory.env]
-CODEX_HOME = "/Users/firazfhansurie/.codex"
+CODEX_HOME = "/Users/aios/.codex"
 
 [features]
 js_repl = false
@@ -3185,7 +3185,7 @@ js_repl = false
         let id = "019e7f41-aaaa-bbbb-cccc-000000000001";
         let rollout = normal.join(format!("rollout-2026-06-01t02-18-15-{id}.jsonl"));
         let text = format!(
-            r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/Users/firazfhansurie/Repo/firaz/aios/shell","model":"gpt-5-codex"}}}}
+            r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/Users/aios/Repo/aios/shell","model":"gpt-5-codex"}}}}
 {{"type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"make resume and buttons commercial ready"}}]}}}}
 "#
         );
@@ -3198,7 +3198,7 @@ js_repl = false
         assert_eq!(sessions[0].engine, "codex");
         assert_eq!(sessions[0].model, "gpt-5-codex");
         assert_eq!(sessions[0].title, "make resume and buttons commercial ready");
-        assert_eq!(sessions[0].cwd, "/Users/firazfhansurie/Repo/firaz/aios/shell");
+        assert_eq!(sessions[0].cwd, "/Users/aios/Repo/aios/shell");
         let _ = std::fs::remove_dir_all(root);
     }
 }

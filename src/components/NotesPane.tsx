@@ -29,7 +29,7 @@ function relTime(unixSec: number): string {
 }
 
 /** Apple-Notes-style scratch pane. Notes are markdown files under
- *  `~/.aios/notes/` (the oracle reads/writes the same files), so firaz can dump
+ *  `~/.aios/notes/` (the oracle reads/writes the same files), so the user can dump
  *  ideas here and hand the whole note to AIOS in one shot via "send to oracle".
  *  Full CRUD: new / edit (autosave) / delete; live search; cross-process sync
  *  (a gentle poll surfaces notes the oracle adds or edits). */

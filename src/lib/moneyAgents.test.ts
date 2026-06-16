@@ -38,7 +38,6 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
     assert.match(seed, /mission: find leads/);
     assert.match(seed, /first task:/);
     assert.match(seed, /do not ask the user/);
-    assert.doesNotMatch(seed, /firaz/i);
     assert.doesNotMatch(seed, /gpt-5\.3-codex-spark/);
   });
 });
@@ -46,7 +45,6 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
 test("created agents derive paths from the runtime home, never a baked-in one", () => {
   withLocalStorage((store) => {
     const agent = createMoneyAgent({ label: "ops", mission: "keep things green" });
-    assert.doesNotMatch(agent.statePath, /firazfhansurie/);
     assert.doesNotMatch(agent.stdoutPath, /Library\/Logs/);
     // storage holds only the user's inputs — derived paths re-resolve at load.
     const stored = JSON.parse(store.get("aios.chatAgents.custom"));
@@ -59,7 +57,7 @@ test("created agents derive paths from the runtime home, never a baked-in one", 
   });
 });
 
-test("stored agents pointing at the original developer's machine self-heal", () => {
+test("stored agents pointing at another machine's home self-heal", () => {
   withLocalStorage((store) => {
     store.set(
       "aios.chatAgents.custom",
@@ -68,14 +66,14 @@ test("stored agents pointing at the original developer's machine self-heal", () 
           id: "legacy",
           label: "legacy",
           mission: "old agent",
-          statePath: "/Users/firazfhansurie/.aios/state/chat-agents/legacy/status.json",
-          cwd: "/Users/firazfhansurie/Repo/firaz",
+          statePath: "/Users/olduser/.aios/state/chat-agents/legacy/status.json",
+          cwd: "/Users/olduser/Repo/project",
         },
       ]),
     );
     const [agent] = loadCustomMoneyAgents();
-    assert.doesNotMatch(agent.statePath, /firazfhansurie/);
-    assert.doesNotMatch(agent.cwd, /firazfhansurie/);
+    assert.doesNotMatch(agent.statePath, /olduser/);
+    assert.doesNotMatch(agent.cwd, /olduser/);
   });
 });
 
@@ -120,7 +118,7 @@ test("summarizeMoneyAgentState reports neutral goal-oriented status for any agen
     assert.equal(summary.primaryMetric, "8 queued");
 
     // no forced-green special case for any id — health derives from state only.
-    const noState = summarizeMoneyAgentState({ ...config, id: "firaz", label: "firaz" }, {});
+    const noState = summarizeMoneyAgentState({ ...config, id: "scout", label: "scout" }, {});
     assert.equal(noState.health, "unknown");
     assert.doesNotMatch(noState.currentJob, /personal goals/);
   });
@@ -130,7 +128,6 @@ test("run commands speak the agent's own mission, not a stranger's business", ()
   const cmd = buildMoneyAgentRunCommand({ label: "scout", mission: "qualify leads" }, "scheduled");
   assert.match(cmd, /run a scheduled pulse for scout/);
   assert.match(cmd, /goal: qualify leads/);
-  assert.doesNotMatch(cmd, /firaz/i);
   assert.doesNotMatch(cmd, /sales for aios/);
 });
 

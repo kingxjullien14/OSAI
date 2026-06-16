@@ -1,5 +1,5 @@
 //! LSP process supervisor + dumb framed pipe (TRACK B). Ported from
-//! ferazfhansurie/aios-superapp@24b3855, with Windows-native binary resolution
+//! upstream/aios-superapp@24b3855, with Windows-native binary resolution
 //! + `.no_window()` so a built Windows app never flashes a console per server.
 //!
 //! Rust's ONLY jobs here: spawn a language server per (workspaceRoot, language)

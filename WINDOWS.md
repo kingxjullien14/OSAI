@@ -1,39 +1,55 @@
-# Running AIOS (Cockpit) on Windows
+<div align="center">
 
-This is the Windows port of the AIOS shell. The app is **Tauri v2 (Rust) + React/Vite**.
-Firaz develops on macOS (`origin/master`); this branch makes it run natively on
-Windows. All Windows changes are cross-platform-guarded (`cfg!(windows)` +
-`USERPROFILE` fallbacks), so they don't break the Mac build.
+# 🪟 Running AIOS on Windows
+
+**the native Windows build of the AIOS superapp.**
+
+Tauri v2 (Rust) + React/Vite — one codebase, native on Windows and macOS.
+
+[![back to README](https://img.shields.io/badge/←-README-blue)](./README.md)
+[![port notes](https://img.shields.io/badge/internals-WINDOWS--PORT.md-555)](./WINDOWS-PORT.md)
+
+</div>
 
 ---
 
-## One-time setup
+AIOS runs natively on Windows. Every Windows-specific change is cross-platform
+guarded (`cfg!(windows)` + `USERPROFILE` fallbacks), so the same tree still
+builds on macOS. This page is the **run guide**; for what was ported and how the
+internals differ, see [`WINDOWS-PORT.md`](./WINDOWS-PORT.md).
 
-Install these once (per machine):
+## 🧰 One-time setup
+
+Install these once per machine:
 
 | Tool | How | Why |
 | --- | --- | --- |
-| **Rust** (MSVC) | <https://rustup.rs> | Tauri backend |
+| **Rust** (MSVC) | <https://rustup.rs> | the Tauri backend |
 | **VS Build Tools 2022** + "Desktop development with C++" | <https://aka.ms/vs/17/release/vs_BuildTools.exe> | links the Rust binary |
-| **Node 18+** | <https://nodejs.org> | frontend (`npm`) |
-| **WebView2** | preinstalled on Win 11 | renders the UI |
-| **claude CLI** | `claude.exe` on PATH (you have it at `~\.local\bin`) | chat pane (runs on your subscription) |
+| **Node 18+** | <https://nodejs.org> | the frontend (`npm`) |
+| **WebView2** | preinstalled on Windows 11 | renders the UI |
+| **claude CLI** | `claude.exe` on `PATH` | the chat pane (runs on your subscription) |
 
-> We use **npm** on Windows (not pnpm) — pnpm 11's build-approval gate blocks
-> esbuild's install. This is the only deliberate divergence from Firaz's setup.
+> [!NOTE]
+> We use **npm** on Windows, not pnpm — pnpm 11's build-approval gate blocks
+> esbuild's install. This is the only deliberate divergence from the macOS setup.
 
 ### Optional (only if you want these panes live)
-- **LibreOffice** → office-file previews in the Files pane
-- **MotionBoards key** → write it to `%USERPROFILE%\.aios\state\motion.key`
-  (one line, `mb_...`). Never commit it. The Studio/Motion pane reads it from there.
 
----
+| Want | Install |
+| --- | --- |
+| Office-file previews in the Files pane | **LibreOffice** (`soffice.exe` on `PATH`) |
+| Editor diagnostics / hover / go-to-def | `npm i -g typescript-language-server` · `rustup component add rust-analyzer` |
+| The Codex / Opencode chat engines | `npm i -g @openai/codex` · `npm i -g opencode-ai` |
+| Push-to-talk voice | a local **whisper.cpp** server on `:9000` (set the endpoint in Settings → general) |
 
-## Run it
+## ▶️ Run it
+
+A helper script wraps everything:
 
 ```powershell
-.\scripts\run.ps1            # install deps (first run) + launch dev app
-.\scripts\run.ps1 -Build     # produce an .msi/.exe installer instead
+.\scripts\run.ps1            # install deps (first run) + launch the dev app
+.\scripts\run.ps1 -Build     # produce an installer (.exe / .msi) instead
 ```
 
 Or manually:
@@ -43,77 +59,69 @@ npm install
 npx tauri dev
 ```
 
-First Rust build takes a few minutes; after that it's cached and fast.
+The first Rust build takes a few minutes; after that it's cached and fast.
 
----
+## ✅ What works vs. what's inert
 
-## Syncing Firaz's updates
+Nothing crashes — Unix-only integrations just show empty and stay quiet.
 
-Firaz pushes to `origin/master` constantly. Two ways to stay current:
+**Working on Windows**
 
-### Automatic (recommended) — set it once, forget it
+- **Terminals** — PowerShell over ConPTY (open as many as you like).
+- **Chat** — `claude.exe`, plus Codex / Opencode if those CLIs are installed.
+- **Files** + office preview · **Code editor** (Monaco) + **language servers**
+  (TS/JS + Rust, once the server binaries are installed).
+- **Browser** — native WebView2 (real Chromium, profiles, screenshots).
+- **App-window mirroring** — cast another app's window into a pane via
+  `Windows.Graphics.Capture` (display-only for now).
+- **Pulse / usage dashboard** (your real stats), **device & battery** panel.
+- **Notes**, **Plugins/skills**, **Notifications**, screenshots, clipboard
+  "send to chat", theming, onboarding, and the command palette.
+- **Voice** — works anywhere a whisper.cpp server is reachable (same as macOS).
+- **Self-update** — signed builds from GitHub Releases (see below).
+
+**Inert on Windows** (need a Unix host)
+
+- The **oracle roster** and **persistent terminals** — both need `tmux`, so
+  Windows terminals work but don't survive an app quit.
+- **Money agents** — `launchd`-backed daemons.
+- **Bridges** status — detected via `launchctl` / process scans.
+
+## ⬆️ Updating
+
+AIOS updates itself: the in-app updater pulls **signed** builds from this repo's
+GitHub Releases, verifies the signature, installs, and relaunches — quietly at
+boot and from Settings › software update. See [`RELEASING.md`](./RELEASING.md)
+for how signed releases are produced.
+
+To track the source instead of release builds, pull this repo and relaunch:
+
 ```powershell
-.\scripts\aios-watch.ps1 -Install     # background task, checks every 15 min
-.\scripts\aios-watch.ps1 -Uninstall   # stop it
-```
-Or watch live in a terminal: `.\scripts\aios-watch.ps1` (5-min loop, Ctrl+C to stop).
-It auto-merges his commits, reinstalls deps, and rebuilds — logging to
-`scripts\aios-watch.log`. It never pushes, never clobbers uncommitted work, and
-on a real conflict it backs out and waits for you (so the tree is never left
-half-merged). It does NOT auto-relaunch the app — run `.\scripts\run.ps1` to pick
-up an update.
-
-### Manual — one command, on demand
-```powershell
-.\scripts\aios-sync.ps1 -Preview   # SEE what he changed (no changes made)
-.\scripts\aios-sync.ps1            # merge his changes + npm install + rebuild
-.\scripts\aios-sync.ps1 -Push      # commit + push our branch for the team
-```
-
-What the sync does:
-1. `git fetch` and shows you exactly which commits + files Firaz changed.
-2. Merges `origin/master` into our branch.
-3. Auto-resolves the one expected conflict (`pnpm-lock.yaml` — we use npm).
-4. If Firaz changed the *same lines* we did, it **stops and lists the files** for
-   a human to resolve (rare — our changes are isolated to `cfg!(windows)` blocks).
-5. Reinstalls deps, type-checks the frontend, and compiles the Rust backend — so
-   you know immediately if one of his changes needs a Windows tweak.
-
-Teammates get the Windows-ready version with:
-
-```powershell
-git pull origin <this-branch>
+git pull origin main
 .\scripts\run.ps1
 ```
 
----
+> [!NOTE]
+> The original macOS repo lives on a separate `upstream` remote and has an
+> unrelated history — its changes are hand-ported, not merged. The in-app
+> updater is the supported way to stay current.
 
-## What works on Windows vs. what's inert
+## 🔧 Windows surface area (for reviewers)
 
-**Working:** terminals (PowerShell), chat (`claude.exe`), files + office preview,
-browser, memory graph, database, settings, the homescreen dashboard (your real
-usage stats), screenshots, clipboard "send to chat", and the device/battery panel.
+The Windows-specific code, so you know what to look at:
 
-**Inert** (Unix-only integrations — they show empty, never crash): the oracle
-roster + automations (need `tmux`), bridges status (`launchctl`), and
-push-to-talk voice. These need a Unix host and aren't part of the Windows daily
-driver.
-
----
-
-## What was changed for Windows (so reviewers know the surface area)
-
-- `src-tauri/src/lib.rs` — alias `HOME`→`%USERPROFILE%` at startup (lights up all
-  data sources: usage, memory, files).
-- `src-tauri/src/pty.rs` — terminal launches PowerShell (not `/bin/zsh`).
-- `src-tauri/src/chat.rs` — resolve `claude.exe`; no console flash (`CREATE_NO_WINDOW`).
-- `src-tauri/src/device.rs` — battery via `GetSystemPowerStatus`; home-drive disk.
-- `src-tauri/src/stats.rs` — JSONL-telemetry fallback when ccusage/cache absent.
-- `src-tauri/src/memory.rs` — Windows path encoding; `memory_focus` command.
-- `src-tauri/src/browser.rs` — Windows UA; screenshot + clipboard via PowerShell.
-- `src-tauri/src/files.rs` — `soffice.exe`, temp dir, `file://` URLs, USERPROFILE.
-- `src/components/TerminalPane.tsx` — focus the terminal so you can type; WebGL
-  context-loss fallback.
-- `src/lib/settings.ts` + `IdleDashboard`/`AccountMenu`/`Settings` — your name is
-  a setting (defaults to "faeez"), shown in the greeting + account row.
-- `src-tauri/tauri.conf.json` — `beforeDev/BuildCommand` use `npm`.
+| File | What it does on Windows |
+| --- | --- |
+| `src-tauri/src/lib.rs` | aliases `HOME` → `%USERPROFILE%` at startup (lights up usage / memory / files) |
+| `src-tauri/src/proc.rs` | `NoWindow` trait → `CREATE_NO_WINDOW` on every child spawn, so a built app never flashes a console |
+| `src-tauri/src/pty.rs` | terminals launch PowerShell over ConPTY; `cfg(windows)` non-persistent path (no tmux) |
+| `src-tauri/src/chat.rs` | resolves `claude.exe` / `codex` / `opencode`; no console flash |
+| `src-tauri/src/wincast.rs` | app-window mirroring via `Windows.Graphics.Capture` + a child HWND |
+| `src-tauri/src/lsp.rs` | Windows `node` arm, `rust-analyzer.exe` / PATH resolution, no-window spawns |
+| `src-tauri/src/device.rs` | battery via `GetSystemPowerStatus`; home-drive disk |
+| `src-tauri/src/stats.rs` | JSONL-telemetry fallback when ccusage/cache is absent |
+| `src-tauri/src/memory.rs` | Windows path encoding for the memory-focus vault |
+| `src-tauri/src/browser.rs` | Windows UA; screenshot + clipboard via PowerShell |
+| `src-tauri/src/files.rs` | `soffice.exe`, OS temp dir, `file://` URLs, `USERPROFILE` |
+| `src/components/TerminalPane.tsx` | focuses the terminal so you can type; WebGL context-loss fallback |
+| `src-tauri/tauri.conf.json` | `npm` dev/build hooks, NSIS installer, signed GitHub-Releases updater |

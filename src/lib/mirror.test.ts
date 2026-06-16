@@ -9,7 +9,7 @@ test("mirror snapshot exposes web-safe pane state and controls", () => {
     panes: [
       { key: "chat-1", label: "chat", kind: { type: "chat" } },
       { key: "web-1", label: "youtube", kind: { type: "browser", url: "https://youtube.com" } },
-      { key: "file-1", label: "secret", kind: { type: "editor", path: "/Users/firaz/secret.ts", name: "secret.ts" } },
+      { key: "file-1", label: "secret", kind: { type: "editor", path: "/Users/aios/secret.ts", name: "secret.ts" } },
     ],
     hiddenKeys: ["file-1"],
     activeKey: "web-1",

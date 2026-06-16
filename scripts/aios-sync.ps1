@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  Sync firaz's upstream changes into the Windows branch - and push for the team.
+  Sync the upstream upstream changes into the Windows branch - and push for the team.
 
 .DESCRIPTION
-  Firaz develops the shell on origin/master (macOS). This keeps our Windows
+  Upstream develops the shell on origin/master (macOS). This keeps our Windows
   branch current with his work and rebuilds, in one command. All our Windows
   changes are cross-platform (cfg(windows) guards + USERPROFILE fallbacks), so
   merging his macOS changes is almost always clean. The one expected conflict -
@@ -13,13 +13,13 @@
   characters would corrupt parsing. Keep this file ASCII.
 
 .PARAMETER Preview
-  Only SHOW what firaz changed upstream (incoming commits + files). No merge.
+  Only SHOW what upstream changed upstream (incoming commits + files). No merge.
 
 .PARAMETER Push
   Commit any local changes and push this branch to origin (for the team).
 
 .EXAMPLE
-  .\scripts\aios-sync.ps1 -Preview      # see what's new from firaz
+  .\scripts\aios-sync.ps1 -Preview      # see what's new from upstream
   .\scripts\aios-sync.ps1               # pull his changes + rebuild
   .\scripts\aios-sync.ps1 -Push         # publish our branch for the team
 #>
@@ -44,11 +44,11 @@ Say "fetching origin..."
 git fetch origin --quiet
 
 $incoming = (git rev-list --count "HEAD..origin/master").Trim()
-Say "firaz has $incoming new commit(s) on origin/master not in your branch."
+Say "upstream has $incoming new commit(s) on origin/master not in your branch."
 
 if ($incoming -ne "0") {
   Write-Host ""
-  Write-Host "-- what firaz changed -----------------------------" -ForegroundColor Yellow
+  Write-Host "-- what upstream changed -----------------------------" -ForegroundColor Yellow
   git log --oneline --no-decorate "HEAD..origin/master"
   Write-Host ""
   Write-Host "-- files he touched -------------------------------" -ForegroundColor Yellow
@@ -80,7 +80,7 @@ if ($Preview) {
 }
 
 if ($incoming -eq "0") {
-  Say "already up to date with firaz. nothing to merge." "Green"
+  Say "already up to date with upstream. nothing to merge." "Green"
   exit 0
 }
 
@@ -112,7 +112,7 @@ if ($mergeFailed) {
     }
   }
   if ($remaining.Count -gt 0) {
-    Write-Host "x Real conflicts need a human (likely firaz changed the same lines we did):" -ForegroundColor Red
+    Write-Host "x Real conflicts need a human (likely upstream changed the same lines we did):" -ForegroundColor Red
     $remaining | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Write-Host "  Resolve them, then run:  git commit  &&  .\scripts\aios-sync.ps1" -ForegroundColor DarkGray
     exit 1
@@ -128,15 +128,15 @@ if ($LASTEXITCODE -ne 0) { Die "npm install failed." }
 
 Say "type-checking frontend (tsc)..."
 npx tsc --noEmit
-if ($LASTEXITCODE -ne 0) { Die "frontend type-check failed - firaz's changes may need a Windows tweak." }
+if ($LASTEXITCODE -ne 0) { Die "frontend type-check failed - the upstream changes may need a Windows tweak." }
 
 Say "compiling Rust backend (cargo)..."
 Push-Location src-tauri
 cargo build --color never 2>&1 | Select-String -Pattern "error\[|^error:|Finished" | ForEach-Object { Write-Host "    $_" }
 $cargoOk = ($LASTEXITCODE -eq 0)
 Pop-Location
-if (-not $cargoOk) { Die "cargo build failed - firaz's changes may need a Windows tweak (check the errors above)." }
+if (-not $cargoOk) { Die "cargo build failed - the upstream changes may need a Windows tweak (check the errors above)." }
 
 Write-Host ""
-Say "synced firaz's $incoming commit(s) and rebuilt clean." "Green"
+Say "synced the upstream $incoming commit(s) and rebuilt clean." "Green"
 Say "  launch with:  .\scripts\run.ps1     publish with:  .\scripts\aios-sync.ps1 -Push" "Green"

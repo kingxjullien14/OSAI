@@ -34,6 +34,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": ["resources/*"],
     "createUpdaterArtifacts": true,
     "publisher": "Jul.Nazz",
     "copyright": "© 2026 Jul.Nazz",
@@ -48,7 +49,6 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Apple Development: Firaz Fhansurie (KL78M575FW)",
       "entitlements": "./Entitlements.plist"
     },
     "windows": {

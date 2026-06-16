@@ -844,7 +844,7 @@ function App() {
       .filter((p) => p.kind.type === "shell")
       .map((p) => termSessionSuffix(p.key))
       .filter(Boolean);
-    reapTerminals(keep).catch(() => {
+    reapTerminals(keep, loadSettings().terminalSocket || "aios").catch(() => {
       /* no tmux server / non-AIOS box → nothing to reap */
     });
     // mount-once: the restored layout is fixed at boot; later pane churn is
@@ -959,7 +959,7 @@ function App() {
     // EXIT FULLSCREEN ON ANY NEW-PANE SPAWN (R2a FIX 3): if a pane currently owns
     // OS fullscreen / maximize, a freshly-spawned pane would be invisible behind
     // it (the maximized pane fills the window + every other pane deactivates). Drop
-    // fullscreen first so the new pane actually appears in the grid and firaz SEES
+    // fullscreen first so the new pane actually appears in the grid and the user SEES
     // it. Functional setState reads the live value without a deps dependency.
     setMaximizedKey((m) => {
       if (m !== null) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
@@ -1068,7 +1068,7 @@ function App() {
   // Backend → in-app notification bridge. The chat backend emits `aios-notify`
   // when a BACKGROUNDED chat finishes its turn (chat.rs notify_done). We turn it
   // into a clickable `chat.done` notification whose target reattaches that exact
-  // session — firaz's #1 ask. (The OS toast still fires from the backend; this is
+  // session — the user's #1 ask. (The OS toast still fires from the backend; this is
   // the in-app bell + record. Wiring the OS-toast CLICK is Phase 2.)
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -1296,7 +1296,8 @@ function App() {
     [spawn],
   );
   const addTmux = useCallback(
-    (socket: string, session: string) => spawn({ type: "tmux", socket, session }, session),
+    (socket: string, session: string, label?: string) =>
+      spawn({ type: "tmux", socket, session }, label?.trim() || session),
     [spawn],
   );
   const closePane = useCallback((key: string) => {
@@ -1361,7 +1362,7 @@ function App() {
   useEffect(() => {
     let alive = true;
     const load = () => {
-      listOracles().then((v) => alive && setOracles(v)).catch((e) => reportDiag("app.load", e, { action: "oracles" }));
+      listOracles(loadSettings().terminalSocket || "aios").then((v) => alive && setOracles(v)).catch((e) => reportDiag("app.load", e, { action: "oracles" }));
       listChatSessions(12).then((v) => alive && setChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatSessions" }));
       listChatLive().then((v) => alive && setLiveChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatLive" }));
       if (alive) setMoneyAgentSessionVersion(Date.now());
@@ -1423,8 +1424,8 @@ function App() {
 
   const fireAppshot = useCallback(async () => {
     try {
-      const path = await appshot();
-      flash(`appshot → master oracle · ${pathBasename(path)}`);
+      const path = await appshot(undefined, loadSettings().terminalSocket || "aios");
+      flash(`appshot → oracle · ${pathBasename(path)}`);
     } catch (e) {
       flash(`appshot failed: ${e}`);
     }
@@ -1645,7 +1646,7 @@ function App() {
         e.preventDefault();
         setGlobalSearchOpen((v) => !v);
       } else if (mod && !e.shiftKey && e.key.toLowerCase() === "p") {
-        // ⌘P — fuzzy file finder ("go to file"). firaz's #1 pain.
+        // ⌘P — fuzzy file finder ("go to file"). the user's #1 pain.
         e.preventDefault();
         setFileFinderOpen((v) => !v);
       } else if (mod && e.key.toLowerCase() === "b") {
@@ -1736,7 +1737,7 @@ function App() {
   // above only fires when the REACT webview has focus. When focus is inside a
   // native child webview — a browser PANE (its own WKWebView) or a terminal
   // (xterm grabs keys) — those keystrokes never reach React, so Esc/⌘F/⌘W/⌘1-9/…
-  // all DIE exactly when a pane is focused (firaz got stuck unable to exit a
+  // all DIE exactly when a pane is focused (the user got stuck unable to exit a
   // fullscreen pane). A real app-MENU accelerator fires whenever the app is
   // frontmost REGARDLESS of which webview holds focus, so the Rust menu emits
   // `menu-action` and we dispatch into the SAME handlers as the keydown fallback.
@@ -1759,7 +1760,7 @@ function App() {
         }
         case "toggle-fullscreen":
           // ⌘F via the native menu — context-aware: browser pane focused →
-          // find-in-page; else maximize/restore the pane (the path firaz hit).
+          // find-in-page; else maximize/restore the pane (the path the user hit).
           // This is the webview-independent route (fires even when a child
           // webview holds focus), so ⌘F find works inside a focused browser pane.
           handleCmdF();
@@ -2187,8 +2188,15 @@ function App() {
 
     const connect = () => {
       if (disposed) return;
+      const wsUrl = mirrorWebSocketUrl(mirrorPairing);
+      if (!wsUrl) {
+        // No mirror endpoint configured (VITE_AIOS_MIRROR_URL unset) — the
+        // feature is opt-in, so stay dormant instead of crashing on mount.
+        setMirrorStatus("off");
+        return;
+      }
       setMirrorStatus("connecting");
-      const ws = new WebSocket(mirrorWebSocketUrl(mirrorPairing));
+      const ws = new WebSocket(wsUrl);
       mirrorWsRef.current = ws;
 
       ws.onopen = () => {
@@ -2290,7 +2298,7 @@ function App() {
       case "chat": {
         // The killer case. If a chat pane is still open + bound to this backend
         // session id, focus it. Else reattach the detached session — the backend
-        // replays its buffer and goes live, so firaz lands back in the exact chat.
+        // replays its buffer and goes live, so the user lands back in the exact chat.
         const boundKey = paneKeyForChatSession(t.sessionId);
         const open = boundKey ? panes.find((p) => p.key === boundKey) : undefined;
         if (open) focusPane(open.key);
@@ -2991,6 +2999,15 @@ function App() {
                       ps.map((p) =>
                         p.key === pane.key && p.kind.type === "browser"
                           ? { ...p, kind: { ...p.kind, profile } }
+                          : p,
+                      ),
+                    )
+                  }
+                  onChangeCwd={(dir) =>
+                    setPanes((ps) =>
+                      ps.map((p) =>
+                        p.key === pane.key && p.kind.type === "chat"
+                          ? { ...p, kind: { ...p.kind, cwd: dir } }
                           : p,
                       ),
                     )
@@ -4583,6 +4600,7 @@ function PaneCard({
   onOpenMoneyAgentChat,
   onAttachApp,
   onProfileChange,
+  onChangeCwd,
   onVideoFullscreen,
 }: {
   /** Forwarded by AnimatePresence popLayout (React 19 ref-as-prop): the exit
@@ -4628,6 +4646,7 @@ function PaneCard({
   onOpenMoneyAgentChat: (id: string, label: string) => void;
   onAttachApp: (app: { name: string; bundle_id: string | null }) => void;
   onProfileChange: (profile: string) => void;
+  onChangeCwd: (dir: string) => void;
   onVideoFullscreen?: (on: boolean) => void;
 }) {
   const t = pane.kind.type;
@@ -4698,11 +4717,11 @@ function PaneCard({
   const chatCwd = pane.kind.type === "chat" ? (pane.kind.cwd ?? defaultCwd) : undefined;
   const label =
     t === "oracle" ? `oracle: ${pane.label}` : t === "tmux" ? `tmux: ${pane.label}` : pane.label;
-  // Monitoring works on real tmux sessions (oracle/tmux panes) — the watcher
-  // capture-panes them and reports to WhatsApp.
+  // Monitoring works on real multiplexer sessions (oracle/tmux panes) — the
+  // watcher capture-panes them and reports out.
   const monTarget =
     pane.kind.type === "oracle"
-      ? { socket: "adletic", session: `aios-${pane.kind.identity}` }
+      ? { socket: loadSettings().terminalSocket || "aios", session: `aios-${pane.kind.identity}` }
       : pane.kind.type === "tmux"
         ? { socket: pane.kind.socket, session: pane.kind.session }
         : null;
@@ -4984,6 +5003,7 @@ function PaneCard({
               resume={pane.kind.type === "chat" ? pane.kind.resume : undefined}
               reattach={pane.kind.type === "chat" ? pane.kind.reattach : undefined}
               onOpenUrl={onOpenUrl}
+              onChangeCwd={onChangeCwd}
             />
           )}
           </Suspense>

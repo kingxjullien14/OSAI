@@ -225,8 +225,8 @@ fn find_shell_source_root() -> Option<String> {
         candidates.push(cwd.to_string_lossy().to_string());
     }
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(format!("{home}/Repo/firaz/aios/shell"));
-        candidates.push(format!("{home}/Repo/firaz/adletic/aios/shell"));
+        candidates.push(format!("{home}/Repo/aios/shell"));
+        candidates.push(format!("{home}/Repo/aios/shell"));
     }
 
     candidates.into_iter().find_map(|path| {

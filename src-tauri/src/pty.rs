@@ -17,8 +17,99 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
+#[cfg(windows)]
+use tauri::Manager;
 
 use crate::oracles::tmux_bin;
+
+/// Default multiplexer socket name for AIOS's own persistent terminal sessions
+/// when the frontend doesn't pass one. Was a legacy hardcoded name; now a
+/// neutral default the user can override in Settings → "terminal socket".
+const DEFAULT_TERM_SOCKET: &str = "aios";
+
+/// Resolves + sanitizes the socket name from the optional frontend setting.
+/// Falls back to `DEFAULT_TERM_SOCKET`; rejects anything with shell-unsafe chars
+/// (the socket flows into tmux/psmux `-L <socket>`).
+fn term_socket(socket: Option<String>) -> String {
+    socket
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        })
+        .unwrap_or_else(|| DEFAULT_TERM_SOCKET.to_string())
+}
+
+/// Resolves the multiplexer binary — `tmux` on unix, **psmux** on Windows.
+/// psmux is "native Windows tmux" (https://github.com/psmux/psmux): a from-scratch
+/// Rust/ConPTY reimplementation that speaks tmux's command language (`-L` socket
+/// namespaces, `new-session -A -d`, `attach`, persistent detach/reattach server),
+/// so it's a drop-in for the exact CLI the unix paths drive. It's what gives
+/// Windows the persistent/detachable sessions tmux can't (tmux is unix-only).
+///
+/// Windows resolution honors the user's choice ("bundle, prefer PATH"):
+///   1. a user-installed `psmux`/`tmux`/`pmux` on PATH (power users pin a version)
+///   2. the bundled sidecar shipped in the app's resource dir
+/// `None` on Windows → not found, so callers gracefully degrade (no persistence /
+/// no oracles) instead of hard-failing. On unix it's always `Some(tmux_bin())`.
+pub fn resolve_mux(app: &AppHandle) -> Option<String> {
+    #[cfg(windows)]
+    {
+        // PATH — psmux installs `tmux.exe`/`pmux.exe` aliases too, so any works.
+        if let Some(path) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path) {
+                for name in ["psmux.exe", "pmux.exe", "tmux.exe"] {
+                    let p = dir.join(name);
+                    if p.is_file() {
+                        return Some(p.to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+        // bundled sidecar (scripts/fetch-psmux.ps1 stages it under resources/).
+        if let Ok(res) = app.path().resource_dir() {
+            let p = res.join("resources").join("psmux.exe");
+            if p.is_file() {
+                return Some(p.to_string_lossy().into_owned());
+            }
+        }
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Some(tmux_bin())
+    }
+}
+
+/// Runs a multiplexer control command to completion with stdio discarded and (on
+/// Windows) no console window. Returns true on a zero exit. Shared by the PTY
+/// pre-steps here and the oracle CRUD in `oracles.rs`.
+pub fn run_mux_quiet(bin: &str, args: &[&str]) -> bool {
+    let mut cmd = std::process::Command::new(bin);
+    cmd.args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// Applies AIOS's shared session styling on a socket (global, idempotent): mouse
+/// on, plus a `status-left` that shows the session's WINDOW NAME — which we set
+/// to a friendly per-session label (datetime by default, renameable) via
+/// `new-session -n`. The default `[#S]` truncated every `aios-term-*` key to the
+/// same `aios-term`, so panes looked identical; `#W` is the human label instead.
+#[cfg(windows)]
+fn apply_mux_style(bin: &str, sock: &str) {
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "mouse", "on"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left-length", "24"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left", "[#W] "]);
+}
 
 /// One live PTY-backed session. All fields are behind Mutex so the whole
 /// `Session` is `Sync` and can live in shared app state.
@@ -66,7 +157,7 @@ fn split_valid_utf8(buf: &[u8]) -> (String, Vec<u8>) {
 }
 
 /// Structured payload for the `pty-exit` event (wave-1C, ported from
-/// ferazfhansurie@64899fe). Mirrored as `PtyExitEvent` in `src/lib/pty.ts`.
+/// upstream@64899fe). Mirrored as `PtyExitEvent` in `src/lib/pty.ts`.
 /// `exit_code` is `None` when the child couldn't be reaped quickly (or the
 /// reader stopped while the child was still alive, e.g. the frontend dropped its
 /// channel on a webview reload). Emitted ALONGSIDE the legacy bare-`id` event so
@@ -181,7 +272,7 @@ fn spawn_internal(
 /// PATH resolution (a common cause of a terminal that opens but can't be typed
 /// into because the shell never actually spawned).
 #[allow(dead_code)]
-fn windows_shell() -> String {
+pub fn windows_shell() -> String {
     if let Ok(s) = std::env::var("SHELL") {
         if !s.is_empty() {
             return s;
@@ -229,22 +320,50 @@ pub fn pty_spawn(
     spawn_internal(app, &state, on_data, cmd, cols, rows)
 }
 
-/// Attaches a pane to a bridge-managed oracle tmux session (`aios-<identity>`
-/// on socket `adletic`). `exec` replaces the shell so closing the pane detaches
-/// the tmux client without killing the underlying oracle session.
+/// Attaches a pane to an oracle session (`aios-<identity>`) on the configurable
+/// socket. Closing the pane detaches the client without killing the session
+/// (`pty_kill` only kills the attach client).
 #[tauri::command]
 pub fn pty_spawn_oracle(
     app: AppHandle,
     state: State<PtyState>,
     on_data: Channel<String>,
     identity: String,
+    socket: Option<String>,
     cols: u16,
     rows: u16,
 ) -> Result<u32, String> {
+    let sock = term_socket(socket);
+    let safe = !identity.is_empty()
+        && identity
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+    if !safe {
+        return Err("invalid oracle identity".into());
+    }
+    let session = format!("aios-{identity}");
     #[cfg(windows)]
     {
-        let _ = (app, state, on_data, identity, cols, rows);
-        return Err("oracle tmux attach is not supported on windows yet".into());
+        let Some(psmux) = resolve_mux(&app) else {
+            return Err("oracle attach needs psmux on Windows — install it (winget install psmux) or it ships bundled".into());
+        };
+        // Confirm it exists before attaching so a dead/typo'd session errors
+        // cleanly instead of spawning an empty shell (the `new-session -A` would).
+        if !run_mux_quiet(&psmux, &["-L", &sock, "has-session", "-t", &session]) {
+            return Err(format!("oracle session '{session}' isn't running"));
+        }
+        apply_mux_style(&psmux, &sock);
+        // `new-session -A -s` (not `attach -t`): psmux's `attach -t` ignores its
+        // target and joins the most-recently-active session — `-A` binds to the
+        // named one and attaches without disturbing it.
+        let mut cmd = CommandBuilder::new(&psmux);
+        for a in ["-L", &sock, "new-session", "-A", "-s"] {
+            cmd.arg(a);
+        }
+        cmd.arg(&session);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        spawn_internal(app, &state, on_data, cmd, cols, rows)
     }
     #[cfg(not(windows))]
     {
@@ -254,8 +373,11 @@ pub fn pty_spawn_oracle(
         // enable mouse so the wheel scrolls inside tmux (it owns the alt-screen, so
         // xterm's own scrollback is bypassed), then attach.
         cmd.arg(format!(
-        "{tmux} -L adletic set -g mouse on 2>/dev/null; exec {tmux} -L adletic attach -t aios-{identity}"
-    ));
+            "{tmux} -L {sock} set -g mouse on 2>/dev/null; \
+             {tmux} -L {sock} set -g status-left-length 24 2>/dev/null; \
+             {tmux} -L {sock} set -g status-left '[#W] ' 2>/dev/null; \
+             exec {tmux} -L {sock} attach -t {session}"
+        ));
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         spawn_internal(app, &state, on_data, cmd, cols, rows)
@@ -263,7 +385,7 @@ pub fn pty_spawn_oracle(
 }
 
 /// Attaches a pane to a PERSISTENT terminal tmux session (`aios-term-<name>` on
-/// socket `adletic`), creating it on first use. Unlike `pty_spawn`'s ephemeral
+/// socket), creating it on first use. Unlike `pty_spawn`'s ephemeral
 /// login shell, this session lives on the tmux daemon — so closing the pane (or
 /// quitting the whole app) only detaches the `tmux attach` client; the shell (or
 /// whatever `cmd` ran, e.g. `claude`) keeps running and is reattachable later.
@@ -283,12 +405,85 @@ pub fn pty_spawn_terminal(
     state: State<PtyState>,
     on_data: Channel<String>,
     name: String,
+    socket: Option<String>,
+    label: Option<String>,
     cmd: Option<String>,
     cwd: Option<String>,
     cols: u16,
     rows: u16,
 ) -> Result<u32, String> {
-    let _ = name; // no tmux session name on Windows (no persistence)
+    // Prefer a PERSISTENT psmux session (real tmux-style detach/reattach that
+    // survives closing the pane or quitting the app) when psmux is installed or
+    // bundled. Mirrors the unix tmux path, minus the `/bin/sh` chaining: we run
+    // the detached create + mouse-on as quiet pre-steps, then PTY-attach.
+    let sock = term_socket(socket);
+    let safe_name = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+    if safe_name {
+        if let Some(psmux) = resolve_mux(&app) {
+            let session = format!("aios-term-{name}");
+            // create-or-noop, detached. `-A` makes a re-open a harmless no-op
+            // (not a relaunch of `cmd`) — same atomic guarantee as unix.
+            let mut create: Vec<String> = vec![
+                "-L".into(),
+                sock.clone(),
+                "new-session".into(),
+                "-A".into(),
+                "-d".into(),
+                "-s".into(),
+                session.clone(),
+            ];
+            // `-n <label>` names the window = the human display label (datetime by
+            // default). It's applied only when the session is CREATED (`-A` reopen
+            // ignores it), so it survives detach/reattach, and `-n` sets the
+            // manual-rename flag so the shell can't auto-rename it away.
+            if let Some(l) = label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+                create.push("-n".into());
+                create.push(l.to_string());
+            }
+            if let Some(dir) = cwd
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty() && std::path::Path::new(c).is_dir())
+            {
+                create.push("-c".into());
+                create.push(dir.to_string());
+            }
+            if let Some(c) = cmd.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                // Run the startup command in a shell that STAYS OPEN after it
+                // exits (VS Code-style run terminal — logs remain, re-runnable),
+                // inside the persistent session. Same intent as the unix
+                // keepalive wrapper + the existing Windows `-NoExit -Command`.
+                create.push(windows_shell());
+                create.push("-NoExit".into());
+                create.push("-Command".into());
+                create.push(c.to_string());
+            }
+            let create_refs: Vec<&str> = create.iter().map(String::as_str).collect();
+            run_mux_quiet(&psmux, &create_refs);
+            // mouse on so the wheel scrolls inside psmux (it owns the alt-screen).
+            apply_mux_style(&psmux, &sock);
+            // Attach in the PTY via `new-session -A -s <name>`, NOT `attach -t`:
+            // psmux's `attach -t` ignores its target and joins the most-recently-
+            // ACTIVE session, so every new pane mirrored the first one (verified).
+            // `new-session -A` binds to the session NAMED here — it exists from the
+            // detached create above, so `-A` attaches to exactly it. Killing this
+            // client detaches; the session lives on.
+            let mut cmdb = CommandBuilder::new(&psmux);
+            for a in ["-L", &sock, "new-session", "-A", "-s"] {
+                cmdb.arg(a);
+            }
+            cmdb.arg(&session);
+            cmdb.env("TERM", "xterm-256color");
+            cmdb.env("COLORTERM", "truecolor");
+            return spawn_internal(app, &state, on_data, cmdb, cols, rows);
+        }
+    }
+    // ---- fallback: psmux absent → a plain, NON-persistent PowerShell PTY (the
+    // pane still works everywhere; persistence is the bonus psmux unlocks). ----
+    let _ = name; // no session name in the non-persistent fallback
     let shell = windows_shell();
     let mut cmdb = CommandBuilder::new(&shell);
     let startup = cmd.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
@@ -334,6 +529,8 @@ pub fn pty_spawn_terminal(
     state: State<PtyState>,
     on_data: Channel<String>,
     name: String,
+    socket: Option<String>,
+    label: Option<String>,
     cmd: Option<String>,
     cwd: Option<String>,
     cols: u16,
@@ -348,9 +545,19 @@ pub fn pty_spawn_terminal(
         return Err("invalid terminal name".into());
     }
     let tmux = tmux_bin();
+    let sock = term_socket(socket);
     let session = format!("aios-term-{name}");
     // Single-quote for the outer `sh -c` so spaces/args survive.
     let sq = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+    // `-n <label>` names the window = the human display label (datetime by
+    // default); applied only on CREATE (`-A` reopen ignores it) and `-n` sets the
+    // manual-rename flag so the shell can't auto-rename it. Empty → no flag.
+    let nflag = label
+        .as_deref()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| format!(" -n {}", sq(l)))
+        .unwrap_or_default();
     // Optional start directory — `new-session -c <dir>`. Drives "run project"
     // (the command MUST execute in the project root, else `npm run`/`flutter run`
     // fail in $HOME and the pane exits). Only applied when the dir exists.
@@ -376,7 +583,7 @@ pub fn pty_spawn_terminal(
     let create = if startup.is_empty() {
         let login_shell = "exec ${SHELL:-/bin/zsh} -l";
         format!(
-            "{tmux} -L adletic new-session -A -d -s {session}{cdir} {}",
+            "{tmux} -L {sock} new-session -A -d -s {session}{cdir}{nflag} {}",
             sq(login_shell)
         )
     } else {
@@ -389,7 +596,7 @@ pub fn pty_spawn_terminal(
             sq(&format!("{startup}; exec ${{SHELL:-/bin/zsh}} -l"))
         );
         format!(
-            "{tmux} -L adletic new-session -A -d -s {session}{cdir} {}",
+            "{tmux} -L {sock} new-session -A -d -s {session}{cdir}{nflag} {}",
             sq(&keepalive)
         )
     };
@@ -398,12 +605,14 @@ pub fn pty_spawn_terminal(
     // Ensure the session exists (atomic), enable mouse so the wheel scrolls inside
     // tmux (it owns the alt-screen, bypassing xterm's scrollback), then attach.
     // `exec` replaces the shell so closing the pane detaches the client — see
-    // pty_kill. mouse is also set globally in ~/.config/adletic/tmux.conf; this
-    // inline set is a belt-and-braces fallback for a server started without it.
+    // pty_kill. (Real tmux honors `attach -t`; only psmux on Windows needs the
+    // `new-session -A -s` workaround.)
     cmdb.arg(format!(
         "{create} 2>/dev/null; \
-         {tmux} -L adletic set -g mouse on 2>/dev/null; \
-         exec {tmux} -L adletic attach -t {session}"
+         {tmux} -L {sock} set -g mouse on 2>/dev/null; \
+         {tmux} -L {sock} set -g status-left-length 24 2>/dev/null; \
+         {tmux} -L {sock} set -g status-left '[#W] ' 2>/dev/null; \
+         exec {tmux} -L {sock} attach -t {session}"
     ));
     cmdb.env("TERM", "xterm-256color");
     cmdb.env("COLORTERM", "truecolor");
@@ -426,8 +635,36 @@ pub fn pty_spawn_tmux(
 ) -> Result<u32, String> {
     #[cfg(windows)]
     {
-        let _ = (app, state, on_data, socket, session, cols, rows);
-        return Err("tmux attach is not supported on windows yet".into());
+        // Guard against injection via socket/session names.
+        let safe = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        };
+        if !safe(&socket) || !safe(&session) {
+            return Err("invalid socket or session name".into());
+        }
+        let Some(psmux) = resolve_mux(&app) else {
+            return Err("tmux attach needs psmux on Windows — install it (winget install psmux) or it ships bundled".into());
+        };
+        // The session is created elsewhere — confirm it EXISTS before attaching, so
+        // a typo/dead session errors instead of silently spawning an empty shell
+        // (the `new-session -A` attach below would otherwise create one).
+        if !run_mux_quiet(&psmux, &["-L", &socket, "has-session", "-t", &session]) {
+            return Err(format!("no session '{session}' on socket '{socket}'"));
+        }
+        apply_mux_style(&psmux, &socket);
+        // `new-session -A -s` (not `attach -t`): psmux's `attach -t` ignores its
+        // target and joins the most-recently-active session. `-A` on an existing
+        // session attaches to exactly the named one without disturbing it.
+        let mut cmd = CommandBuilder::new(&psmux);
+        for a in ["-L", &socket, "new-session", "-A", "-s"] {
+            cmd.arg(a);
+        }
+        cmd.arg(&session);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        spawn_internal(app, &state, on_data, cmd, cols, rows)
     }
     #[cfg(not(windows))]
     {
@@ -443,8 +680,11 @@ pub fn pty_spawn_tmux(
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.arg("-c");
         cmd.arg(format!(
-        "{tmux} -L {socket} set -g mouse on 2>/dev/null; exec {tmux} -L {socket} attach -t {session}"
-    ));
+            "{tmux} -L {socket} set -g mouse on 2>/dev/null; \
+             {tmux} -L {socket} set -g status-left-length 24 2>/dev/null; \
+             {tmux} -L {socket} set -g status-left '[#W] ' 2>/dev/null; \
+             exec {tmux} -L {socket} attach -t {session}"
+        ));
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         spawn_internal(app, &state, on_data, cmd, cols, rows)
@@ -466,7 +706,7 @@ pub fn pty_write(state: State<PtyState>, id: u32, data: String) -> Result<(), St
     Ok(())
 }
 
-/// Bracketed-paste write (wave-1C, ported from ferazfhansurie@64899fe): wraps
+/// Bracketed-paste write (wave-1C, ported from upstream@64899fe): wraps
 /// `text` in `ESC[200~ … ESC[201~` so a multiline paste arrives at the app as
 /// ONE atomic paste instead of N typed lines — replacing the frontend's chunked
 /// write timer hacks. Safe for every pane we spawn: tmux-backed panes parse the
@@ -524,6 +764,39 @@ pub fn pty_kill(state: State<PtyState>, id: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Renames a session's friendly DISPLAY label (what the status bar shows + the
+/// reattach list lists). We rename the session's window — the session NAME stays
+/// the stable `aios-term-<key>` so workspace-restore reattach still works. The
+/// label survives detach/reattach (it lives on the multiplexer server).
+#[tauri::command]
+pub fn pty_set_label(
+    app: AppHandle,
+    socket: Option<String>,
+    session: String,
+    label: String,
+) -> Result<(), String> {
+    let sock = term_socket(socket);
+    let safe = !session.is_empty()
+        && session
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+    if !safe {
+        return Err("invalid session name".into());
+    }
+    // The label is passed as a single argv (no shell), so spaces/colons are fine;
+    // just trim, cap length, and strip control chars.
+    let label: String = label.trim().chars().filter(|c| !c.is_control()).take(48).collect();
+    if label.is_empty() {
+        return Err("label is empty".into());
+    }
+    let bin = resolve_mux(&app).ok_or("no multiplexer found")?;
+    if run_mux_quiet(&bin, &["-L", &sock, "rename-window", "-t", &session, &label]) {
+        Ok(())
+    } else {
+        Err("rename failed — is the session still running?".into())
+    }
+}
+
 /// Startup reaper (B2): kills orphaned `aios-term-*` tmux sessions on the oracle
 /// socket that have NO corresponding restored pane. Without this, B1's old
 /// new-key-every-launch behaviour (now fixed) plus normal pane churn leaves
@@ -537,23 +810,24 @@ pub fn pty_kill(state: State<PtyState>, id: u32) -> Result<(), String> {
 /// conservative by design: an unknown session is reaped only when it provably
 /// has no pane. Non-unix / no-tmux → no-op. Returns the names reaped.
 #[tauri::command]
-pub fn pty_reap_terminals(keep: Vec<String>) -> Result<Vec<String>, String> {
+pub fn pty_reap_terminals(keep: Vec<String>, socket: Option<String>) -> Result<Vec<String>, String> {
     #[cfg(windows)]
     {
-        let _ = keep;
+        let _ = (keep, socket);
         Ok(Vec::new())
     }
     #[cfg(not(windows))]
     {
         use std::collections::HashSet;
         let tmux = tmux_bin();
+        let sock = term_socket(socket);
         // The full session names we must preserve, e.g. `aios-term-k3-abcd`.
         let keep: HashSet<String> = keep
             .into_iter()
             .map(|n| format!("aios-term-{n}"))
             .collect();
         let output = std::process::Command::new(&tmux)
-            .args(["-L", "adletic", "list-sessions", "-F", "#{session_name}"])
+            .args(["-L", &sock, "list-sessions", "-F", "#{session_name}"])
             .output()
             .map_err(|e| format!("failed to run tmux: {e}"))?;
         // No server / no sessions → tmux exits non-zero; treat as "nothing to do".
@@ -571,7 +845,7 @@ pub fn pty_reap_terminals(keep: Vec<String>) -> Result<Vec<String>, String> {
                 continue; // has a live pane → leave it running
             }
             let killed = std::process::Command::new(&tmux)
-                .args(["-L", "adletic", "kill-session", "-t", name])
+                .args(["-L", &sock, "kill-session", "-t", name])
                 .output();
             if matches!(killed, Ok(o) if o.status.success()) {
                 reaped.push(name.to_string());

@@ -1,7 +1,7 @@
 //! Persistent browser state — history, bookmarks, downloads — for the AIOS
 //! browser pane. The store mechanism MIRRORS `diag.rs`: a local-first, zero-
 //! network JSON store under the Tauri **app-data dir** (per-bundle, portable — a
-//! fork gets its own dir, no dependency on firaz's `~/.aios`).
+//! fork gets its own dir, no dependency on the user's `~/.aios`).
 //!
 //! WHY JSON, not SQLite: `sqlx` IS a dep but is compiled with only the
 //! `postgres` + `mysql` features (see Cargo.toml) — there is NO `sqlite` feature
@@ -422,7 +422,7 @@ mod tests {
         // a focused recompute. Prefix + frequent should beat a stale substring.
         let now = now_unix_ms();
         let fresh_prefix = HistoryEntry {
-            url: "https://github.com/firaz".into(),
+            url: "https://github.com".into(),
             title: "gh".into(),
             ts: now,
             visit_count: 10,

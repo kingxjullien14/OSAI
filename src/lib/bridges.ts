@@ -29,7 +29,7 @@ export interface Channel {
   pid: number | null;
   /** Humanized process uptime, e.g. "3h 12m". */
   uptime: string | null;
-  /** launchd job label, e.g. "com.firaz.aios-bridge-bsg". */
+  /** launchd job label, e.g. "com.aios.aios-bridge-bsg". */
   launchd: string | null;
   /** Whether a matching launchd job is loaded. */
   loaded: boolean;
@@ -108,7 +108,7 @@ export interface PairResult {
   error?: string;
 }
 
-/** Pairs firaz's PERSONAL WhatsApp (the wwebjs session the "personal" channel
+/** Pairs the user's PERSONAL WhatsApp (the wwebjs session the "personal" channel
  *  sends through). Returns the 8-digit pairing code to enter in WhatsApp →
  *  Linked Devices → Link with phone number. Can take ~30-50s (wwebjs boot). */
 export async function pairPersonalWa(): Promise<PairResult> {

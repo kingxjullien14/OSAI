@@ -45,6 +45,10 @@ windows-*.png
 *.key
 src-tauri/.motion.key
 
+# Bundled psmux sidecar (native Windows tmux) — fetched per release by
+# scripts/fetch-psmux.ps1, never source. The staging dir is kept via .gitkeep.
+src-tauri/resources/psmux.exe
+
 # Updater release manifest — a per-release artifact (regenerated + uploaded to
 # GitHub Releases by scripts/make-latest-json.ps1), never source.
 latest.json

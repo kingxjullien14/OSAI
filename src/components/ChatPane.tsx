@@ -101,7 +101,7 @@ import {
 } from "../lib/chat";
 import { detectAvailableEngines } from "../lib/providerDetect";
 import { saveMoneyAgentChatSession } from "../lib/moneyAgents";
-import { fileSrc, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
+import { fileSrc, homeDir, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { SHIFT, chord } from "../lib/platform";
 import { claudeRate, idleRate, codexRate, resetIn, type ModelRate } from "../lib/dashboard";
@@ -193,6 +193,7 @@ type RenderBlock =
   | { kind: "thinking"; id: string; turn: Extract<Turn, { kind: "thinking" }> }
   | { kind: "approval"; id: string; turn: Extract<Turn, { kind: "approval" }> }
   | { kind: "result"; id: string; turn: Extract<Turn, { kind: "result" }> }
+  | { kind: "ask"; id: string; turn: ToolTurn }
   | { kind: "activity"; id: string; tools: ToolTurn[]; durationMs?: number };
 
 /** Searchable text for find-in-chat — one string per block, covering what the
@@ -208,6 +209,8 @@ function blockSearchText(b: RenderBlock): string {
       return b.turn.text ?? "";
     case "approval":
       return `${b.turn.toolName} ${JSON.stringify(b.turn.input ?? {})}`;
+    case "ask":
+      return `${b.turn.name} ${JSON.stringify(b.turn.input ?? {})}`;
     case "activity":
       return b.tools
         .map((t) => `${t.name} ${JSON.stringify(t.input ?? {})} ${t.result ?? ""}`)
@@ -380,7 +383,7 @@ const CTRL_PILL_ULTRA =
 
 /** Chip ids that are now interactive control PILLS in the composer's action row,
  *  so the passive summary-chips row drops them (no duplicate readout). */
-const CONTROL_CHIP_IDS = new Set(["model", "effort", "permission", "budget"]);
+const CONTROL_CHIP_IDS = new Set(["model", "effort", "permission", "budget", "cwd"]);
 
 function memoryContextBlock(memories: MemoryHit[]): string {
   if (memories.length === 0) return "";
@@ -443,6 +446,19 @@ function baseName(p: string): string {
   return clean.split(/[\\/]/).filter(Boolean).pop() ?? p;
 }
 
+/** Parent directory of a path, handling both separators + drive/unix roots.
+ *  Returns null at a root (C:\, /) so callers can disable an "up" affordance. */
+function parentDir(p: string): string | null {
+  const sep = p.includes("\\") ? "\\" : "/";
+  const clean = p.replace(/[\\/]+$/, "");
+  const idx = Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\"));
+  if (idx < 0) return null;
+  let parent = clean.slice(0, idx);
+  if (parent === "") parent = sep; // unix root "/"
+  else if (/^[A-Za-z]:$/.test(parent)) parent = parent + sep; // windows drive "C:" → "C:\"
+  return parent === clean ? null : parent;
+}
+
 /** Time-of-day kicker for the empty hero ("good evening, jullien"). */
 function timeGreeting(): string {
   const h = new Date().getHours();
@@ -463,6 +479,59 @@ const STARTER_DECK: { icon: LucideIcon; label: string; sub: string; prompt: stri
 // ── tool presentation (Codex-style activity steps) ───────────────────────────
 
 type ToolTurn = Extract<Turn, { kind: "tool" }>;
+
+/** One question inside an `AskUserQuestion` tool call. The tool always streams
+ *  to us (claude can't render its native picker in headless stream-json mode, so
+ *  it auto-denies with "Answer questions?" — we render OUR OWN picker from this
+ *  shape and feed the choices back as the next user turn). */
+export interface AskQuestion {
+  /** The prompt shown above the options. */
+  question: string;
+  /** Short tag for the question (chip label), e.g. "Framework". */
+  header: string;
+  /** When true the user may pick several options (checkbox); else single (radio). */
+  multiSelect: boolean;
+  options: { label: string; description?: string }[];
+}
+
+/** Parse the `questions` array out of an AskUserQuestion tool input. Returns null
+ *  when the shape isn't a usable question set (so we fall back to the generic
+ *  tool card rather than render an empty picker). */
+export function parseAskQuestions(input: Record<string, unknown> | undefined): AskQuestion[] | null {
+  const raw = input?.questions;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: AskQuestion[] = [];
+  for (const q of raw) {
+    if (!q || typeof q !== "object") continue;
+    const obj = q as Record<string, unknown>;
+    const question = typeof obj.question === "string" ? obj.question : "";
+    const opts: { label: string; description?: string }[] = [];
+    if (Array.isArray(obj.options)) {
+      for (const o of obj.options) {
+        if (!o || typeof o !== "object") continue;
+        const oo = o as Record<string, unknown>;
+        if (typeof oo.label !== "string" || !oo.label) continue;
+        opts.push({
+          label: oo.label,
+          ...(typeof oo.description === "string" ? { description: oo.description } : {}),
+        });
+      }
+    }
+    if (!question || opts.length === 0) continue;
+    out.push({
+      question,
+      header: typeof obj.header === "string" && obj.header ? obj.header : "Question",
+      multiSelect: obj.multiSelect === true,
+      options: opts,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** True when a tool turn is an AskUserQuestion we can render interactively. */
+function isAskQuestionTool(t: ToolTurn): boolean {
+  return t.name === "AskUserQuestion" && parseAskQuestions(t.input) != null;
+}
 
 /** Truncate the middle of a string so both ends stay visible. */
 function ellipsizeMid(s: string, max = 52): string {
@@ -811,6 +880,7 @@ export function ChatPane({
   agentId,
   agentLabel,
   onOpenUrl,
+  onChangeCwd,
 }: {
   cwd?: string;
   paneKey?: string;
@@ -835,6 +905,10 @@ export function ChatPane({
   reattach?: number;
   /** Open an http(s) link from rendered markdown in an in-app browser pane. */
   onOpenUrl?: (url: string) => void;
+  /** Change the working directory this chat operates in. Persisted on the pane
+   *  by App; the new cwd flows back as the `cwd` prop and restarts the session
+   *  rooted there (claude/codex can only set cwd at process start). */
+  onChangeCwd?: (dir: string) => void;
 }) {
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
   const webChatRuntime = !nativeRuntime;
@@ -1065,7 +1139,7 @@ export function ChatPane({
   }, [input, cwd, memoryPanelOpen]);
 
   // open-dropdown tracking (single source so only one is open)
-  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced" | "context">(
+  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced" | "context" | "cwd">(
     null,
   );
 
@@ -1564,7 +1638,7 @@ export function ChatPane({
             },
           ];
         });
-        // If this chat is OUT OF SIGHT (minimized or detached), firaz has no idea
+        // If this chat is OUT OF SIGHT (minimized or detached), the user has no idea
         // it's blocked waiting on him. Fire a high-priority, clickable notification
         // that reattaches to the approval card. Foreground chats stay silent — the
         // inline card is already visible. De-dupe is handled by the store (one live
@@ -1671,7 +1745,7 @@ export function ChatPane({
           stoppingRef.current = false;
           return;
         }
-        // cost intentionally omitted — firaz runs on subs, $ figures are noise.
+        // cost intentionally omitted — the user runs on subs, $ figures are noise.
         const foot = [resultText, dur, tokStr].filter(Boolean).join(" · ");
         // always emit a result turn (carries durationMs for the activity line),
         // even if the human-readable footer would be empty.
@@ -2114,6 +2188,12 @@ export function ChatPane({
     return () => clearInterval(iv);
   }, [liveStart]);
 
+  // ── AskUserQuestion answers ─────────────────────────────────────────────────
+  // tool-turn id → the formatted answer the user submitted, so the picker card
+  // collapses to a one-line verdict and never re-submits. Keyed by the claude
+  // tool_use id (stable across re-renders).
+  const [askAnswered, setAskAnswered] = useState<Record<string, string>>({});
+
   // ── approval resolution ─────────────────────────────────────────────────────
 
   const resolveApproval = useCallback(
@@ -2269,6 +2349,58 @@ export function ChatPane({
   );
   // keep the flush effect calling the latest dispatch closure
   dispatchRef.current = dispatch;
+
+  // Answer an AskUserQuestion card: record the choice (so the card collapses) and
+  // send the formatted answers back as the next user turn. claude already
+  // auto-denied its own tool call (no TTY in headless mode) and the turn has
+  // ended, so the only way to feed answers back is a fresh user message — which
+  // is exactly what the model is waiting for.
+  const answerAskQuestion = useCallback(
+    (toolId: string, questions: AskQuestion[], picks: string[][]) => {
+      if (askAnswered[toolId]) return;
+      const lines = questions.map((q, i) => {
+        const chosen = picks[i] ?? [];
+        return `- ${q.header}: ${chosen.length ? chosen.join(", ") : "(no preference)"}`;
+      });
+      const display = lines.join("\n");
+      setAskAnswered((prev) => ({ ...prev, [toolId]: display }));
+      // skip the default user bubble — the collapsed card already shows the
+      // answer, so a second identical bubble would be noise. The wire gets a
+      // short preamble so the model reads it as a direct reply to its prompt.
+      dispatch(display, {
+        skipUserBubble: true,
+        wirePrefix: "Here are my answers to your questions:\n",
+      });
+    },
+    [askAnswered, dispatch],
+  );
+
+  // Switch the working directory this chat operates in. A running engine can't
+  // be re-rooted (cwd is fixed at process start), so this hands the new dir up
+  // to App (persists it on the pane) — the cwd prop then changes, which the
+  // session effect treats as a restart, re-spinning the engine in the new dir.
+  // We clear the transcript first: the fresh process has none of the old
+  // conversation's memory, so leaving stale turns up would imply a continuity
+  // that no longer exists.
+  const changeCwd = useCallback(
+    (dir: string) => {
+      const next = dir.trim();
+      if (!next || next === (cwd ?? "")) return;
+      setOpenMenu(null);
+      // a brand-new (empty) chat just re-roots silently; an in-progress one gets
+      // a short marker so the dir switch + fresh session is visible in scrollback.
+      setTurns((prev) =>
+        prev.length === 0
+          ? prev
+          : [{ kind: "result", id: uid(), text: `↳ working directory changed to ${next} — started a fresh session here`, ok: true }],
+      );
+      setResumeId(null);
+      claudeSessionIdRef.current = null;
+      recordedRef.current = false;
+      onChangeCwd?.(next);
+    },
+    [cwd, onChangeCwd],
+  );
 
   // Queue a message instead of sending it (used while a turn is streaming). It
   // fires automatically when the current turn completes (see the flush effect).
@@ -3624,6 +3756,30 @@ export function ChatPane({
                 model). On the fresh hero they stagger in; the action buttons
                 (tools · send) sit in their own right-aligned group. */}
             <div className={`flex min-w-0 flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
+            {/* working directory — the folder the agent reads + acts in. Click
+                to browse/pick a new one; switching it restarts the session there
+                (an engine's cwd is fixed at process start). Hidden in the hosted
+                web build (no local filesystem / no onChangeCwd). */}
+            {onChangeCwd && nativeRuntime && (
+              <Dropdown
+                open={openMenu === "cwd"}
+                onToggle={() => setOpenMenu(openMenu === "cwd" ? null : "cwd")}
+                align="left"
+                triggerClassName={openMenu === "cwd" ? CTRL_PILL_OPEN : CTRL_PILL}
+                label={`working directory — ${cwd ?? "not set"}`}
+                trigger={
+                  <>
+                    <Folder size={12} className="shrink-0 text-[var(--color-muted)]" />
+                    <span className="max-w-[140px] truncate whitespace-nowrap">
+                      {cwd ? baseName(cwd) : "set folder"}
+                    </span>
+                    <ChevronDown size={11} className="text-[var(--color-faint)]" />
+                  </>
+                }
+              >
+                <CwdPicker cwd={cwd ?? null} onPick={changeCwd} />
+              </Dropdown>
+            )}
             {/* access · context · effort — each its own labeled pill (was a
                 single bundled "behavior" menu). One click, reads at a glance,
                 live value on the pill, accent ring while open. */}
@@ -4065,7 +4221,16 @@ export function ChatPane({
 
     for (const t of turns) {
       if (t.kind === "tool") {
-        pending.push(t);
+        // AskUserQuestion is an INTERACTIVE prompt, not background activity — it
+        // gets its own prominent card (with answer buttons) instead of being
+        // folded into a collapsed "Worked for Xs ›" group where its questions
+        // would be buried and unanswerable.
+        if (isAskQuestionTool(t)) {
+          flushTools();
+          out.push({ kind: "ask", id: t.id, turn: t });
+        } else {
+          pending.push(t);
+        }
         continue;
       }
       flushTools();
@@ -4606,6 +4771,13 @@ export function ChatPane({
                   <ThinkingBlock turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
                 ) : b.kind === "approval" ? (
                   <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
+                ) : b.kind === "ask" ? (
+                  <AskQuestionCard
+                    turn={b.turn}
+                    answered={askAnswered[b.turn.id]}
+                    disabled={streaming}
+                    onAnswer={answerAskQuestion}
+                  />
                 ) : (
                   <ResultFooter turn={b.turn} onRetry={retryTurn} />
                 );
@@ -4614,7 +4786,10 @@ export function ChatPane({
               // fade-in-up); streaming kinds stay a plain div so token appends
               // never retrigger an entrance.
               const animates =
-                b.kind === "user" || b.kind === "approval" || b.kind === "result";
+                b.kind === "user" ||
+                b.kind === "approval" ||
+                b.kind === "ask" ||
+                b.kind === "result";
               const setBlockEl = (el: HTMLElement | null) => {
                 if (el) blockElsRef.current.set(b.id, el);
                 else blockElsRef.current.delete(b.id);
@@ -5793,6 +5968,360 @@ function AssistantBubble({
           <CopyButton text={body} title="copy response" />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Directory browser for the composer's working-directory pill. Browse into
+ * subfolders, jump home, type/paste an absolute path, then "use this folder" to
+ * re-root the chat. Listing is dirs-only (the agent works on a folder, not a
+ * file). Lives inside a Dropdown menu, so it's already dismiss-on-outside-click.
+ */
+function CwdPicker({
+  cwd,
+  onPick,
+}: {
+  cwd: string | null;
+  onPick: (dir: string) => void;
+}) {
+  const [path, setPath] = useState<string>(cwd ?? "");
+  const [entries, setEntries] = useState<DirEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [manual, setManual] = useState("");
+
+  // resolve $HOME once so an empty start (no cwd) still has somewhere to browse.
+  useEffect(() => {
+    if (path) return;
+    let alive = true;
+    homeDir()
+      .then((h) => alive && h && setPath(h))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+
+  // (re)list the current path whenever it changes.
+  useEffect(() => {
+    if (!path) return;
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    readDir(path)
+      .then((list) => {
+        if (!alive) return;
+        setEntries(
+          list
+            .filter((e) => e.is_dir && !e.name.startsWith("."))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      })
+      .catch((e) => alive && setError(String(e)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+
+  const parent = path ? parentDir(path) : null;
+  const goManual = () => {
+    const p = manual.trim();
+    if (p) {
+      setManual("");
+      setPath(p); // listing it confirms it exists (errors surface inline)
+    }
+  };
+
+  return (
+    <div className="flex w-[300px] max-w-[80vw] flex-col">
+      <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+        working directory
+      </div>
+      {/* current path + up */}
+      <div className="flex items-center gap-1.5 px-2 pb-1">
+        <button
+          type="button"
+          disabled={!parent}
+          onClick={() => parent && setPath(parent)}
+          title="up one folder"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:opacity-30"
+        >
+          <ChevronUp size={14} />
+        </button>
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-text-2)]"
+          title={path}
+          dir="rtl"
+        >
+          {path || "…"}
+        </span>
+      </div>
+      {/* subfolder list */}
+      <div className="max-h-52 overflow-y-auto px-1">
+        {loading ? (
+          <div className="px-2 py-3 text-center font-sans text-[11.5px] text-[var(--color-faint)]">
+            loading…
+          </div>
+        ) : error ? (
+          <div className="px-2 py-3 font-sans text-[11.5px] text-[var(--color-danger)]">
+            {error}
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="px-2 py-3 text-center font-sans text-[11.5px] text-[var(--color-faint)]">
+            no subfolders here
+          </div>
+        ) : (
+          entries.map((e) => (
+            <button
+              key={e.path}
+              type="button"
+              onClick={() => setPath(e.path)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-sans text-[12.5px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+            >
+              <Folder size={13} className="shrink-0 text-[var(--color-muted)]" />
+              <span className="min-w-0 flex-1 truncate">{e.name}</span>
+              <ChevronRight size={12} className="shrink-0 text-[var(--color-faint)]" />
+            </button>
+          ))
+        )}
+      </div>
+      {/* manual path entry */}
+      <div className="border-t border-[var(--color-border)] px-2 pt-2">
+        <input
+          type="text"
+          value={manual}
+          placeholder="or paste a path…"
+          onChange={(e) => setManual(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              goManual();
+            }
+          }}
+          className="w-full rounded-md border border-[var(--color-border-strong)] bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-mono text-[11px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:border-[var(--color-accent)]/60 focus:outline-none"
+        />
+      </div>
+      {/* confirm */}
+      <div className="flex items-center gap-2 px-2 py-2">
+        <button
+          type="button"
+          disabled={!path || path === cwd}
+          onClick={() => path && onPick(path)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Check size={13} />
+          {path === cwd ? "current folder" : "use this folder"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Interactive AskUserQuestion card. claude can't render its native picker in
+ * headless stream-json mode (no TTY → it auto-denies the tool with "Answer
+ * questions?"), so we render OUR OWN picker from the streamed tool input and
+ * feed the choices back as the next user turn. Single-select questions render as
+ * radio-style buttons, multiSelect as toggles; every question also offers a free
+ * "Other…" answer. Once submitted the card collapses to a one-line verdict.
+ */
+function AskQuestionCard({
+  turn,
+  answered,
+  disabled,
+  onAnswer,
+}: {
+  turn: ToolTurn;
+  /** Formatted answer once submitted (collapses the card); undefined = open. */
+  answered?: string;
+  /** True while a turn is streaming — block re-submits until the model is idle. */
+  disabled?: boolean;
+  onAnswer: (toolId: string, questions: AskQuestion[], picks: string[][]) => void;
+}) {
+  const questions = useMemo(() => parseAskQuestions(turn.input) ?? [], [turn.input]);
+  // chosen predefined labels + free "Other" text, one slot per question.
+  const [sel, setSel] = useState<string[][]>(() => questions.map(() => []));
+  const [other, setOther] = useState<string[]>(() => questions.map(() => ""));
+  const [otherOpen, setOtherOpen] = useState<boolean[]>(() => questions.map(() => false));
+
+  if (questions.length === 0) return null;
+
+  // already answered → collapsed verdict (mirrors ApprovalCard's resolved state).
+  if (answered) {
+    return (
+      <div className="rounded-xl border border-[var(--color-success)]/30 px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-text-2)]">
+        <div className="mb-1 flex items-center gap-2 text-[var(--color-success)]">
+          <CheckCheck size={13} />
+          <span className="font-medium">answered</span>
+        </div>
+        <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-[var(--color-text-2)]">
+          {answered}
+        </pre>
+      </div>
+    );
+  }
+
+  const effectivePicks = (i: number): string[] => {
+    const q = questions[i];
+    const free = other[i]?.trim() ? [other[i].trim()] : [];
+    if (q.multiSelect) return [...sel[i], ...free];
+    // single-select: a typed "Other" wins over a chosen option.
+    return free.length ? free : sel[i];
+  };
+  const ready = questions.every((_, i) => effectivePicks(i).length > 0);
+
+  const pick = (i: number, label: string) => {
+    if (disabled) return;
+    const q = questions[i];
+    setSel((prev) => {
+      const next = prev.map((a) => [...a]);
+      if (q.multiSelect) {
+        next[i] = next[i].includes(label)
+          ? next[i].filter((l) => l !== label)
+          : [...next[i], label];
+      } else {
+        next[i] = next[i][0] === label ? [] : [label];
+      }
+      return next;
+    });
+    if (!q.multiSelect) {
+      // picking a concrete option clears a stray free-text answer.
+      setOther((prev) => prev.map((v, idx) => (idx === i ? "" : v)));
+      setOtherOpen((prev) => prev.map((v, idx) => (idx === i ? false : v)));
+    }
+  };
+
+  const submit = () => {
+    if (disabled || !ready) return;
+    onAnswer(
+      turn.id,
+      questions,
+      questions.map((_, i) => effectivePicks(i)),
+    );
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)]">
+      <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
+          <HelpCircle size={14} />
+        </span>
+        <span className="font-sans text-[12.5px] font-medium text-[var(--color-text)]">
+          {questions.length > 1 ? `${questions.length} questions` : "a question for you"}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 px-3.5 pb-2 pt-2">
+        {questions.map((q, i) => {
+          const chosen = effectivePicks(i);
+          return (
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-[var(--color-bg)]/40 px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--color-muted)]">
+                  {q.header}
+                </span>
+                {q.multiSelect && (
+                  <span className="font-sans text-[10.5px] text-[var(--color-faint)]">
+                    pick any
+                  </span>
+                )}
+              </div>
+              <div className="font-sans text-[13px] leading-snug text-[var(--color-text)]">
+                {q.question}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {q.options.map((opt) => {
+                  const active = sel[i].includes(opt.label);
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => pick(i, opt.label)}
+                      className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left font-sans text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                        active
+                          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-text)]"
+                          : "border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 text-[var(--color-text-2)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${
+                          q.multiSelect ? "rounded" : "rounded-full"
+                        } ${active ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]" : "border-[var(--color-border-strong)]"}`}
+                      >
+                        {active && <Check size={11} />}
+                      </span>
+                      <span className="flex min-w-0 flex-col">
+                        <span className="font-medium">{opt.label}</span>
+                        {opt.description && (
+                          <span className="text-[11px] leading-snug text-[var(--color-faint)]">
+                            {opt.description}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+                {/* free-text escape hatch (the real tool always allows "Other") */}
+                {otherOpen[i] ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    disabled={disabled}
+                    value={other[i]}
+                    placeholder="your own answer…"
+                    onChange={(e) =>
+                      setOther((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                    className="rounded-lg border border-[var(--color-accent)]/60 bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-sans text-[12.5px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      setOtherOpen((prev) => prev.map((v, idx) => (idx === i ? true : v)));
+                      if (!q.multiSelect) {
+                        setSel((prev) => prev.map((a, idx) => (idx === i ? [] : a)));
+                      }
+                    }}
+                    className="self-start rounded-lg border border-dashed border-[var(--color-border-strong)] px-2.5 py-1 font-sans text-[12px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Other…
+                  </button>
+                )}
+              </div>
+              {chosen.length > 0 && (
+                <span className="font-sans text-[10.5px] text-[var(--color-faint)]">
+                  → {chosen.join(", ")}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2 px-3.5 pb-3 pt-1">
+        <button
+          type="button"
+          disabled={disabled || !ready}
+          onClick={submit}
+          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <CornerDownLeft size={13} /> send answer{questions.length > 1 ? "s" : ""}
+        </button>
+        {!ready && (
+          <span className="font-sans text-[11px] text-[var(--color-faint)]">
+            {disabled ? "model is working…" : "pick an option for each question"}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

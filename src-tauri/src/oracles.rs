@@ -1,98 +1,73 @@
 //! AIOS oracle roster + CRUD, and all-tmux discovery.
 //!
-//! Oracles are tmux sessions named `aios-<identity>` on socket `adletic`, kept
-//! alive by the bridge (launchd). The cockpit can list, attach, create, rename
-//! and delete them — except the MASTER oracle (`firaz`), which is permanent,
-//! pinned to the top of the roster, and undeletable.
+//! Oracles are multiplexer sessions named `aios-<identity>` — long-lived agent
+//! sessions (e.g. a `claude` running in its own tmux/psmux session) that the
+//! cockpit can list, attach, create, rename and delete. They survive the app
+//! closing and are reattachable, exactly like the persistent terminal panes.
 //!
-//! It also enumerates EVERY live tmux session across the known sockets so any
-//! terminal (including the one you're typing in right now) can be attached.
+//! Cross-platform: `tmux` on unix, **psmux** on Windows (resolved via
+//! `pty::resolve_mux`). On a machine with neither installed, every list command
+//! simply returns empty — the graceful path for a fresh box.
+//!
+//! The socket is the same configurable namespace the terminals use (Settings →
+//! "terminal socket", default `aios`), so oracles + terminals share one server;
+//! `aios-term-*` sessions are filtered out of the oracle roster.
 
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 
-/// The permanent MASTER (root) session — the mothership running at the user's
-/// home dir, on its own tmux socket. Always pinned top, crowned, undeletable.
-/// This is NOT an `aios-*` bridge oracle.
-///
-/// The socket/session names are env-overridable so the cockpit can target any
-/// AIOS deployment (defaults preserve the original author's setup):
-///   - `AIOS_ORACLE_SOCKET` — socket the bridge runs oracles on (default `adletic`)
-///   - `AIOS_MASTER_SOCKET` — socket the master session lives on (default `aios`)
-///   - `AIOS_MASTER_SESSION` — name of the master session (default `aios`)
-/// On machines with no tmux / no AIOS sessions, every list command simply
-/// returns empty — the graceful path for non-AIOS users.
-/// Reads an env var, falling back to a default. Resolved per-call (cheap) so a
-/// running cockpit can be retargeted without a rebuild.
-fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| default.to_string())
-}
+use crate::pty::{resolve_mux, run_mux_quiet};
 
-/// The tmux socket the bridge runs oracles on. Override: `AIOS_ORACLE_SOCKET`.
-fn oracle_socket() -> String {
-    env_or("AIOS_ORACLE_SOCKET", "adletic")
-}
+/// Default socket when the frontend doesn't pass one (matches the terminal
+/// socket default). Sanitized + overridable per call from the user's setting.
+const DEFAULT_SOCKET: &str = "aios";
 
-/// The tmux socket the master session lives on. Override: `AIOS_MASTER_SOCKET`.
-fn master_socket() -> String {
-    env_or("AIOS_MASTER_SOCKET", "aios")
-}
-
-/// The name of the master (root) tmux session. Override: `AIOS_MASTER_SESSION`.
-fn master_session() -> String {
-    env_or("AIOS_MASTER_SESSION", "aios")
-}
-
-/// The identity of firaz's load-bearing primary oracle (`aios-firaz`). WhatsApp
-/// inbound routes to it; deleting it silently breaks routing, so the backend
-/// hard-blocks deletion unless the caller passes an explicit override.
-/// Override the protected identity via `AIOS_PRIMARY_ORACLE` (default `firaz`).
-fn primary_oracle_identity() -> String {
-    env_or("AIOS_PRIMARY_ORACLE", "firaz")
-}
-
-/// Sockets scanned for the all-tmux attach surface, in display order. Built from
-/// the (possibly overridden) oracle + master sockets, plus the default socket.
-fn known_sockets() -> Vec<String> {
-    let mut out = vec![oracle_socket(), master_socket(), "default".to_string()];
-    out.dedup();
-    out
+/// Sanitizes the socket name from the optional frontend setting; falls back to
+/// `DEFAULT_SOCKET`. Rejects shell-unsafe chars (flows into `-L <socket>`).
+fn clean_socket(socket: Option<String>) -> String {
+    socket
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        })
+        .unwrap_or_else(|| DEFAULT_SOCKET.to_string())
 }
 
 /// One oracle in the roster, surfaced to the frontend.
 #[derive(Debug, Clone, Serialize)]
 pub struct OracleInfo {
-    /// Identity slug, e.g. `firaz` (from session `aios-firaz`); `root` for master.
+    /// Identity slug, e.g. `helper` (from session `aios-helper`).
     pub identity: String,
-    /// Full tmux session name, e.g. `aios-firaz` (or `aios` for master).
+    /// Full session name, e.g. `aios-helper`.
     pub session: String,
-    /// The tmux socket this session lives on (`adletic`, or `aios` for master).
+    /// The socket this session lives on.
     pub socket: String,
     /// Human label from instances.json, falling back to the identity.
     pub display_name: String,
     /// Whether a client is currently attached to this session.
     pub attached: bool,
-    /// Whether this is the permanent, undeletable master (root) session.
+    /// Reserved for a future pinned/primary concept; always false now.
     pub is_master: bool,
-    /// Whether the underlying tmux session actually exists right now.
+    /// Whether the underlying session actually exists right now.
     pub running: bool,
 }
 
-/// A live tmux session on any socket — the all-tmux attach surface.
+/// A live multiplexer session on any socket — the all-sessions attach surface.
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxSession {
     pub socket: String,
     pub name: String,
     pub attached: bool,
     pub windows: u32,
-    /// True when this session is an AIOS oracle (`aios-*` on the oracle socket).
+    /// True when this session is an AIOS oracle (`aios-*`, not `aios-term-*`).
     pub is_oracle: bool,
+    /// Friendly display label = the session's window name (set via `new-session
+    /// -n` / `rename-window`). For `aios-term-*` it's the datetime/renamed label;
+    /// for others it's the running program. Falls back to the name in the UI.
+    pub label: String,
 }
 
-/// Shape of an entry in `~/.aios/instances.json` (written by the bridge).
+/// Shape of an entry in `~/.aios/instances.json` (optional display-name registry).
 #[derive(Debug, Deserialize)]
 struct Instance {
     #[serde(default)]
@@ -101,8 +76,9 @@ struct Instance {
     name: String,
 }
 
-/// Resolves a usable `tmux` binary. GUI apps inherit a minimal PATH, so prefer
-/// known Homebrew/system locations before falling back to bare `tmux`.
+/// Resolves a usable `tmux` binary on unix. GUI apps inherit a minimal PATH, so
+/// prefer known Homebrew/system locations before falling back to bare `tmux`.
+/// (Windows goes through `pty::resolve_mux` → psmux instead.)
 pub fn tmux_bin() -> String {
     #[cfg(unix)]
     {
@@ -116,7 +92,7 @@ pub fn tmux_bin() -> String {
 }
 
 /// Lowercases + strips anything outside `[a-z0-9_-]` so identities map safely to
-/// tmux session names. Empty result is rejected by callers.
+/// session names. Empty result is rejected by callers.
 fn sanitize_identity(raw: &str) -> String {
     raw.trim()
         .to_lowercase()
@@ -125,9 +101,9 @@ fn sanitize_identity(raw: &str) -> String {
         .collect()
 }
 
-/// Reads the bridge's instance registry; missing/invalid → empty.
+/// Reads the optional instance registry (`~/.aios/instances.json`); missing → empty.
 fn read_instances() -> Vec<Instance> {
-    let Some(home) = std::env::var_os("HOME") else {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
         return Vec::new();
     };
     let path = std::path::PathBuf::from(home).join(".aios/instances.json");
@@ -137,15 +113,22 @@ fn read_instances() -> Vec<Instance> {
     serde_json::from_str::<Vec<Instance>>(&text).unwrap_or_default()
 }
 
-/// Runs a tmux command on the oracle socket, returning stdout on success.
-fn tmux_oracle(args: &[&str]) -> Result<String, String> {
-    let socket = oracle_socket();
-    let mut full = vec!["-L", socket.as_str()];
+/// Runs a multiplexer command on a socket, capturing stdout on success. No
+/// console window on Windows. `None` binary (psmux/tmux not found) → Err.
+fn mux_output(app: &AppHandle, socket: &str, args: &[&str]) -> Result<String, String> {
+    let bin = resolve_mux(app).ok_or("no multiplexer found (install psmux/tmux)")?;
+    let mut full = vec!["-L", socket];
     full.extend_from_slice(args);
-    let output = std::process::Command::new(tmux_bin())
-        .args(&full)
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.args(&full);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = cmd
         .output()
-        .map_err(|e| format!("failed to run tmux: {e}"))?;
+        .map_err(|e| format!("failed to run multiplexer: {e}"))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -167,170 +150,177 @@ fn display_name_for(identity: &str, session: &str, instances: &[Instance]) -> St
         .unwrap_or_else(|| identity.to_string())
 }
 
-/// Lists oracle sessions (`aios-*` on socket `adletic`), guaranteeing the master
-/// oracle is always present (pinned first) even if its session isn't running.
+/// Lists oracle sessions (`aios-<identity>`, excluding the shell's own
+/// `aios-term-*` panes) on the configured socket. Empty when no server/sessions.
 #[tauri::command]
-pub fn list_oracles() -> Result<Vec<OracleInfo>, String> {
-    #[cfg(unix)]
-    {
-        let stdout = tmux_oracle(&["list-sessions", "-F", "#{session_name}|#{session_attached}"])
-            .unwrap_or_default();
-        let instances = read_instances();
-        let mut oracles: Vec<OracleInfo> = Vec::new();
+pub fn list_oracles(app: AppHandle, socket: Option<String>) -> Result<Vec<OracleInfo>, String> {
+    let sock = clean_socket(socket);
+    let stdout = mux_output(
+        &app,
+        &sock,
+        &["list-sessions", "-F", "#{session_name}|#{session_attached}"],
+    )
+    .unwrap_or_default();
+    let instances = read_instances();
+    let mut oracles: Vec<OracleInfo> = Vec::new();
 
-        for line in stdout.lines() {
-            let mut parts = line.splitn(2, '|');
-            let session = parts.next().unwrap_or("").trim().to_string();
-            let attached = parts.next().unwrap_or("0").trim() != "0";
-            // Real oracles are `aios-<identity>`. EXCLUDE `aios-term-*` — those are
-            // the shell's own persistent terminal panes, not oracles; they were
-            // leaking into the roster as cryptic "oracle: term-k3-…" entries.
-            if !session.starts_with("aios-") || session.starts_with("aios-term-") {
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, '|');
+        let session = parts.next().unwrap_or("").trim().to_string();
+        let attached = parts.next().unwrap_or("0").trim() != "0";
+        // Real oracles are `aios-<identity>`. EXCLUDE `aios-term-*` (persistent
+        // terminal panes) — they'd otherwise leak in as cryptic roster entries.
+        if !session.starts_with("aios-") || session.starts_with("aios-term-") {
+            continue;
+        }
+        let identity = session.trim_start_matches("aios-").to_string();
+        let display_name = display_name_for(&identity, &session, &instances);
+        oracles.push(OracleInfo {
+            socket: sock.clone(),
+            is_master: false,
+            running: true,
+            identity,
+            session,
+            display_name,
+            attached,
+        });
+    }
+
+    // Flat list: attached first, then alphabetical.
+    oracles.sort_by(|a, b| b.attached.cmp(&a.attached).then(a.identity.cmp(&b.identity)));
+    Ok(oracles)
+}
+
+/// Lists EVERY live multiplexer session on the configured + default sockets —
+/// the all-sessions attach surface. Absent server → simply skipped (no error).
+#[tauri::command]
+pub fn list_tmux_sessions(app: AppHandle, socket: Option<String>) -> Result<Vec<TmuxSession>, String> {
+    let sock = clean_socket(socket);
+    let mut sockets = vec![sock.clone(), "default".to_string()];
+    sockets.dedup();
+    let mut sessions = Vec::new();
+    for socket in sockets {
+        let out = match mux_output(
+            &app,
+            &socket,
+            &[
+                "list-sessions",
+                "-F",
+                // window_name LAST so any stray `|` in a label stays in that field.
+                "#{session_name}|#{session_attached}|#{session_windows}|#{window_name}",
+            ],
+        ) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        for line in out.lines() {
+            let mut p = line.splitn(4, '|');
+            let name = p.next().unwrap_or("").trim().to_string();
+            if name.is_empty() {
                 continue;
             }
-            let identity = session.trim_start_matches("aios-").to_string();
-            let display_name = display_name_for(&identity, &session, &instances);
-            oracles.push(OracleInfo {
-                socket: oracle_socket(),
-                is_master: false,
-                running: true,
-                identity,
-                session,
-                display_name,
+            let attached = p.next().unwrap_or("0").trim() != "0";
+            let windows = p.next().unwrap_or("1").trim().parse().unwrap_or(1);
+            let label = p.next().unwrap_or("").trim().to_string();
+            let is_oracle =
+                socket == sock && name.starts_with("aios-") && !name.starts_with("aios-term-");
+            sessions.push(TmuxSession {
+                socket: socket.clone(),
+                name,
                 attached,
+                windows,
+                is_oracle,
+                label,
             });
         }
-
-        // Flat, open "agents" list — no special master. Attached first, then alpha.
-        oracles.sort_by(|a, b| b.attached.cmp(&a.attached).then(a.identity.cmp(&b.identity)));
-        Ok(oracles)
     }
-
-    #[cfg(not(unix))]
-    {
-        Ok(Vec::new())
-    }
+    Ok(sessions)
 }
 
-/// Lists EVERY live tmux session across the known sockets — the all-tmux attach
-/// surface. Sessions absent → simply skipped (no error).
+/// Creates a new oracle: a detached session `aios-<identity>` on the socket,
+/// running `command` (e.g. `claude`) if given, else a login shell. The session
+/// stays alive after the command exits so logs remain and it's reattachable.
 #[tauri::command]
-pub fn list_tmux_sessions() -> Result<Vec<TmuxSession>, String> {
-    #[cfg(unix)]
-    {
-        let mut sessions = Vec::new();
-        let oracle_sock = oracle_socket();
-        for socket in known_sockets() {
-            let output = std::process::Command::new(tmux_bin())
-                .args([
-                    "-L",
-                    socket.as_str(),
-                    "list-sessions",
-                    "-F",
-                    "#{session_name}|#{session_attached}|#{session_windows}",
-                ])
-                .output();
-            let Ok(out) = output else { continue };
-            if !out.status.success() {
-                continue;
-            }
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let mut p = line.splitn(3, '|');
-                let name = p.next().unwrap_or("").trim().to_string();
-                if name.is_empty() {
-                    continue;
-                }
-                let attached = p.next().unwrap_or("0").trim() != "0";
-                let windows = p.next().unwrap_or("1").trim().parse().unwrap_or(1);
-                let is_oracle = socket == oracle_sock && name.starts_with("aios-");
-                sessions.push(TmuxSession {
-                    socket: socket.clone(),
-                    name,
-                    attached,
-                    windows,
-                    is_oracle,
-                });
-            }
-        }
-        Ok(sessions)
-    }
-
-    #[cfg(not(unix))]
-    {
-        Ok(Vec::new())
-    }
-}
-
-/// Creates a new oracle: a detached tmux session `aios-<identity>` on the oracle
-/// socket. If `command` is given, it's sent to the new session (e.g. `claude`).
-#[tauri::command]
-pub fn create_oracle(identity: String, command: Option<String>) -> Result<String, String> {
+pub fn create_oracle(
+    app: AppHandle,
+    identity: String,
+    command: Option<String>,
+    socket: Option<String>,
+) -> Result<String, String> {
+    let sock = clean_socket(socket);
     let id = sanitize_identity(&identity);
     if id.is_empty() {
         return Err("identity must contain letters or digits".into());
     }
     let session = format!("aios-{id}");
     // Refuse if it already exists.
-    if tmux_oracle(&["has-session", "-t", &session]).is_ok() {
+    if run_mux_quiet(
+        &resolve_mux(&app).ok_or("no multiplexer found (install psmux/tmux)")?,
+        &["-L", &sock, "has-session", "-t", &session],
+    ) {
         return Err(format!("oracle '{id}' already exists"));
     }
 
-    // Prefer the bridge's oracle-spawn.sh — it resolves the identity's REAL
-    // workspace / sid / runtime / model from the identity registry, launches the
-    // agent (claude) in the right repo with full context, and registers the
-    // session exactly like the WhatsApp bridge + grid do. This is what makes
-    // re-spawning `aios-firaz` (or any teammate) actually restore the working
-    // oracle — not a bare shell. A bare `tmux new-session` is the fallback only
-    // when the script isn't present (non-bridge machines / OSS installs).
-    if let Some(script) = oracle_spawn_script() {
-        let _ = std::process::Command::new("bash")
-            .arg(&script)
-            .arg(&id)
-            .env("AIOS_SPAWN_FROM_SHELL", "1")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| format!("couldn't run oracle-spawn.sh: {e}"))?;
-        // The script creates the tmux session early, then opens the AIOS window;
-        // poll (≤6s) for the session so we return only once it's really up.
-        for _ in 0..30 {
-            if tmux_oracle(&["has-session", "-t", &session]).is_ok() {
-                return Ok(session);
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-        // Script ran but the session never appeared — fall through to a bare
-        // session so the user still gets something rather than a silent failure.
-    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    let startup = command
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty());
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
-    tmux_oracle(&["new-session", "-d", "-s", &session, "-c", &home])?;
-    if let Some(cmd) = command.filter(|c| !c.trim().is_empty()) {
-        tmux_oracle(&["send-keys", "-t", &session, &cmd, "Enter"])?;
+    #[cfg(windows)]
+    {
+        // psmux: run the command in a shell that stays open after it exits, so the
+        // oracle session survives and stays reattachable (matches the terminal path).
+        let mut create: Vec<String> = vec![
+            "new-session".into(),
+            "-d".into(),
+            "-s".into(),
+            session.clone(),
+            "-c".into(),
+            home,
+            // window name = the oracle identity, so the status bar + reattach list
+            // show a friendly label (not the running program name).
+            "-n".into(),
+            id.clone(),
+        ];
+        if let Some(cmd) = &startup {
+            create.push(crate::pty::windows_shell());
+            create.push("-NoExit".into());
+            create.push("-Command".into());
+            create.push(cmd.clone());
+        }
+        let create_refs: Vec<&str> = std::iter::once("-L")
+            .chain(std::iter::once(sock.as_str()))
+            .chain(create.iter().map(String::as_str))
+            .collect();
+        if !run_mux_quiet(
+            &resolve_mux(&app).ok_or("no multiplexer found")?,
+            &create_refs,
+        ) {
+            return Err(format!("failed to create oracle '{id}'"));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        mux_output(&app, &sock, &["new-session", "-d", "-s", &session, "-c", &home, "-n", &id])?;
+        if let Some(cmd) = &startup {
+            // Run the command via send-keys so it executes in the session's shell.
+            mux_output(&app, &sock, &["send-keys", "-t", &session, cmd, "Enter"])?;
+        }
     }
     Ok(session)
 }
 
-/// Resolves the bridge's `oracle-spawn.sh` (the canonical real-oracle launcher).
-/// Tries the reorg'd path first, then the legacy symlinked one. `None` on a box
-/// that doesn't have the bridge checked out.
-fn oracle_spawn_script() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
-    for rel in [
-        "Repo/firaz/aios/bridge/scripts/oracle-spawn.sh",
-        "Repo/firaz/aios-bridge/scripts/oracle-spawn.sh",
-    ] {
-        let p = format!("{home}/{rel}");
-        if std::path::Path::new(&p).exists() {
-            return Some(p);
-        }
-    }
-    None
-}
-
-/// Renames an oracle session. The master oracle cannot be renamed.
+/// Renames an oracle session.
 #[tauri::command]
-pub fn rename_oracle(from: String, to: String) -> Result<String, String> {
+pub fn rename_oracle(
+    app: AppHandle,
+    from: String,
+    to: String,
+    socket: Option<String>,
+) -> Result<String, String> {
+    let sock = clean_socket(socket);
     let from_id = sanitize_identity(&from);
     let to_id = sanitize_identity(&to);
     if to_id.is_empty() {
@@ -338,95 +328,85 @@ pub fn rename_oracle(from: String, to: String) -> Result<String, String> {
     }
     let from_session = format!("aios-{from_id}");
     let to_session = format!("aios-{to_id}");
-    if tmux_oracle(&["has-session", "-t", &to_session]).is_ok() {
+    if run_mux_quiet(
+        &resolve_mux(&app).ok_or("no multiplexer found")?,
+        &["-L", &sock, "has-session", "-t", &to_session],
+    ) {
         return Err(format!("oracle '{to_id}' already exists"));
     }
-    tmux_oracle(&["rename-session", "-t", &from_session, &to_session])?;
+    mux_output(&app, &sock, &["rename-session", "-t", &from_session, &to_session])?;
     Ok(to_session)
 }
 
 /// Appshot: captures the screen to a PNG and sends its path into an oracle's
-/// tmux session (defaults to master) — the ⌘⌘ "screenshot → aios" flow. Returns
-/// the saved path. No Enter is sent, so the user can add context first.
+/// session — the ⌘⌘ "screenshot → aios" flow. macOS only (uses `screencapture`).
+/// No Enter is sent, so the user can add context first. Returns the saved path.
 #[tauri::command]
-pub fn appshot(identity: Option<String>) -> Result<String, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let path = format!("/tmp/aios-shot-{ts}.png");
-    let status = std::process::Command::new("/usr/sbin/screencapture")
-        .args(["-x", &path])
-        .status()
-        .map_err(|e| format!("screencapture failed: {e}"))?;
-    if !status.success() {
-        return Err("screencapture returned non-zero".into());
-    }
-    // Route into the chosen oracle, or the master (root) session by default.
-    // `-l` sends the path literally (no key interpretation), no Enter.
-    let keys = format!("{path} ");
-    match identity.map(|i| sanitize_identity(&i)).filter(|i| !i.is_empty()) {
-        Some(id) => {
-            let session = format!("aios-{id}");
-            let _ = tmux_oracle(&["send-keys", "-t", &session, "-l", &keys]);
+pub fn appshot(app: AppHandle, identity: Option<String>, socket: Option<String>) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let sock = clean_socket(socket.clone());
+        // Explicit identity, else the first running oracle (no hardcoded default).
+        let id = match identity.map(|i| sanitize_identity(&i)).filter(|i| !i.is_empty()) {
+            Some(i) => i,
+            None => list_oracles(app.clone(), socket)?
+                .into_iter()
+                .next()
+                .map(|o| o.identity)
+                .ok_or("no oracle to send the screenshot to")?,
+        };
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = format!("/tmp/aios-shot-{ts}.png");
+        let status = std::process::Command::new("/usr/sbin/screencapture")
+            .args(["-x", &path])
+            .status()
+            .map_err(|e| format!("screencapture failed: {e}"))?;
+        if !status.success() {
+            return Err("screencapture returned non-zero".into());
         }
-        None => {
-            let master_socket = master_socket();
-            let master_session = master_session();
-            let _ = std::process::Command::new(tmux_bin())
-                .args([
-                    "-L",
-                    master_socket.as_str(),
-                    "send-keys",
-                    "-t",
-                    master_session.as_str(),
-                    "-l",
-                    &keys,
-                ])
-                .status();
-        }
+        let session = format!("aios-{id}");
+        let keys = format!("{path} ");
+        let _ = mux_output(&app, &sock, &["send-keys", "-t", &session, "-l", &keys]);
+        Ok(path)
     }
-    Ok(path)
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, identity, socket);
+        Err("screenshot capture is only supported on macOS".into())
+    }
 }
 
-/// Deletes (kills) an oracle session. The master oracle cannot be deleted.
-///
-/// firaz's primary oracle (`aios-firaz`) is load-bearing — his WhatsApp routes
-/// to it — so it is hard-blocked unless `force` is `true`. The frontend only
-/// passes `force` after a distinct, explicitly-warned confirm step, so it can't
-/// be fat-fingered.
+/// Deletes (kills) an oracle session.
 #[tauri::command]
-pub fn delete_oracle(identity: String, force: Option<bool>) -> Result<(), String> {
+pub fn delete_oracle(
+    app: AppHandle,
+    identity: String,
+    force: Option<bool>,
+    socket: Option<String>,
+) -> Result<(), String> {
+    let _ = force; // no protected oracle anymore — kept for frontend compatibility
+    let sock = clean_socket(socket);
     let id = sanitize_identity(&identity);
     if id.is_empty() {
         return Err("invalid identity".into());
     }
-    if id == primary_oracle_identity() && !force.unwrap_or(false) {
-        return Err(format!(
-            "deleting aios-{id} breaks your whatsapp routing — confirm with force"
-        ));
-    }
-    tmux_oracle(&["kill-session", "-t", &format!("aios-{id}")])?;
+    mux_output(&app, &sock, &["kill-session", "-t", &format!("aios-{id}")])?;
     Ok(())
 }
 
-/// Kills any tmux session on a given socket — the all-tmux attach surface's
-/// delete affordance. No session is protected: the master can be killed too
-/// (Firaz's call — he owns the mothership and may want it gone).
+/// Kills any session on a given socket — the all-sessions attach surface's
+/// delete affordance.
 #[tauri::command]
-pub fn kill_tmux_session(socket: String, session: String) -> Result<(), String> {
+pub fn kill_tmux_session(app: AppHandle, socket: String, session: String) -> Result<(), String> {
     let socket = socket.trim();
     let session = session.trim();
     if socket.is_empty() || session.is_empty() {
         return Err("socket and session are required".into());
     }
-    let output = std::process::Command::new(tmux_bin())
-        .args(["-L", socket, "kill-session", "-t", session])
-        .output()
-        .map_err(|e| format!("failed to run tmux: {e}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
+    mux_output(&app, socket, &["kill-session", "-t", session])?;
     Ok(())
 }

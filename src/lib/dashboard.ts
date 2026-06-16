@@ -68,7 +68,7 @@ export interface MemoryFocus {
 }
 
 /**
- * The freshest curated memory note as the idle "focus" — firaz's actual current
+ * The freshest curated memory note as the idle "focus" — the user's actual current
  * focus per his pick, sourced from the most-recently-written `project_*.md` in
  * his global memory (NOT the static goals roadmap, which goes stale). Reads the
  * memory dir, takes the newest project note by mtime, and parses its frontmatter

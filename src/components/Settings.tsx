@@ -509,7 +509,7 @@ function AccentSwatches({
 }
 
 /** A live preview card — shows current theme + accent + font scale at a glance.
- *  This is the "thing firaz called out" — instant feedback on every change. */
+ *  Instant feedback on every change. */
 function AppearancePreview({ fontPx }: { fontPx: number }) {
   return (
     <div
@@ -1294,6 +1294,18 @@ export function Settings({
                     />
                   </Row>
                   <Row
+                    label="terminal socket"
+                    sub="private tmux/psmux namespace for AIOS's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
+                  >
+                    <input
+                      value={s.terminalSocket}
+                      onChange={(e) => patch({ terminalSocket: e.target.value })}
+                      placeholder="aios"
+                      spellCheck={false}
+                      className="w-[230px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </Row>
+                  <Row
                     label="minimize to tray"
                     sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
                   >
@@ -1617,22 +1629,14 @@ export function Settings({
 
               {section === "oracles" && (
                 <>
-                  <Row label="default socket name" sub="tmux socket oracles bind to">
-                    <input
-                      value={s.defaultSocketName}
-                      onChange={(e) => patch({ defaultSocketName: e.target.value })}
-                      spellCheck={false}
-                      className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </Row>
                   <Row
-                    label="primary oracle"
-                    sub="the protected aios-<id> session external routing points at (delete-guarded)"
+                    label="default oracle name"
+                    sub="identity for the one-tap 'spawn an oracle' shortcut (aios-<id>); blank → your name, else 'agent'. Oracles share the terminal socket (see general settings)."
                   >
                     <input
                       value={s.primaryOracleId}
                       onChange={(e) => patch({ primaryOracleId: e.target.value })}
-                      placeholder="firaz"
+                      placeholder="agent"
                       spellCheck={false}
                       className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     />

@@ -1,0 +1,8 @@
+# Bundled runtime resources are staged here at release time.
+#
+# psmux.exe (the native Windows tmux — https://github.com/psmux/psmux) is
+# fetched by scripts/fetch-psmux.ps1 before a Windows `tauri build` and is
+# gitignored (never committed — it's a ~2 MB binary, regenerated per release).
+# The tauri.conf `bundle.resources` glob ("resources/*") packages whatever lands
+# here; at runtime pty.rs::mux_bin resolves <resource_dir>/resources/psmux.exe
+# as the fallback when no psmux/tmux is found on PATH.

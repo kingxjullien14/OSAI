@@ -8,7 +8,7 @@
 
      Derived from the CHAT surface (ChatPane.tsx), which is the
      gold standard: calm near-black ground, generously layered
-     surfaces, soft borders, restrained adletic-orange accent
+     surfaces, soft borders, restrained AIOS orange accent
      (accent only on primary / active / focus — never every
      border or hover).  These VALUES were retuned to read like
      the chat everywhere; the token NAMES are frozen because
@@ -43,7 +43,7 @@
   --color-muted: oklch(0.60 0.004 240);      /* secondary labels, tool args */
   --color-faint: oklch(0.46 0.004 240);      /* helper text, placeholders, dividers·dots */
 
-  /* ---- accent — adletic orange (RESTRAINED use; see DESIGN.md)
+  /* ---- accent — AIOS orange (RESTRAINED use; see DESIGN.md)
      primary buttons, active state, focus rings ONLY.  NOTE: these
      six are overridden at runtime by lib/theme.ts applyAccent();
      keep names + meaning, values here are the orange default. */
@@ -140,7 +140,7 @@
    before initTheme runs / if data-theme is absent). We redeclare
    the full dark token set explicitly so toggling back from light
    fully restores dark, then a clean professional light palette.
-   Adletic orange (--color-accent + variants) is kept in BOTH so
+   AIOS orange (--color-accent + variants) is kept in BOTH so
    brand identity holds across modes.
    NOTE: xterm terminals keep their own hardcoded dark THEME (in
    TerminalPane) — terminals stay dark in light mode by design,
@@ -162,7 +162,7 @@ html[data-theme="dark"] {
   --color-muted: oklch(0.60 0.004 240);
   --color-faint: oklch(0.46 0.004 240);
 
-  /* accent — adletic orange (runtime-overridden by lib/theme.ts) */
+  /* accent — AIOS orange (runtime-overridden by lib/theme.ts) */
   --color-accent: oklch(0.72 0.18 50);
   --color-accent-hover: oklch(0.78 0.16 60);
   --color-accent-dim: oklch(0.45 0.13 50);
@@ -198,7 +198,7 @@ html[data-theme="light"] {
   --color-muted: #6b7280;                     /* secondary labels ≈ slate-500 */
   --color-faint: #9ca3af;                     /* helper / placeholder ≈ slate-400 */
 
-  /* accent — adletic orange (runtime-overridden by lib/theme.ts) */
+  /* accent — AIOS orange (runtime-overridden by lib/theme.ts) */
   --color-accent: oklch(0.66 0.19 48);        /* ~#e85d1a — nudged darker for contrast on white */
   --color-accent-hover: oklch(0.60 0.18 45);
   --color-accent-dim: oklch(0.80 0.10 55);

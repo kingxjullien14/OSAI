@@ -55,7 +55,7 @@ fn set_close_to_tray(state: tauri::State<CloseToTray>, enabled: bool) {
 /// `window.addEventListener("keydown")`. When focus sits inside a NATIVE child
 /// webview — a browser pane (its own WKWebView) or a terminal (xterm grabs keys)
 /// — those keystrokes never bubble up to the React webview, so every cockpit
-/// shortcut DIED exactly when a pane was focused. firaz got stuck unable to exit
+/// shortcut DIED exactly when a pane was focused. the user got stuck unable to exit
 /// a fullscreen browser pane.
 ///
 /// A real app-MENU accelerator fires whenever the app is frontmost REGARDLESS of
@@ -276,7 +276,7 @@ pub fn run() {
 
             // Boot the local-first diagnostics store (Phase 0+1): resolve the
             // per-bundle app-data dir (portable — a fork gets its own dir, no
-            // dependency on firaz's ~/.aios), seed the anon install id, and
+            // dependency on the user's ~/.aios), seed the anon install id, and
             // install the Rust panic hook so backend panics persist as
             // DiagEvents instead of dying silently. Soft-fail: if the dir can't
             // resolve we just skip diag (never block startup).
@@ -356,6 +356,7 @@ pub fn run() {
             pty::pty_paste,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_set_label,
             pty::pty_reap_terminals,
             // LSP supervisor (lsp.rs) — process spawn + framed pipe; protocol
             // intelligence lives in src/lib/lsp/ on the TS side.

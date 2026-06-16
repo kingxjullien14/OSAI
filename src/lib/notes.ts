@@ -2,7 +2,7 @@
  *
  *  Notes live as plain markdown files under `~/.aios/notes/` — ONE file per
  *  note. That path is the contract: the oracle (claude in a terminal) reads +
- *  writes the SAME files, so firaz can brain-dump ideas in the pane and hand the
+ *  writes the SAME files, so the user can brain-dump ideas in the pane and hand the
  *  whole batch over in one shot, or AIOS can drop a note in for him to find.
  *
  *  Format: the note's title is its first non-empty line (a leading "# " is

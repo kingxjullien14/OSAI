@@ -123,7 +123,7 @@ test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
   const source = read("src/components/dashboard/UsageGlance.tsx");
   const sidebar = read("src/components/SidebarUsage.tsx");
 
-  // firaz 2026-06-06: replaced the gpt-5.3-codex-spark block with a real claude
+  // upstream 2026-06-06: replaced the gpt-5.3-codex-spark block with a real claude
   // meter sourced from ~/.aios/state/usage.json (claude_usage → claudeRate).
   assert.match(source, /ProviderBlock\s+name="claude"/);
   assert.match(source, /claudeRate\(\)/);
@@ -234,7 +234,10 @@ test("web mirror uses a cloudflare durable object transport", () => {
   assert.match(app, /source: "mirror"/);
   assert.match(viewer, /desktop mirror/);
   assert.match(viewer, /pixel streaming is not enabled yet/);
-  assert.match(transport, /aios-mirror-worker\.firazfhansurie\.workers\.dev/);
+  // mirror endpoint is deployment-specific (env-configurable), never a hardcoded
+  // personal worker URL.
+  assert.match(transport, /VITE_AIOS_MIRROR_URL/);
+  assert.doesNotMatch(transport, /firazfhansurie/);
   assert.match(transport, /#mirror=/);
   assert.match(worker, /class MirrorRoom extends DurableObject/);
   assert.match(worker, /ctx\.acceptWebSocket/);
@@ -352,9 +355,9 @@ test("money agents open as chatpane-backed agents", () => {
   assert.match(agents, /buildMoneyAgentRunCommand/);
   assert.match(agents, /shell control plane/);
   assert.match(agents, /saveMoneyAgentChatSession/);
-  // the developer's home may appear exactly once: in the cleanse migration
-  // that detects and heals legacy stored paths. never in a config/default.
-  assert.equal((agents.match(/firazfhansurie/g) ?? []).length, 1);
+  // no developer name anywhere — the cleanse migration heals legacy stored
+  // absolute home paths generically (no hardcoded username).
+  assert.doesNotMatch(agents, /firazfhansurie/);
   assert.match(agents, /cleanseStored/);
   assert.match(agents, /ensureMoneyAgentHome/);
   assert.match(agents, /loadConfiguredMoneyAgents/);
@@ -642,11 +645,13 @@ test("shell exposes a policy-gated agent control bridge", () => {
   assert.match(controller, /!policy\.allowed/);
 });
 
-test("mac bundle uses stable development signing for tcc permissions", () => {
+test("mac bundle wires entitlements and hardcodes no personal signing identity", () => {
   const tauri = read("src-tauri/tauri.conf.json");
 
+  // ad-hoc signing ("-") breaks TCC permission persistence across mac builds.
   assert.equal(tauri.includes('"signingIdentity": "-"'), false);
-  assert.match(tauri, /Apple Development: Firaz Fhansurie \(KL78M575FW\)/);
+  // a mac signing identity is the builder's own (env/CI), never baked into source.
+  assert.doesNotMatch(tauri, /Apple Development: Firaz Fhansurie/);
   assert.match(tauri, /"entitlements": "\.\/Entitlements\.plist"/);
 });
 

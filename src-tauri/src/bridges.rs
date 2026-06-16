@@ -42,20 +42,20 @@ fn home() -> String {
 
 /// The bridge's personal-WA pairing script (wwebjs, 8-digit pairing code).
 const CONNECT_PERSONAL_CANDIDATES: &[&str] = &[
-    "Repo/firaz/aios/bridge/scripts/connect-personal-code.js",
-    "Repo/firaz/aios-bridge/scripts/connect-personal-code.js",
+    "Repo/aios/bridge/scripts/connect-personal-code.js",
+    "Repo/aios-bridge/scripts/connect-personal-code.js",
 ];
 
-/// Pairs firaz's PERSONAL WhatsApp (the wwebjs session used by `send-as-personal`
+/// Pairs the user's PERSONAL WhatsApp (the wwebjs session used by `send-as-personal`
 /// / the "personal" channel). Spawns `connect-personal-code.js`, waits for the
 /// linking screen to render + the 8-digit pairing code, and returns it. The
-/// node process is LEFT RUNNING so pairing completes once firaz enters the code
+/// node process is LEFT RUNNING so pairing completes once the user enters the code
 /// (WhatsApp → Linked Devices → Link with phone number). On timeout the child is
 /// killed so we don't leak a wwebjs client.
 #[tauri::command]
 pub fn pair_personal_wa() -> Value {
     let Some(script) = resolve_log(CONNECT_PERSONAL_CANDIDATES) else {
-        return json!({ "ok": false, "error": "connect-personal-code.js not found under ~/Repo/firaz/aios/bridge (or aios-bridge)." });
+        return json!({ "ok": false, "error": "connect-personal-code.js not found under ~/Repo/aios/bridge (or aios-bridge)." });
     };
 
     let mut child = match std::process::Command::new("node")
@@ -152,8 +152,8 @@ fn channel_probes() -> Vec<ChannelProbe> {
             proc_match: &["inbox-worker", "push.js", "meta-webhook", "aios-bridge", "aios/bridge"],
             launchd_match: "bridge",
             log_candidates: &[
-                "Repo/firaz/aios/bridge/scripts/outbound-log.jsonl",
-                "Repo/firaz/aios-bridge/scripts/outbound-log.jsonl",
+                "Repo/aios/bridge/scripts/outbound-log.jsonl",
+                "Repo/aios-bridge/scripts/outbound-log.jsonl",
                 ".aios/state/outbound-log.jsonl",
             ],
         },

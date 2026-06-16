@@ -6,8 +6,8 @@
   This is what the Desktop "AIOS" icon runs. It:
     1. installs deps only when package.json changed
     2. launches the app (Tauri dev - hot reload of your local source)
-  It does NOT fetch or merge anything from firaz's upstream - you stay on exactly
-  your own code. To pull firaz's updates deliberately, run scripts\aios-sync.ps1.
+  It does NOT fetch or merge anything from the upstream upstream - you stay on exactly
+  your own code. To pull the upstream updates deliberately, run scripts\aios-sync.ps1.
 
   ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI, so non-ASCII
   characters would corrupt parsing. Keep this file ASCII.

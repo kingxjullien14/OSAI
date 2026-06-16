@@ -1,5 +1,5 @@
 //! PANE MONITOR — watch a tmux session (an oracle's work surface) and push
-//! WhatsApp updates to firaz when it finishes a task or hits notable output.
+//! WhatsApp updates to the user when it finishes a task or hits notable output.
 //!
 //! One cockpit click → `monitor_start(socket, session)` spawns a background
 //! watcher thread that polls `tmux capture-pane` every ~15s. It tracks the
@@ -84,8 +84,8 @@ fn tmux_bin() -> String {
 fn push_script() -> Option<String> {
     let home = home();
     let candidates = [
-        format!("{home}/Repo/firaz/aios/bridge/scripts/push.js"),
-        format!("{home}/Repo/firaz/aios-bridge/scripts/push.js"),
+        format!("{home}/Repo/aios/bridge/scripts/push.js"),
+        format!("{home}/Repo/aios-bridge/scripts/push.js"),
     ];
     candidates.into_iter().find(|p| std::path::Path::new(p).exists())
 }
@@ -410,7 +410,7 @@ pub fn monitor_start(socket: String, session: String) -> Result<(), String> {
     if session.is_empty() {
         return Err("session must not be empty".into());
     }
-    let socket = if socket.is_empty() { "adletic".to_string() } else { socket };
+    let socket = if socket.is_empty() { "aios".to_string() } else { socket };
 
     // Already monitoring → no-op.
     {

@@ -1,7 +1,7 @@
 /** Monaco (VS Code's editor core) setup for the shell. Bundles the language
  *  web-workers via Vite's `?worker` imports — no CDN, so it works offline inside
  *  the Tauri webview. Registers a Dart grammar (Monaco ships none, and that's
- *  Firaz's Flutter stack) and an aios-dark theme matching the app chrome.
+ *  the user's Flutter stack) and an aios-dark theme matching the app chrome.
  *
  *  `initMonaco()` is idempotent; call it once before creating an editor. */
 import * as monaco from "monaco-editor";

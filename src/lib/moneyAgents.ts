@@ -93,11 +93,13 @@ function normalizeAgentId(value: string): string {
     .slice(0, 48);
 }
 
-/** Drop stored paths that point at the original developer's machine — agents
- *  created by older builds baked them in; deriving fresh ones self-heals. */
+/** Drop stored absolute home paths baked by an older build (possibly on another
+ *  machine) — deriving fresh ones from the current home self-heals, so we never
+ *  trust a persisted `/Users/<x>/…`, `/home/<x>/…`, or `C:\Users\<x>\…`. */
 const cleanseStored = (value: unknown): string | undefined => {
   const s = typeof value === "string" ? value.trim() : "";
-  if (!s || s.includes("/Users/firazfhansurie")) return undefined;
+  if (!s) return undefined;
+  if (/^(?:\/Users\/|\/home\/|[A-Za-z]:[\\/]Users[\\/])/.test(s)) return undefined;
   return s;
 };
 

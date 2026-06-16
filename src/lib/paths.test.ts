@@ -13,17 +13,17 @@ import {
 } from "./paths.ts";
 
 test("basename handles both separator styles and trailing separators", () => {
-  assert.equal(basename("/Users/firaz/report.md"), "report.md");
+  assert.equal(basename("/Users/aios/report.md"), "report.md");
   assert.equal(basename("C:\\Users\\kingx\\report.md"), "report.md");
   assert.equal(basename("C:/Users/kingx/report.md"), "report.md");
-  assert.equal(basename("/Users/firaz/dir/"), "dir");
+  assert.equal(basename("/Users/aios/dir/"), "dir");
   assert.equal(basename("C:\\Users\\kingx\\dir\\"), "dir");
   assert.equal(basename("report.md"), "report.md");
   assert.equal(basename("C:\\"), "C:");
 });
 
 test("dirname ascends one level and respects platform roots", () => {
-  assert.equal(dirname("/Users/firaz/report.md"), "/Users/firaz");
+  assert.equal(dirname("/Users/aios/report.md"), "/Users/aios");
   assert.equal(dirname("/report.md"), "/");
   assert.equal(dirname("C:\\Users\\kingx\\report.md"), "C:\\Users\\kingx");
   assert.equal(dirname("C:\\Users"), "C:\\");

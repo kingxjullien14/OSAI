@@ -1,8 +1,9 @@
 /**
- * The oracle roster — the fleet of bridge-managed oracle sessions, plus an
- * all-tmux attach surface. Master oracle is pinned top, crowned, undeletable.
- * Full CRUD: create / rename / delete (delete is two-click-to-confirm).
- * Self-polls so spawns/kills elsewhere reflect automatically.
+ * The oracle roster — the fleet of long-lived agent sessions (`aios-<identity>`
+ * multiplexer sessions, e.g. a `claude` running in its own tmux/psmux session),
+ * plus an all-sessions attach surface. Full CRUD: create / rename / delete
+ * (delete is two-click-to-confirm). Self-polls so spawns/kills elsewhere reflect
+ * automatically. Works on macOS/Linux (tmux) and Windows (psmux).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -29,30 +30,33 @@ import {
   listOracles,
   listTmuxSessions,
   renameOracle,
+  setSessionLabel,
   type OracleInfo,
   type TmuxSession,
 } from "../lib/pty";
 import { isTauriRuntime } from "../lib/tauri";
-import { isWindows } from "../lib/platform";
 import { loadSettings } from "../lib/settings";
 
 interface Props {
   iconsOnly?: boolean;
   onAttachOracle: (identity: string) => void;
-  onAttachTmux: (socket: string, session: string) => void;
+  onAttachTmux: (socket: string, session: string, label?: string) => void;
   moneyAgentsSlot?: ReactNode;
   chatpaneAgentsOnly?: boolean;
 }
 
-/**
- * The load-bearing primary oracle. NOT the master — but external routing (e.g.
- * WhatsApp) may point at `aios-<id>`, so deleting it silently breaks routing.
- * Gets a distinct, explicitly-warned confirm path that can't be fat-fingered.
- * Configurable via Settings → oracles (`primaryOracleId`); default preserves
- * the legacy "firaz" session. Keep aligned with `AIOS_PRIMARY_ORACLE` /
- * `primary_oracle_identity()` in oracles.rs (env override on the Rust side).
- */
-const primaryOracleIdentity = (): string => loadSettings().primaryOracleId?.trim() || "firaz";
+/** The identity for the one-tap "spawn an oracle" shortcut: the user's saved
+ *  default (Settings → oracles), else a slug of their name, else "agent". */
+const defaultOracleIdentity = (): string => {
+  const s = loadSettings();
+  const slug = (v: string) =>
+    v.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug(s.primaryOracleId || "") || slug(s.userName || "") || "agent";
+};
+
+/** The multiplexer socket oracles live on (same configurable namespace as the
+ *  persistent terminals — Settings → "terminal socket"). */
+const oracleSocket = (): string => loadSettings().terminalSocket || "aios";
 
 const HIDDEN_KEY = "aios.hiddenOracles";
 const loadHidden = (): Set<string> => {
@@ -111,7 +115,8 @@ export function OracleRoster({
       return;
     }
     try {
-      const [o, s] = await Promise.all([listOracles(), listTmuxSessions()]);
+      const sock = oracleSocket();
+      const [o, s] = await Promise.all([listOracles(sock), listTmuxSessions(sock)]);
       setOracles(o);
       setSessions(s);
     } catch (e) {
@@ -127,22 +132,23 @@ export function OracleRoster({
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // Non-oracle sessions only (oracles already live in the roster above).
+  // Non-oracle sessions, split into AIOS's own persistent terminals (`aios-term-*`
+  // — the reattach surface) and everything else (misc tmux sessions).
   const otherSessions = sessions.filter((s) => !s.is_oracle);
-  // Master is never hideable; everything else honors the hidden set.
+  const reattachable = otherSessions.filter((s) => s.name.startsWith("aios-term-"));
+  const plainSessions = otherSessions.filter((s) => !s.name.startsWith("aios-term-"));
   const visibleOracles = oracles.filter((o) => !hidden.has(o.identity));
   const hiddenOracles = oracles.filter((o) => hidden.has(o.identity));
-  // Is the primary (firaz) oracle running? If not, offer a one-tap spawn —
-  // create_oracle runs the bridge's oracle-spawn.sh to bring up the real
-  // aios-firaz working session, then we attach to it.
-  const primaryRunning = oracles.some((o) => o.identity === primaryOracleIdentity());
-  const spawnPrimary = async () => {
+  // Is the default oracle already running? If not, offer a one-tap spawn that
+  // creates `aios-<identity>` running claude, then attaches to it.
+  const defaultRunning = oracles.some((o) => o.identity === defaultOracleIdentity());
+  const spawnDefault = async () => {
     setSpawning(true);
     setError(null);
     try {
-      await createOracle(primaryOracleIdentity());
+      await createOracle(defaultOracleIdentity(), "claude --dangerously-skip-permissions", oracleSocket());
       await refresh();
-      onAttachOracle(primaryOracleIdentity());
+      onAttachOracle(defaultOracleIdentity());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -161,12 +167,12 @@ export function OracleRoster({
         >
           <Radio size={14} />
         </button>
-        {!collapsed && nativeReady && !isWindows && !primaryRunning && (
+        {!collapsed && nativeReady && !defaultRunning && (
           <button
-            onClick={spawnPrimary}
+            onClick={spawnDefault}
             disabled={spawning}
             className="grid h-8 w-8 place-items-center rounded-md border border-dashed border-[var(--color-border)] text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
-            title="spawn my oracle"
+            title="spawn an oracle"
           >
             {spawning ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
           </button>
@@ -258,19 +264,12 @@ export function OracleRoster({
 
         {!collapsed && (
         <div className="flex flex-col gap-1">
-          {/* tmux doesn't exist on Windows — a one-tap spawn that can never
-              succeed is worse than no affordance. One honest line instead. */}
-          {isWindows && !chatpaneAgentsOnly && oracles.length === 0 && (
-            <p className="px-2 py-1 text-[10px] leading-snug text-[var(--color-faint)]">
-              oracles run as tmux sessions — not available on windows yet
-            </p>
-          )}
-          {nativeReady && !isWindows && !primaryRunning && !chatpaneAgentsOnly && (
+          {nativeReady && !defaultRunning && !chatpaneAgentsOnly && (
             <button
-              onClick={spawnPrimary}
+              onClick={spawnDefault}
               disabled={spawning}
               className="group flex items-center gap-2 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1.5 text-left transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
-              title={`spawn your oracle (aios-${primaryOracleIdentity()})`}
+              title={`spawn your oracle (aios-${defaultOracleIdentity()})`}
             >
               {spawning ? (
                 <RefreshCw size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
@@ -279,10 +278,10 @@ export function OracleRoster({
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] text-[var(--color-text)]">
-                  {spawning ? `spawning ${primaryOracleIdentity()}…` : "spawn my oracle"}
+                  {spawning ? `spawning ${defaultOracleIdentity()}…` : "spawn an oracle"}
                 </div>
                 <div className="truncate text-[10px] text-[var(--color-faint)]">
-                  {primaryOracleIdentity()} · offline
+                  {defaultOracleIdentity()} · offline
                 </div>
               </div>
             </button>
@@ -296,7 +295,7 @@ export function OracleRoster({
                 onHide={() => toggleHidden(o.identity, true)}
                 onRename={async (to) => {
                   try {
-                    await renameOracle(o.identity, to);
+                    await renameOracle(o.identity, to, oracleSocket());
                     await refresh();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
@@ -304,7 +303,7 @@ export function OracleRoster({
                 }}
                 onDelete={async (force) => {
                   try {
-                    await deleteOracle(o.identity, force);
+                    await deleteOracle(o.identity, force, oracleSocket());
                     await refresh();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
@@ -352,8 +351,44 @@ export function OracleRoster({
             it used to vanish whenever this AGENTS section was collapsed. */}
       </div>
 
-      {/* ---- all tmux sessions ---- */}
-      {!collapsed && otherSessions.length > 0 && !chatpaneAgentsOnly && (
+      {/* ---- detached terminals (reattach surface) ---- */}
+      {/* AIOS's own `aios-term-*` sessions that have no open pane right now —
+          close a pane (or the whole app) and its session keeps running here, so
+          you can pop it back into a new pane. Always shown (not behind a toggle)
+          since this is the headline "reattach what I closed" affordance. */}
+      {!collapsed && reattachable.length > 0 && !chatpaneAgentsOnly && (
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">
+            reattach ({reattachable.length})
+          </div>
+          {reattachable.map((s) => (
+            <TmuxRow
+              key={`${s.socket}/${s.name}`}
+              session={s}
+              onAttach={() => onAttachTmux(s.socket, s.name, s.label?.trim() || s.name)}
+              onRename={async (to) => {
+                try {
+                  await setSessionLabel(s.socket, s.name, to);
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+              onKill={async () => {
+                try {
+                  await killTmuxSession(s.socket, s.name);
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ---- other (non-AIOS) tmux sessions ---- */}
+      {!collapsed && plainSessions.length > 0 && !chatpaneAgentsOnly && (
         <div className="flex flex-col gap-1">
           <button
             onClick={() => setShowAll((v) => !v)}
@@ -363,11 +398,11 @@ export function OracleRoster({
               size={11}
               className={`transition-transform ${showAll ? "rotate-90" : ""}`}
             />
-            all sessions ({otherSessions.length})
+            other sessions ({plainSessions.length})
           </button>
           {showAll && (
             <div className="flex flex-col gap-1">
-              {otherSessions.map((s) => (
+              {plainSessions.map((s) => (
                 <TmuxRow
                   key={`${s.socket}/${s.name}`}
                   session={s}
@@ -406,11 +441,7 @@ function OracleRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  // Distinct, harder-to-trigger confirm for the load-bearing primary oracle.
-  const [confirmPrimary, setConfirmPrimary] = useState(false);
   const [draft, setDraft] = useState(oracle.identity);
-
-  const isPrimary = oracle.identity === primaryOracleIdentity();
 
   // Auto-clear the delete confirm if the user moves on.
   useEffect(() => {
@@ -491,21 +522,7 @@ function OracleRow({
         >
           <Pencil size={11} />
         </button>
-        {isPrimary ? (
-          // Load-bearing oracle: no silent two-click. Toggles a distinct warned
-          // panel below; the actual delete lives there as an explicit override.
-          <button
-            onClick={() => setConfirmPrimary((v) => !v)}
-            className={`rounded p-1 hover:bg-[var(--color-danger)]/15 ${
-              confirmPrimary
-                ? "text-[var(--color-danger)]"
-                : "text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-            }`}
-            title="delete (protected — breaks whatsapp routing)"
-          >
-            <Trash2 size={11} />
-          </button>
-        ) : confirmDel ? (
+        {confirmDel ? (
           <button
             onClick={() => onDelete(false)}
             className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
@@ -524,46 +541,28 @@ function OracleRow({
         )}
       </div>
       </div>
-
-      {isPrimary && confirmPrimary && (
-        <div className="flex flex-col gap-1.5 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-2 py-1.5">
-          <span className="text-[10px] leading-snug text-[var(--color-danger)]">
-            {`deleting aios-${primaryOracleIdentity()} breaks your whatsapp routing`}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                onDelete(true);
-                setConfirmPrimary(false);
-              }}
-              className="rounded bg-[var(--color-danger)]/20 px-2 py-0.5 text-[10px] font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger)]/30"
-            >
-              delete anyway
-            </button>
-            <button
-              onClick={() => setConfirmPrimary(false)}
-              className="rounded px-2 py-0.5 text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            >
-              cancel
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-/** One all-tmux session row — attach on click, two-click-confirm kill. */
+/** One session row — attach (reattach) on click, optional inline rename, and a
+ *  two-click-confirm kill. Shows the friendly label (window name) with the raw
+ *  session name as the secondary line. */
 function TmuxRow({
   session,
   onAttach,
   onKill,
+  onRename,
 }: {
   session: TmuxSession;
   onAttach: () => void;
   onKill: () => void;
+  onRename?: (to: string) => void;
 }) {
   const [confirmKill, setConfirmKill] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const display = session.label?.trim() || session.name;
+  const [draft, setDraft] = useState(display);
 
   // Auto-clear the kill confirm if the user moves on.
   useEffect(() => {
@@ -572,44 +571,81 @@ function TmuxRow({
     return () => clearTimeout(t);
   }, [confirmKill]);
 
+  if (editing && onRename) {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const v = draft.trim();
+          if (v && v !== display) onRename(v);
+          setEditing(false);
+        }}
+        className="flex items-center gap-1 rounded-md border border-[var(--color-accent)]/50 bg-[var(--color-panel-2)] px-2 py-1.5"
+      >
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => setEditing(false)}
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--color-text)] outline-none"
+        />
+        <button type="submit" onMouseDown={(e) => e.preventDefault()} className="text-[var(--color-success)]" title="save">
+          <Check size={13} />
+        </button>
+      </form>
+    );
+  }
+
   return (
     <div className="group flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/30 px-2 py-1.5 transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-panel-2)]">
       <button
         onClick={onAttach}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        title={`attach ${session.socket}:${session.name}`}
+        title={`reattach ${session.socket}:${session.name}`}
       >
-        <Terminal size={12} className="shrink-0 text-[var(--color-faint)]" />
+        <span
+          className={`status-dot shrink-0 ${session.attached ? "status-dot--active" : "status-dot--cold"}`}
+          title={session.attached ? "open in a pane" : "detached — click to reattach"}
+        />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]">
-            {session.name}
-          </span>
+          <span className="truncate text-[12px] text-[var(--color-text-2)]">{display}</span>
           <span className="truncate text-[9px] text-[var(--color-faint)]">
-            {session.socket} · {session.windows}w
+            {session.attached ? "open" : "detached"} · {session.socket}
           </span>
         </div>
-        {session.attached && (
-          <span className="status-dot status-dot--active shrink-0" title="attached" />
-        )}
       </button>
 
-      {confirmKill ? (
-        <button
-          onClick={onKill}
-          className="shrink-0 rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
-          title="click again to confirm kill"
-        >
-          <Check size={12} />
-        </button>
-      ) : (
-        <button
-          onClick={() => setConfirmKill(true)}
-          className="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)] group-hover:opacity-100"
-          title="kill session"
-        >
-          <Trash2 size={11} />
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {onRename && (
+          <button
+            onClick={() => {
+              setDraft(display);
+              setEditing(true);
+            }}
+            className="rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg)] hover:text-[var(--color-text)] group-hover:opacity-100"
+            title="rename"
+          >
+            <Pencil size={11} />
+          </button>
+        )}
+        {confirmKill ? (
+          <button
+            onClick={onKill}
+            className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+            title="click again to confirm kill"
+          >
+            <Check size={12} />
+          </button>
+        ) : (
+          <button
+            onClick={() => setConfirmKill(true)}
+            className="rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)] group-hover:opacity-100"
+            title="kill session"
+          >
+            <Trash2 size={11} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

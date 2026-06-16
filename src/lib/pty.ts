@@ -23,45 +23,49 @@ export interface TmuxSession {
   attached: boolean;
   windows: number;
   is_oracle: boolean;
+  /** Friendly display label (the session's window name — datetime/renamed for
+   *  `aios-term-*`). Falls back to `name` in the UI when empty. */
+  label: string;
 }
 
-/** Lists oracle sessions; master is always present + pinned first. */
-export async function listOracles(): Promise<OracleInfo[]> {
-  return invoke<OracleInfo[]>("list_oracles");
+/** Lists oracle sessions (`aios-<identity>`) on the given socket (default "aios"). */
+export async function listOracles(socket?: string | null): Promise<OracleInfo[]> {
+  return invoke<OracleInfo[]>("list_oracles", { socket: socket ?? null });
 }
 
-/** Lists every live tmux session across all known sockets. */
-export async function listTmuxSessions(): Promise<TmuxSession[]> {
-  return invoke<TmuxSession[]>("list_tmux_sessions");
+/** Lists every live multiplexer session across the socket + default. */
+export async function listTmuxSessions(socket?: string | null): Promise<TmuxSession[]> {
+  return invoke<TmuxSession[]>("list_tmux_sessions", { socket: socket ?? null });
 }
 
 /** Creates a new oracle session `aios-<identity>`; optional startup command. */
-export async function createOracle(identity: string, command?: string): Promise<string> {
-  return invoke<string>("create_oracle", { identity, command: command ?? null });
+export async function createOracle(
+  identity: string,
+  command?: string,
+  socket?: string | null,
+): Promise<string> {
+  return invoke<string>("create_oracle", { identity, command: command ?? null, socket: socket ?? null });
 }
 
-/** Renames an oracle. Master can't be renamed (backend rejects). */
-export async function renameOracle(from: string, to: string): Promise<string> {
-  return invoke<string>("rename_oracle", { from, to });
+/** Renames an oracle session. */
+export async function renameOracle(from: string, to: string, socket?: string | null): Promise<string> {
+  return invoke<string>("rename_oracle", { from, to, socket: socket ?? null });
 }
 
-/**
- * Deletes (kills) an oracle session. Master can't be deleted (backend rejects).
- * firaz's primary oracle (`aios-firaz`) is load-bearing and backend-blocked
- * unless `force` is passed — the UI only sets it after an explicit warned confirm.
- */
-export async function deleteOracle(identity: string, force = false): Promise<void> {
-  return invoke("delete_oracle", { identity, force });
+/** Deletes (kills) an oracle session. `force` is accepted for back-compat but no
+ *  oracle is protected anymore. */
+export async function deleteOracle(identity: string, force = false, socket?: string | null): Promise<void> {
+  return invoke("delete_oracle", { identity, force, socket: socket ?? null });
 }
 
-/** Kills any tmux session on a socket (all-tmux attach surface). Master rejected. */
+/** Kills any session on a socket (all-sessions attach surface). */
 export async function killTmuxSession(socket: string, session: string): Promise<void> {
   return invoke("kill_tmux_session", { socket, session });
 }
 
-/** ⌘⌘ appshot: screenshot → routed into an oracle (defaults to master). */
-export async function appshot(identity?: string): Promise<string> {
-  return invoke<string>("appshot", { identity: identity ?? null });
+/** ⌘⌘ appshot: screenshot → routed into the named oracle (macOS only). */
+export async function appshot(identity?: string, socket?: string | null): Promise<string> {
+  return invoke<string>("appshot", { identity: identity ?? null, socket: socket ?? null });
 }
 
 /** Spawns the user's login shell in a new PTY. Returns the session id. */
@@ -88,18 +92,40 @@ export async function spawnTerminal(
   cwd: string | null,
   cols: number,
   rows: number,
+  socket?: string | null,
+  label?: string | null,
 ): Promise<number> {
-  return invoke<number>("pty_spawn_terminal", { onData, name, cmd: cmd ?? null, cwd: cwd ?? null, cols, rows });
+  return invoke<number>("pty_spawn_terminal", {
+    onData,
+    name,
+    socket: socket ?? null,
+    label: label ?? null,
+    cmd: cmd ?? null,
+    cwd: cwd ?? null,
+    cols,
+    rows,
+  });
 }
 
-/** Spawns a pane attached to the oracle tmux session `aios-<identity>`. */
+/** Renames a persistent session's friendly display label (its window name). The
+ *  session key stays stable, so workspace-restore reattach is unaffected. */
+export async function setSessionLabel(
+  socket: string | null,
+  session: string,
+  label: string,
+): Promise<void> {
+  return invoke("pty_set_label", { socket: socket ?? null, session, label });
+}
+
+/** Spawns a pane attached to the oracle session `aios-<identity>` on `socket`. */
 export async function spawnOracle(
   onData: Channel<string>,
   identity: string,
   cols: number,
   rows: number,
+  socket?: string | null,
 ): Promise<number> {
-  return invoke<number>("pty_spawn_oracle", { onData, identity, cols, rows });
+  return invoke<number>("pty_spawn_oracle", { onData, identity, socket: socket ?? null, cols, rows });
 }
 
 /** Attaches a pane to any tmux session on a given socket (all-tmux attach). */
@@ -163,6 +189,6 @@ export async function ptyKill(id: number): Promise<void> {
  * currently in the layout; the backend reaps only sessions outside that set.
  * Returns the full session names that were reaped.
  */
-export async function reapTerminals(keep: string[]): Promise<string[]> {
-  return invoke<string[]>("pty_reap_terminals", { keep });
+export async function reapTerminals(keep: string[], socket?: string | null): Promise<string[]> {
+  return invoke<string[]>("pty_reap_terminals", { keep, socket: socket ?? null });
 }

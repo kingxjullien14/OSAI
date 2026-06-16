@@ -7,7 +7,7 @@
 //! formerly-silent `.catch(() => {})` sites, the React error boundary, global
 //! window handlers) plus Rust-side panics, and persists them to an append-only,
 //! size-capped JSONL under the Tauri **app-data dir** — never `~/.aios` (a fork
-//! has none of firaz's infra; app-data is per-bundle-id and portable).
+//! has none of the user's infra; app-data is per-bundle-id and portable).
 //!
 //! Everything here is best-effort: a diag write must NEVER panic or surface an
 //! error to the caller. The whole point is observability without new failure

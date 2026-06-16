@@ -47,7 +47,7 @@ import { TerminalComposer } from "./TerminalComposer";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
 
-/** Adletic-orange dark palette (Tomorrow Night base). */
+/** AIOS orange dark palette (Tomorrow Night base). */
 const THEME = {
   background: "#0a0a0c",
   foreground: "#c5c8c6",
@@ -72,8 +72,11 @@ const THEME = {
   brightWhite: "#eaeaea",
 };
 
+// Cross-platform monospace stack: macOS (SF Mono/Menlo/Monaco) → modern coding
+// fonts if installed (JetBrains Mono / Cascadia Code — the latter ships with
+// Windows Terminal, so it's a great native Windows default) → Consolas → generic.
 const FONT_FAMILY =
-  '"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Consolas", ui-monospace, monospace';
+  '"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", ui-monospace, monospace';
 
 /** Resolve a CSS custom property at call time, with a fallback. */
 function cssVar(name: string, fallback: string): string {
@@ -219,7 +222,13 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       // Alacritty copies the moment you finish a selection.
       rightClickSelectsWord: true,
       macOptionIsMeta: true,
-      allowTransparency: true,
+      // Our theme background is fully opaque (#0a0a0c), so transparency buys
+      // nothing visually but forces the WebGL renderer to alpha-blend every cell
+      // — off = a free perf win (smoother scroll/redraw under heavy output).
+      allowTransparency: false,
+      // Keep dim/low-contrast ANSI text legible on the dark bg without flattening
+      // colors (1 = off; a gentle floor, not a recolor).
+      minimumContrastRatio: 1.1,
       scrollback: 10000,
       theme: liveXtermTheme(),
     });
@@ -480,14 +489,27 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       let persisted = false;
       try {
         if (kind.type === "oracle") {
-          sessionId = await spawnOracle(onData, kind.identity, cols, rows);
+          sessionId = await spawnOracle(onData, kind.identity, cols, rows, loadSettings().terminalSocket || "aios");
         } else if (kind.type === "tmux") {
           sessionId = await spawnTmux(onData, kind.socket, kind.session, cols, rows);
         } else {
           const name = termSessionName(paneKey);
           const cwd = kind.type === "shell" ? kind.cwd ?? null : null;
+          const socket = loadSettings().terminalSocket || "aios";
+          // Friendly per-session label = a creation datetime (stable across
+          // detach/reattach — the backend only applies it when the session is
+          // first CREATED). Renameable later from the reattach list. NOT the pane
+          // label, which the user can change / which doesn't survive a reattach.
+          const label = new Date().toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          });
           try {
-            sessionId = await spawnTerminal(onData, name, kind.cmd ?? null, cwd, cols, rows);
+            sessionId = await spawnTerminal(onData, name, kind.cmd ?? null, cwd, cols, rows, socket, label);
             persisted = true;
           } catch {
             // no tmux (Windows / non-AIOS box) → ephemeral shell fallback.

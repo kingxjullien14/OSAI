@@ -603,12 +603,12 @@ mod tests {
             root.join("project_aios_shell.md"),
             r#"---
 name: aios shell architecture
-description: pane-native tauri superapp memory for firaz
+description: pane-native tauri superapp memory for the user
 metadata:
   type: project
 ---
 
-repo: /Users/firazfhansurie/Repo/firaz/aios/shell
+repo: /Users/aios/Repo/aios/shell
 the shell uses panes, command registry, and memory context.
 "#,
         )
@@ -630,7 +630,7 @@ browser note that mentions shell once.
         let hits = search_memory_dir(
             &root,
             "aios shell".to_string(),
-            Some("/Users/firazfhansurie/Repo/firaz/aios/shell".to_string()),
+            Some("/Users/aios/Repo/aios/shell".to_string()),
             Some(5),
         );
 

@@ -2,7 +2,7 @@ import { invoke } from "./tauri";
 
 /**
  * Pane monitor — watch a tmux session (an oracle's work surface) and push
- * WhatsApp updates to firaz when it finishes a task or hits notable output.
+ * WhatsApp updates to the user when it finishes a task or hits notable output.
  *
  * One cockpit click starts a background watcher thread for that session; the
  * watcher polls `tmux capture-pane` every ~15s and sends a WhatsApp message
@@ -19,8 +19,8 @@ import { invoke } from "./tauri";
  * Start watching a tmux session. No-op if that session already has a live
  * watcher. Sends one "now watching <session>" WhatsApp on start.
  *
- * @param socket  tmux socket the session lives on (e.g. "adletic", "aios").
- * @param session full tmux session name (e.g. "aios-firaz").
+ * @param socket  tmux socket the session lives on (e.g. "aios").
+ * @param session full tmux session name (e.g. "aios-agent").
  */
 export async function monitorStart(socket: string, session: string): Promise<void> {
   return invoke<void>("monitor_start", { socket, session });

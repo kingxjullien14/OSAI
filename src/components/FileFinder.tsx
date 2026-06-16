@@ -1,4 +1,4 @@
-/** ⌘P fuzzy file finder — the VS Code "Go to File" replacement (firaz's #1 pain:
+/** ⌘P fuzzy file finder — the VS Code "Go to File" replacement (the user's #1 pain:
  *  "find files is hard, still need vscode"). Reuses CommandPalette's modal shell
  *  + its fuzzyMatch scorer. On open it pulls the flat file list ONCE per root via
  *  `find_files` (honors .gitignore, prunes node_modules) and caches it. Scoring

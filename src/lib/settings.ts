@@ -16,6 +16,10 @@ export interface AppSettings {
   reopenLastLayout: boolean;
   confirmCloseOraclePane: boolean;
   defaultPaneType: PaneType;
+  // Multiplexer socket name for AIOS's own persistent terminal sessions
+  // (tmux/psmux `-L <socket>`). A private namespace for the app's `aios-term-*`
+  // sessions; change it to isolate from other tmux servers. Default "aios".
+  terminalSocket: string;
 
   // appearance
   accentIntensity: number; // 0..100
@@ -38,13 +42,10 @@ export interface AppSettings {
   notificationQuietMode: boolean;
 
   // oracles
-  defaultSocketName: string;
   autoRefreshSeconds: number;
   showNonAiosSessions: boolean;
-  // The protected/primary oracle identity (`aios-<id>` tmux session). External
-  // routing (e.g. WhatsApp) may point at this session, so the roster guards it
-  // behind an explicit warning. Mirrors `AIOS_PRIMARY_ORACLE` in oracles.rs —
-  // keep both aligned if you change it. Default preserves legacy routing.
+  // Default identity for the one-tap "spawn an oracle" shortcut (`aios-<id>`
+  // session). Empty → the roster slugs the user's name, else "agent".
   primaryOracleId: string;
 
   // voice — local whisper.cpp transcription endpoint (dictation POSTs here).
@@ -124,6 +125,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reopenLastLayout: true,
   confirmCloseOraclePane: true,
   defaultPaneType: "terminal",
+  terminalSocket: "aios",
 
   accentIntensity: 70,
   terminalFontSize: 13,
@@ -136,8 +138,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationNativeMode: "important",
   notificationQuietMode: false,
 
-  defaultSocketName: "adletic",
-  primaryOracleId: "firaz",
+  primaryOracleId: "",
   whisperUrl: "http://localhost:9000/inference",
   soundscape: false,
   funFx: true,
@@ -228,7 +229,7 @@ export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] 
 
 /** The user's display name, or a calm fallback. The SINGLE source for the
  *  homescreen greeting and the account row — replaces the old hardcoded
- *  "firaz"/"faeez" literals. Set during onboarding (§5). */
+ *  a previous user's name. Set during onboarding (§5). */
 export function displayName(fallback = "you"): string {
   return loadSettings().userName.trim() || fallback;
 }

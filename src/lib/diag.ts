@@ -161,7 +161,7 @@ export function reportDiag(
  *  console.warn). One failing scope (e.g. a polling loop against a dead backend)
  *  must not spam the console — it surfaces once per scope per window, while every
  *  distinct error still lands in the diag ring via `reportDiag` (which has its
- *  own per-signature session dedupe). Adapted from ferazfhansurie@1023914. */
+ *  own per-signature session dedupe). Adapted from upstream@1023914. */
 const ERROR_WARN_WINDOW_MS = 5 * 60 * 1000;
 const lastWarnByScope = new Map<string, number>();
 

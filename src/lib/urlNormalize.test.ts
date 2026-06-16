@@ -51,7 +51,7 @@ test("any bare host:port with a numeric port navigates with http://", () => {
 test("explicit scheme passes through untouched", () => {
   assert.equal(normalizeUrl("https://x.dev/path"), "https://x.dev/path");
   assert.equal(normalizeUrl("http://localhost:3000"), "http://localhost:3000");
-  assert.equal(normalizeUrl("file:///Users/firaz/doc.pdf"), "file:///Users/firaz/doc.pdf");
+  assert.equal(normalizeUrl("file:///Users/aios/doc.pdf"), "file:///Users/aios/doc.pdf");
   assert.equal(normalizeUrl("about:blank"), "about:blank");
 });
 
@@ -86,8 +86,8 @@ test("bare filesystem paths are not URL shapes today — they go to search", () 
   // file paths reach the pane via the drop handler (file:// is built there);
   // typed absolute paths have never been navigable from the address bar.
   assert.equal(
-    normalizeUrl("/Users/firaz/doc.pdf"),
-    "https://www.google.com/search?q=%2FUsers%2Ffiraz%2Fdoc.pdf",
+    normalizeUrl("/Users/aios/doc.pdf"),
+    "https://www.google.com/search?q=%2FUsers%2Faios%2Fdoc.pdf",
   );
 });
 

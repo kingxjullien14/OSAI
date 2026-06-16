@@ -1,16 +1,16 @@
 <#
 .SYNOPSIS
-  Auto-watcher: poll origin for firaz's updates and pull them into this branch.
+  Auto-watcher: poll origin for the upstream updates and pull them into this branch.
 
 .DESCRIPTION
-  Firaz pushes to origin/master constantly. This loops forever, checking every
+  Upstream pushes to origin/master constantly. This loops forever, checking every
   few minutes; when he's pushed new commits it auto-merges them into our branch,
   reinstalls deps, and rebuilds - so we always have the latest with zero manual
   steps. Leave it running in a terminal (or install it as a scheduled task with
   -Install). It is SAFE:
     - never pushes (read + merge only); you publish with aios-sync.ps1 -Push
     - auto-resolves the known pnpm-lock.yaml conflict (we use npm)
-    - on a REAL conflict (firaz changed the same lines we did) it backs out and
+    - on a REAL conflict (upstream changed the same lines we did) it backs out and
       keeps watching - so it never leaves a half-merged tree.
     - skips the merge if you have uncommitted work (won't clobber you)
 
@@ -61,7 +61,7 @@ if ($Install) {
     -RepetitionInterval (New-TimeSpan -Minutes 15)
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Settings $settings -Description "Pull firaz's aios-shell updates every 15 min" -Force | Out-Null
+    -Settings $settings -Description "Pull the upstream aios-shell updates every 15 min" -Force | Out-Null
   Log "installed scheduled task '$taskName' (every 15 min). Log: $logFile"
   Write-Host "Installed. It now syncs in the background. Remove with: .\scripts\aios-watch.ps1 -Uninstall" -ForegroundColor Green
   exit 0
@@ -89,11 +89,11 @@ function Sync-Once {
 
   # Don't merge over uncommitted work - would risk clobbering you.
   if (git status --porcelain) {
-    Log "firaz has $incoming new commit(s) but you have uncommitted changes - skipping. Commit/stash, then run .\scripts\aios-sync.ps1"
+    Log "upstream has $incoming new commit(s) but you have uncommitted changes - skipping. Commit/stash, then run .\scripts\aios-sync.ps1"
     return
   }
 
-  Log "firaz pushed $incoming new commit(s) - merging into $branch..."
+  Log "upstream pushed $incoming new commit(s) - merging into $branch..."
   git merge --no-edit origin/master 2>&1 | Out-Null
   if ($LASTEXITCODE -ne 0) {
     # Auto-resolve only the expected pnpm-lock.yaml conflict; bail on anything else.
@@ -126,7 +126,7 @@ function Sync-Once {
   if ($tscOk -and $cargoOk) {
     Log "synced + rebuilt clean. Relaunch (.\scripts\run.ps1) to use the update."
   } else {
-    Log "merged firaz's $incoming commit(s) but the build needs a Windows tweak (tsc=$tscOk cargo=$cargoOk). Open the repo and fix."
+    Log "merged the upstream $incoming commit(s) but the build needs a Windows tweak (tsc=$tscOk cargo=$cargoOk). Open the repo and fix."
   }
 }
 

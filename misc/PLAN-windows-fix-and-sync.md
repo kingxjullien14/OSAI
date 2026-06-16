@@ -58,8 +58,16 @@ and the polled ones flash repeatedly in the built app:
 | `usage.rs` | 333 | `sqlite3` | on demand | ✅ |
 | `chat.rs` | 699, 940, 941, 1269 | `claude` / `codex` / `opencode` / app-server | per session / per turn | ✅ (flash per send, worst on opencode) |
 | `device.rs` | 81 | `pmset` | polled | ❌ macOS-only |
-| `pty.rs` | 493, 511 | `tmux` | on demand | ❌ Unix-only |
+| `pty.rs` | 493, 511 | `tmux` (unix) / **`psmux`** (windows) | on demand | ✅ — psmux (native Windows tmux) backs persistent/detachable panes; `mux_bin` prefers PATH then a bundled sidecar (`scripts/fetch-psmux.ps1`), else falls back to a non-persistent PTY |
 | `bridges.rs` / `monitor.rs` / `oracles.rs` / `mac_apps.rs` | — | `launchctl` / `tmux` / mac | — | ❌ inert on Windows |
+
+> **Future option (not built, deliberate):** psmux can run Claude Code "agent
+> teams" — interactive `claude` in a psmux pane spawning each sub-agent in its
+> own visible pane (docs/claude-code.md). Only the interactive *claude-code*
+> terminal pane qualifies (not the `claude -p` chat pane), needs PowerShell 7+,
+> and **Opus prefers invisible worktree agents** so panes rarely appear without a
+> CLAUDE.md "prefer teammates" nudge. If revisited: inject `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
+> + `PSMUX_CLAUDE_TEAMMATE_MODE=tmux` via psmux `new-session -e` in `pty.rs`.
 
 **Not the PTY.** `pty.rs` uses `portable_pty::native_pty_system()` → ConPTY on
 Windows, which runs its `conhost` hidden (pseudo-console). The terminal *pane*
