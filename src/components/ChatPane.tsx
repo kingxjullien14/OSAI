@@ -55,16 +55,17 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  ShieldCheck,
   ShieldQuestion,
   Sparkles,
   Quote,
-  SlidersHorizontal,
   Square,
   Target,
   Terminal,
   Waypoints,
   Wrench,
   X,
+  Zap,
   Bug,
   Compass,
   Map as MapIcon,
@@ -362,6 +363,24 @@ const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string
   { id: "agent", label: "agent", sub: "terminal-grade tools and instructions" },
   { id: "ultracode", label: "ultracode", sub: "xhigh + fanout, expensive by design" },
 ];
+
+/** Shared trigger styling for the composer's control pills (access · context ·
+ *  effort · model). Quiet by default; the OPEN variant lights the accent ring so
+ *  the live menu reads at a glance. The hover lift is the small tactile "quirk" —
+ *  reduce-motion neutralizes the transform via the master guard in App.css. */
+const CTRL_PILL =
+  "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/50 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] transition-all duration-150 hover:-translate-y-px hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
+const CTRL_PILL_OPEN =
+  "flex items-center gap-1.5 rounded-full border border-[var(--color-accent)]/55 bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] transition-all duration-150";
+/** The flashy "you're in an expensive mode" variant — the animated ultracode
+ *  gradient (.aios-ultra owns bg/border/color) on the context + effort pills
+ *  whenever ultracode / ultra effort is live, so the spend is unmissable. */
+const CTRL_PILL_ULTRA =
+  "aios-ultra flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-[11.5px] transition-all duration-150 hover:-translate-y-px";
+
+/** Chip ids that are now interactive control PILLS in the composer's action row,
+ *  so the passive summary-chips row drops them (no duplicate readout). */
+const CONTROL_CHIP_IDS = new Set(["model", "effort", "permission", "budget"]);
 
 function memoryContextBlock(memories: MemoryHit[]): string {
   if (memories.length === 0) return "";
@@ -1036,7 +1055,7 @@ export function ChatPane({
   }, [input, cwd, memoryPanelOpen]);
 
   // open-dropdown tracking (single source so only one is open)
-  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced" | "behavior">(
+  const [openMenu, setOpenMenu] = useState<null | "model" | "perm" | "effort" | "advanced" | "context">(
     null,
   );
 
@@ -3063,6 +3082,10 @@ export function ChatPane({
     planMode,
     hasGoal: Boolean(goal.trim()),
   });
+  // model · effort · access · context now live as interactive pills in the
+  // action row, so the passive summary row drops them — it carries only ambient
+  // context (cwd · engine) + transient state (images, queue, plan, goal).
+  const summaryChips = contextChips.filter((chip) => !CONTROL_CHIP_IDS.has(chip.id));
   const contextBuckets = contextLedger({
     draft: input,
     goal,
@@ -3103,9 +3126,9 @@ export function ChatPane({
             On a fresh hero the telemetry stays hidden until the first keystroke
             — the rows BLOOM in as a response to typing (plan §4's critical row:
             no machine readout before the user has said anything). */}
-        {(!empty || hasDraft) && contextChips.length > 0 && (
+        {(!empty || hasDraft) && summaryChips.length > 0 && (
           <div className={`mb-2 flex flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
-            {contextChips.map((chip) => (
+            {summaryChips.map((chip) => (
               <span
                 key={chip.id}
                 className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 font-sans text-[11.5px] ${
@@ -3473,7 +3496,7 @@ export function ChatPane({
           </div>
         )}
 
-        <div className="flash-composer relative rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/80 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors focus-within:border-[var(--color-accent)]/50">
+        <div className="flash-composer relative rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/80 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-200 focus-within:border-[var(--color-accent)]/50 focus-within:ring-1 focus-within:ring-[var(--color-accent)]/20">
           {/* attached-image thumbnails (paste a screenshot / + attach) */}
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
@@ -3648,15 +3671,22 @@ export function ChatPane({
                 </span>
               </MenuItem>
             </Dropdown>
-            {/* agent behavior — access · context · effort, split out of the
-                wrench so neither dropdown is a long cluttered scroll. */}
+            {/* access · context · effort — each its own labeled pill (was a
+                single bundled "behavior" menu). One click, reads at a glance,
+                live value on the pill, accent ring while open. */}
             <Dropdown
-              open={openMenu === "behavior"}
-              onToggle={() => setOpenMenu(openMenu === "behavior" ? null : "behavior")}
+              open={openMenu === "perm"}
+              onToggle={() => setOpenMenu(openMenu === "perm" ? null : "perm")}
               align="right"
-              triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-              trigger={<SlidersHorizontal size={15} />}
-              label="agent behavior — access, context, effort"
+              triggerClassName={openMenu === "perm" ? CTRL_PILL_OPEN : CTRL_PILL}
+              label={`access — ${permission.label}`}
+              trigger={
+                <>
+                  <ShieldCheck size={12} className="shrink-0 text-[var(--color-muted)]" />
+                  <span className="whitespace-nowrap">{permission.label}</span>
+                  <ChevronDown size={11} className="text-[var(--color-faint)]" />
+                </>
+              }
             >
               <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 access
@@ -3678,7 +3708,32 @@ export function ChatPane({
                   </span>
                 </MenuItem>
               ))}
-              <div className="mt-1 border-t border-[var(--color-border)] px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+            </Dropdown>
+            <Dropdown
+              open={openMenu === "context"}
+              onToggle={() => setOpenMenu(openMenu === "context" ? null : "context")}
+              align="right"
+              triggerClassName={
+                effectiveBudget === "ultracode"
+                  ? CTRL_PILL_ULTRA
+                  : openMenu === "context"
+                    ? CTRL_PILL_OPEN
+                    : CTRL_PILL
+              }
+              label={`context — ${effectiveBudget}`}
+              trigger={
+                <>
+                  {effectiveBudget === "ultracode" ? (
+                    <Sparkles size={12} className="shrink-0" />
+                  ) : (
+                    <Gauge size={12} className="shrink-0 text-[var(--color-muted)]" />
+                  )}
+                  <span className="whitespace-nowrap">{effectiveBudget}</span>
+                  <ChevronDown size={11} className={effectiveBudget === "ultracode" ? "opacity-80" : "text-[var(--color-faint)]"} />
+                </>
+              }
+            >
+              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 context
               </div>
               {CONTEXT_BUDGETS.map((b) => (
@@ -3706,7 +3761,32 @@ export function ChatPane({
                   </span>
                 </MenuItem>
               ))}
-              <div className="mt-1 border-t border-[var(--color-border)] px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+            </Dropdown>
+            <Dropdown
+              open={openMenu === "effort"}
+              onToggle={() => setOpenMenu(openMenu === "effort" ? null : "effort")}
+              align="right"
+              triggerClassName={
+                effort.ultra
+                  ? CTRL_PILL_ULTRA
+                  : openMenu === "effort"
+                    ? CTRL_PILL_OPEN
+                    : CTRL_PILL
+              }
+              label={`effort — ${effort.label}`}
+              trigger={
+                <>
+                  {effort.ultra ? (
+                    <Sparkles size={12} className="shrink-0" />
+                  ) : (
+                    <Zap size={12} className="shrink-0 text-[var(--color-muted)]" />
+                  )}
+                  <span className="whitespace-nowrap">{effort.label}</span>
+                  <ChevronDown size={11} className={effort.ultra ? "opacity-80" : "text-[var(--color-faint)]"} />
+                </>
+              }
+            >
+              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 effort
               </div>
               {EFFORTS.map((ef) => (
@@ -3725,15 +3805,17 @@ export function ChatPane({
                 </MenuItem>
               ))}
             </Dropdown>
-            {/* model selector (right) */}
+            {/* model selector (rightmost, nearest send — the most-changed pill) */}
             <Dropdown
               open={openMenu === "model"}
               onToggle={() => setOpenMenu(openMenu === "model" ? null : "model")}
               align="right"
+              triggerClassName={openMenu === "model" ? CTRL_PILL_OPEN : CTRL_PILL}
+              label={`model — ${model.label}`}
               trigger={
                 <>
-                  <span className="whitespace-nowrap">{model.label}</span>
-                  <ChevronDown size={12} className="text-[var(--color-faint)]" />
+                  <span className="whitespace-nowrap font-medium">{model.label}</span>
+                  <ChevronDown size={11} className="text-[var(--color-faint)]" />
                 </>
               }
             >
