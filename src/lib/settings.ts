@@ -65,6 +65,15 @@ export interface AppSettings {
   // behavior regardless. Windows/Linux only.
   minimizeToTray: boolean;
 
+  // showCodexUsage — whether the codex (ChatGPT-subscription) usage block
+  // appears in the sidebar + idle home. Codex usage is read from
+  // ~/.codex/auth.json (a ChatGPT-sub token), which can linger from a past
+  // `codex login` or a migrated/shared setup even when the codex CLI isn't
+  // installed — so this hides a block that may not be "yours". When OFF we
+  // don't even fetch it (no ChatGPT API ping with a foreign token). ON by
+  // default (show real data when it exists).
+  showCodexUsage: boolean;
+
   // memory
   graphPhysicsStrength: number; // 0..100
 
@@ -127,6 +136,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   soundscape: false,
   funFx: true,
   minimizeToTray: false,
+  showCodexUsage: true,
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
 

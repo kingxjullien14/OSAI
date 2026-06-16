@@ -25,6 +25,7 @@ import {
 } from "../../lib/dashboard";
 import { usagePaceRisk, type UsagePaceRisk } from "../../lib/usagePace";
 import { reportDiag } from "../../lib/diag";
+import { loadSettings, subscribe as subscribeSettings } from "../../lib/settings";
 import { NumberTicker } from "../fx/NumberTicker";
 
 const FIVE_HOURS = 5 * 3600;
@@ -196,6 +197,11 @@ export function useUsageRates() {
   // false until the first poll settles — lets callers show a skeleton instead of
   // a blank-then-pop (we can't tell "loading" from "no data" by the rates alone).
   const [loaded, setLoaded] = useState(false);
+  // The "show codex usage" setting — gates BOTH the fetch and the display, so
+  // the sidebar AND the idle home honor it from this one source. Reactive so
+  // flipping it in Settings takes effect without a reload.
+  const [showCodex, setShowCodex] = useState(() => loadSettings().showCodexUsage);
+  useEffect(() => subscribeSettings((s) => setShowCodex(s.showCodexUsage)), []);
 
   useEffect(() => {
     let alive = true;
@@ -203,9 +209,15 @@ export function useUsageRates() {
       const c = claudeRate()
         .then((v) => alive && setClaude(v))
         .catch((e) => reportDiag("usage.load", e, { action: "claudeRate" }));
-      const x = codexRate()
-        .then((v) => alive && setCodex(v))
-        .catch((e) => reportDiag("usage.load", e, { action: "codexRate" }));
+      // Codex usage reads ~/.codex/auth.json (a ChatGPT-sub token). When the
+      // block is hidden we don't fetch at all — no point pinging ChatGPT's
+      // usage API with a token that may not be the user's own.
+      const x = showCodex
+        ? codexRate()
+            .then((v) => alive && setCodex(v))
+            .catch((e) => reportDiag("usage.load", e, { action: "codexRate" }))
+        : Promise.resolve();
+      if (!showCodex && alive) setCodex(null);
       void Promise.allSettled([c, x]).then(() => {
         if (alive) setLoaded(true);
       });
@@ -216,10 +228,11 @@ export function useUsageRates() {
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [showCodex]);
 
   const hasClaude = !!claude && (claude.fiveHour.pct != null || claude.sevenDay.pct != null);
-  const hasCodex = !!codex && (codex.fiveHour.pct != null || codex.sevenDay.pct != null);
+  const hasCodex =
+    showCodex && !!codex && (codex.fiveHour.pct != null || codex.sevenDay.pct != null);
   return { claude, codex, hasClaude, hasCodex, loaded };
 }
 

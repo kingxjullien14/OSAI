@@ -149,6 +149,7 @@ import { buildAppCommands } from "./lib/appCommands";
 import type { AgentAction } from "./lib/agentActions";
 import { invoke, isTauriRuntime } from "./lib/tauri";
 import { reportDiag, reportUsage } from "./lib/diag";
+import { checkForUpdate } from "./lib/updater";
 import {
   ensureMirrorPairing,
   mirrorPairingFromLocation,
@@ -868,18 +869,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isTauriRuntime()) return;
+    // macOS ONLY. Windows/Linux close behavior is OWNED BY RUST
+    // (on_window_event + the CloseToTray flag in lib.rs) — authoritative and
+    // immune to JS event-bridge timing. We don't even REGISTER a JS close
+    // handler off-mac, so nothing here can race the Rust handler — that race is
+    // exactly what left X doing nothing on the built Windows app.
+    if (!isTauriRuntime() || !isApple) return;
     let disposed = false;
     let unlisten: (() => void) | null = null;
     const win = getCurrentWindow();
 
     win
       .onCloseRequested(async (event) => {
-        // Windows/Linux close behavior is OWNED BY RUST (on_window_event +
-        // the CloseToTray flag in lib.rs) — authoritative, immune to JS event
-        // timing. Do nothing here so the native close proceeds (→ the app
-        // quits) or Rust hides it to the tray when the setting is on.
-        if (!isApple) return;
         // macOS apps live in the dock — X backgrounds the window (hide + keep
         // busy chats running, reachable again via the Reopen event). (Per-pane
         // busy-chat prompts still guard closing individual chat panes.)
@@ -927,6 +928,28 @@ function App() {
     sync();
     return subscribeSettings(sync);
   }, []);
+
+  // Quiet boot update check: a few seconds after launch (let the app settle),
+  // ask GitHub Releases if a newer signed build exists and, if so, nudge toward
+  // Settings › about where the one-click download/install/relaunch lives. Silent
+  // on "up to date" and on errors (offline etc.) — it must never interrupt.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      checkForUpdate()
+        .then((u) => {
+          if (!cancelled && u) flash(`update ${u.version} available — Settings › about`);
+        })
+        .catch(() => {
+          /* offline / transient — the manual check in Settings surfaces real errors */
+        });
+    }, 6000);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [flash]);
 
   const spawn = useCallback((kind: PaneContent, label: string): string => {
     const key = nextKey();

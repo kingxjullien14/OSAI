@@ -234,22 +234,46 @@ pub fn run() {
         // logic. This is what actually makes X quit on Windows.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Windows/Linux: WE own the close, fully and explicitly. ALWAYS
+                // prevent the native close first — that also short-circuits
+                // Tauri's JS `close-requested` bridge, which otherwise raced
+                // this handler and left X doing NOTHING on the built app when
+                // the tray setting was off. Then decide: hide to the tray
+                // (setting on) or quit outright — `app.exit(0)` fires
+                // RunEvent::Exit (→ LSP cleanup) and ends the process, no
+                // reliance on the flaky default close→ExitRequested chain.
+                // macOS is left to the frontend's dock logic: this whole block
+                // compiles out there.
                 #[cfg(not(target_os = "macos"))]
-                if window
-                    .app_handle()
-                    .state::<CloseToTray>()
-                    .0
-                    .load(Ordering::SeqCst)
                 {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if window
+                        .app_handle()
+                        .state::<CloseToTray>()
+                        .0
+                        .load(Ordering::SeqCst)
+                    {
+                        let _ = window.hide();
+                    } else {
+                        window.app_handle().exit(0);
+                    }
                 }
-                // else (or on macOS): do nothing here — the close proceeds and
-                // the app exits, or the frontend's mac handler takes over.
                 let _ = (window, api);
             }
         })
         .setup(|app| {
+            // Desktop self-update (GitHub Releases, signed minisign). Registered
+            // here rather than in the builder chain so it stays cleanly gated to
+            // desktop — `tauri-plugin-updater` has no mobile support. The
+            // `process` plugin backs the post-install `relaunch()` on the JS side
+            // (src/lib/updater.ts). pubkey + endpoint live in tauri.conf.json.
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+
             // Boot the local-first diagnostics store (Phase 0+1): resolve the
             // per-bundle app-data dir (portable — a fork gets its own dir, no
             // dependency on firaz's ~/.aios), seed the anon install id, and

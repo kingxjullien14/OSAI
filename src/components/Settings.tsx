@@ -19,6 +19,8 @@ import {
   Brain,
   Check,
   Cpu,
+  DownloadCloud,
+  RefreshCw,
   FolderGit2,
   Info,
   Keyboard,
@@ -112,6 +114,9 @@ import {
   type DiagEvent,
   type DiagInfo,
 } from "../lib/diag";
+import { isTauriRuntime } from "../lib/tauri";
+import { checkForUpdate, installUpdate, type UpdatePhase } from "../lib/updater";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 const BridgesPane = lazy(() => import("./BridgesPane").then((m) => ({ default: m.BridgesPane })));
 const PluginsPane = lazy(() => import("./PluginsPane").then((m) => ({ default: m.PluginsPane })));
@@ -639,6 +644,117 @@ function kindClass(kind: string): string {
   if (kind === "error") return "text-[var(--color-danger)]";
   if (kind === "perf") return "text-[var(--color-accent)]";
   return "text-[var(--color-muted)]"; // usage
+}
+
+/** software-update card (about section): ask GitHub Releases for a newer signed
+ *  build, then download + install + relaunch in place. Tauri-only — the web
+ *  shell can't self-update, so it renders nothing there. The whole mechanism
+ *  (endpoint, pubkey, signing) lives in tauri.conf.json + RELEASING.md; this is
+ *  just the surface. */
+function UpdateCard() {
+  const [phase, setPhase] = useState<UpdatePhase>({ kind: "idle" });
+  const [update, setUpdate] = useState<Update | null>(null);
+
+  if (!isTauriRuntime()) return null;
+
+  const busy =
+    phase.kind === "checking" || phase.kind === "downloading" || phase.kind === "installing";
+
+  const runCheck = async () => {
+    setPhase({ kind: "checking" });
+    setUpdate(null);
+    try {
+      const u = await checkForUpdate();
+      if (!u) {
+        setPhase({ kind: "none" });
+        return;
+      }
+      setUpdate(u);
+      setPhase({ kind: "available", version: u.version, notes: u.body ?? null });
+    } catch (e) {
+      setPhase({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const runInstall = async () => {
+    if (!update) return;
+    // installUpdate drives setPhase through downloading → installing → ready,
+    // then relaunches (the promise usually never resolves). It folds any error
+    // into the phase itself, so the catch here is just to keep the await tidy.
+    try {
+      await installUpdate(update, setPhase);
+    } catch {
+      /* phase already === error */
+    }
+  };
+
+  const status = (() => {
+    switch (phase.kind) {
+      case "checking":
+        return "checking for updates…";
+      case "none":
+        return "you're on the latest version";
+      case "available":
+        return `version ${phase.version} is available`;
+      case "downloading":
+        return phase.pct == null ? "downloading…" : `downloading… ${phase.pct}%`;
+      case "installing":
+        return "installing…";
+      case "ready":
+        return "installed — restarting…";
+      case "error":
+        return `couldn't update: ${phase.message}`;
+      default:
+        return "check github releases for a newer build";
+    }
+  })();
+
+  return (
+    <div className="mt-2 w-full max-w-[360px] rounded-xl border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 p-3 text-left">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] font-medium text-[var(--color-text)]">software update</span>
+        {phase.kind === "available" ? (
+          <button
+            type="button"
+            onClick={runInstall}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] disabled:opacity-50"
+          >
+            <DownloadCloud size={13} /> install v{phase.version}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={runCheck}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-3 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={busy ? "animate-spin" : ""} /> check
+          </button>
+        )}
+      </div>
+      <p
+        className={`mt-1.5 text-[11px] leading-snug ${
+          phase.kind === "error" ? "text-[var(--color-danger)]" : "text-[var(--color-muted)]"
+        }`}
+      >
+        {status}
+      </p>
+      {phase.kind === "downloading" && (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
+          <div
+            className="h-full rounded-full bg-[var(--color-accent)] transition-[width] duration-300"
+            style={{ width: phase.pct == null ? "100%" : `${phase.pct}%` }}
+          />
+        </div>
+      )}
+      {phase.kind === "available" && phase.notes && (
+        <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-line text-[11px] leading-snug text-[var(--color-text-2)]">
+          {phase.notes}
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** Reads the local diag store (Phase 1) and renders recent events newest-first,
@@ -1187,6 +1303,15 @@ export function Settings({
                     />
                   </Row>
                   <Row
+                    label="show codex usage"
+                    sub="the codex (chatgpt-sub) usage block reads ~/.codex/auth.json — turn off to hide it (e.g. if that token isn't yours); when off it isn't fetched at all"
+                  >
+                    <Toggle
+                      checked={s.showCodexUsage}
+                      onChange={(v) => patch({ showCodexUsage: v })}
+                    />
+                  </Row>
+                  <Row
                     label="dictation server"
                     sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
                   >
@@ -1607,6 +1732,7 @@ export function Settings({
                       docs
                     </button>
                   </div>
+                  <UpdateCard />
                 </div>
               )}
             </div>

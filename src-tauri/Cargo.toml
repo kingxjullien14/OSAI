@@ -25,6 +25,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["unstable", "protocol-asset", "devtools", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+# In-app self-update: `relaunch()` after an update installs (the updater crate
+# itself is desktop-gated below). Works on every platform, so it lives here.
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 # version-neutral HWND extraction for wincast.rs (avoids depending on tauri's
 # internal `windows`-crate version unifying with ours; 0.6 = what tauri 2 impls)
@@ -47,6 +50,14 @@ sqlx = { version = "0.8", default-features = false, features = [
   "uuid",
 ] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# Desktop-only: in-app self-update from GitHub Releases (signed minisign).
+# The updater crate has NO mobile support, so it's gated to desktop targets
+# (Cargo has no `cfg(desktop)`, hence the not-android/ios form Tauri's own
+# template uses); registration is likewise `#[cfg(desktop)]` in lib.rs. See
+# RELEASING.md for the build-sign-publish flow.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
 
 # macOS-only: flip the WKWebView element-fullscreen preference (off by default)
 # so YouTube/video fullscreen works inside browser panes. Pinned to the same
