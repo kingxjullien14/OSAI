@@ -1,7 +1,7 @@
 /**
  * IdleDashboard — the entry point for the AIOS home screen (shown when no panes
  * are open). This module is a thin DATA LOADER: it self-loads the cheap,
- * defensive idle data (usage extras / claude rate / memory focus / money-agent
+ * defensive idle data (usage extras / claude rate / memory focus / scheduled-agent
  * summaries / git pulse for recent repos) on a 30s poll and hands it to
  * `IdleControlCenter`, which owns the actual (Option-B) layout.
  *
@@ -20,7 +20,7 @@ import type { ProjectInfo } from "../lib/run";
 import type { SidebarState, SidebarItem } from "../lib/sidebar";
 import { gitPulse, type RepoPulse } from "../lib/fs";
 import { usageExtras, type UsageExtras } from "../lib/stats";
-import { loadMoneyAgentSummaries, type MoneyAgentSummary } from "../lib/moneyAgents";
+import { loadScheduledAgentSummaries, type ScheduledAgentSummary } from "../lib/scheduledAgents";
 import {
   idleRate,
   memoryFocus,
@@ -43,9 +43,9 @@ interface IdleDashboardProps {
   onOpenProject: (p: ProjectInfo) => void;
   onOpenSidebarItem: (item: SidebarItem) => void;
   onRevealSidebar: () => void;
-  onOpenMoneyAgents: () => void;
+  onOpenScheduledAgents: () => void;
   onOpenPet: () => void;
-  onOpenMoneyAgentChat: (id: string, label: string, command?: string) => void;
+  onOpenScheduledAgentChat: (id: string, label: string, command?: string) => void;
   onOpenPalette: () => void;
   onResumeLast?: () => void;
   resumeLabel?: string;
@@ -68,7 +68,7 @@ export function IdleDashboard({
   onOpenProject,
   onOpenSidebarItem,
   onRevealSidebar,
-  onOpenMoneyAgents,
+  onOpenScheduledAgents,
   onOpenPet,
   onOpenPalette,
   onResumeLast,
@@ -83,7 +83,7 @@ export function IdleDashboard({
   const [rate, setRate] = useState<IdleRate | null>(null);
   const [focus, setFocus] = useState<MemoryFocus | null>(null);
   const [pulse, setPulse] = useState<RepoPulse[]>([]);
-  const [moneyAgents, setMoneyAgents] = useState<MoneyAgentSummary[]>([]);
+  const [scheduledAgents, setScheduledAgents] = useState<ScheduledAgentSummary[]>([]);
 
   // top recent projects by dir mtime — also the set the git-pulse reports on.
   // Declared before the effects that read it (TDZ-safe ordering).
@@ -95,7 +95,7 @@ export function IdleDashboard({
       usageExtras().then((v) => alive && setExtras(v)).catch((e) => reportDiag("dashboard.load", e, { action: "usageExtras" }));
       idleRate().then((v) => alive && setRate(v)).catch((e) => reportDiag("dashboard.load", e, { action: "idleRate" }));
       memoryFocus().then((v) => alive && setFocus(v)).catch((e) => reportDiag("dashboard.load", e, { action: "memoryFocus" }));
-      loadMoneyAgentSummaries().then((v) => alive && setMoneyAgents(v)).catch((e) => reportDiag("dashboard.load", e, { action: "moneyAgents" }));
+      loadScheduledAgentSummaries().then((v) => alive && setScheduledAgents(v)).catch((e) => reportDiag("dashboard.load", e, { action: "scheduledAgents" }));
     };
     load();
     const t = setInterval(load, 30_000);
@@ -131,13 +131,13 @@ export function IdleDashboard({
       rate={rate}
       focus={focus}
       pulse={pulse}
-      moneyAgents={moneyAgents}
+      scheduledAgents={scheduledAgents}
       notifications={notifications}
       onSpawn={onSpawn}
       onOpenProject={onOpenProject}
       onOpenSidebarItem={onOpenSidebarItem}
       onRevealSidebar={onRevealSidebar}
-      onOpenMoneyAgents={onOpenMoneyAgents}
+      onOpenScheduledAgents={onOpenScheduledAgents}
       onOpenPet={onOpenPet}
       onOpenPalette={onOpenPalette}
       onResumeLast={onResumeLast}

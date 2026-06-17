@@ -2,25 +2,25 @@ import { useEffect, useState } from "react";
 import { ChevronRight, MessageSquare, Plus, RefreshCw, X } from "lucide-react";
 
 import {
-  createMoneyAgent,
-  loadMoneyAgentSummaries,
-  removeMoneyAgent,
-  type MoneyAgentSummary,
-} from "../lib/moneyAgents";
+  createScheduledAgent,
+  loadScheduledAgentSummaries,
+  removeScheduledAgent,
+  type ScheduledAgentSummary,
+} from "../lib/scheduledAgents";
 
 interface Props {
   iconsOnly?: boolean;
   embedded?: boolean;
   onOpenOverview: () => void;
   onOpenAgentChat: (id: string, label: string, command?: string) => void;
-  agentChatStates?: Partial<Record<MoneyAgentSummary["id"], MoneyAgentChatState>>;
+  agentChatStates?: Partial<Record<ScheduledAgentSummary["id"], ScheduledAgentChatState>>;
 }
 
-const COLLAPSE_KEY = "aios.moneyAgentsCollapsed";
+const COLLAPSE_KEY = "aios.scheduledAgentsCollapsed";
 
-export type MoneyAgentChatState = "open" | "running" | "saved" | "none";
+export type ScheduledAgentChatState = "open" | "running" | "saved" | "none";
 
-function healthColor(health: MoneyAgentSummary["health"]): string {
+function healthColor(health: ScheduledAgentSummary["health"]): string {
   if (health === "running") return "var(--color-success)";
   if (health === "scheduled") return "var(--color-info)";
   if (health === "needs-steer") return "var(--color-warning)";
@@ -28,28 +28,28 @@ function healthColor(health: MoneyAgentSummary["health"]): string {
   return "var(--color-faint)";
 }
 
-function chatStateLabel(state: MoneyAgentChatState): string {
+function chatStateLabel(state: ScheduledAgentChatState): string {
   if (state === "open") return "attached";
   if (state === "running") return "running";
   if (state === "saved") return "resume";
   return "start";
 }
 
-function chatStateColor(state: MoneyAgentChatState): string {
+function chatStateColor(state: ScheduledAgentChatState): string {
   if (state === "open") return "var(--color-success)";
   if (state === "running") return "var(--color-warning)";
   if (state === "saved") return "var(--color-info)";
   return "var(--color-muted)";
 }
 
-export function MoneyAgentsSection({
+export function ScheduledAgentsSection({
   iconsOnly = false,
   embedded = false,
   onOpenOverview,
   onOpenAgentChat,
   agentChatStates = {},
 }: Props) {
-  const [summaries, setSummaries] = useState<MoneyAgentSummary[]>([]);
+  const [summaries, setSummaries] = useState<ScheduledAgentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -59,7 +59,7 @@ export function MoneyAgentsSection({
 
   const refresh = () => {
     setLoading(true);
-    loadMoneyAgentSummaries()
+    loadScheduledAgentSummaries()
       .then(setSummaries)
       .catch(() => setSummaries([]))
       .finally(() => setLoading(false));
@@ -81,11 +81,11 @@ export function MoneyAgentsSection({
 
   const open = (id: string, label: string) => onOpenAgentChat(id, label);
   const remove = (id: string) => {
-    removeMoneyAgent(id);
+    removeScheduledAgent(id);
     setSummaries((prev) => prev.filter((agent) => agent.id !== id));
   };
   const create = () => {
-    const agent = createMoneyAgent({
+    const agent = createScheduledAgent({
       label: draftName,
       mission: draftMission,
       schedule: draftSchedule,
@@ -268,8 +268,8 @@ function AgentRow({
   onOpen,
   onRemove,
 }: {
-  row: MoneyAgentSummary;
-  chatState: MoneyAgentChatState;
+  row: ScheduledAgentSummary;
+  chatState: ScheduledAgentChatState;
   onOpen: () => void;
   onRemove: () => void;
 }) {

@@ -181,22 +181,97 @@ fn map_oauth_usage(payload: &Value) -> Option<Value> {
     Some(json!({ "fiveHour": five, "sevenDay": seven, "models": models }))
 }
 
-/// 60s in-process cache so the sidebar's 30s poll + per-turn events don't
-/// hammer the endpoint (mirrors how the codex wham fetch behaves in practice).
+/// On-disk copy of the last good OAuth usage payload, so the bar survives an app
+/// restart that lands during an endpoint cooldown (dev churn does exactly this).
+fn usage_cache_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    Some(std::path::PathBuf::from(home).join(".aios/state/usage-cache.json"))
+}
+
+/// Reads the on-disk last-good usage — but only if recent (<6h). An older copy
+/// is dropped: a 5h window would have rolled over, so stale numbers would lie.
+fn read_usage_cache_disk() -> Option<Value> {
+    let p = usage_cache_path()?;
+    let fresh = std::fs::metadata(&p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|age| age.as_secs() < 6 * 3600)
+        .unwrap_or(false);
+    if !fresh {
+        return None;
+    }
+    serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
+}
+
+fn write_usage_cache_disk(v: &Value) {
+    let Some(p) = usage_cache_path() else { return };
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(s) = serde_json::to_string(v) {
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, s).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    }
+}
+
+/// Cached OAuth usage with last-known-good fallback + adaptive backoff.
+///
+/// The `/api/oauth/usage` endpoint has its OWN request rate limit (429 "Rate
+/// limited. Please try again later." — distinct from the inference quota). The
+/// sidebar's 30s poll + per-turn re-reads + dev relaunches can trip it. So:
+///   - success → serve it, remember it (in-process + on disk), retry no sooner
+///     than 90s;
+///   - failure (429 / offline) → back off 5min (stop hammering, let it recover)
+///     and keep serving the last known-good numbers (in-process, else the on-disk
+///     copy) instead of blanking the bar. Only a cold start that has NEVER seen a
+///     good value returns `None` (the honest "unknown" state).
 fn claude_usage_oauth_cached() -> Option<Value> {
     use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, Instant};
-    static CACHE: OnceLock<Mutex<Option<(Instant, Option<Value>)>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    let mut guard = cache.lock().ok()?;
-    if let Some((at, value)) = guard.as_ref() {
-        if at.elapsed() < Duration::from_secs(60) {
-            return value.clone();
+    struct Cache {
+        next_attempt: Instant,
+        last_good: Option<Value>,
+    }
+    static CACHE: OnceLock<Mutex<Option<Cache>>> = OnceLock::new();
+    let cell = CACHE.get_or_init(|| Mutex::new(None));
+    let mut guard = cell.lock().ok()?;
+
+    // Inside the cooldown window → serve the last good value without re-calling.
+    if let Some(c) = guard.as_ref() {
+        if Instant::now() < c.next_attempt {
+            return c.last_good.clone();
         }
     }
-    let fresh = claude_usage_from_oauth();
-    *guard = Some((Instant::now(), fresh.clone()));
-    fresh
+
+    // Time to (re)try. Carry forward the best value we have (in-process, else the
+    // on-disk copy from a previous run) to fall back on if the call fails.
+    let prev_good = guard
+        .as_ref()
+        .and_then(|c| c.last_good.clone())
+        .or_else(read_usage_cache_disk);
+
+    match claude_usage_from_oauth() {
+        Some(v) => {
+            write_usage_cache_disk(&v);
+            *guard = Some(Cache {
+                next_attempt: Instant::now() + Duration::from_secs(90),
+                last_good: Some(v.clone()),
+            });
+            Some(v)
+        }
+        None => {
+            *guard = Some(Cache {
+                next_attempt: Instant::now() + Duration::from_secs(300),
+                last_good: prev_good.clone(),
+            });
+            prev_good
+        }
+    }
 }
 
 /// Live Claude rate-limit usage: OAuth endpoint first (account-global, always

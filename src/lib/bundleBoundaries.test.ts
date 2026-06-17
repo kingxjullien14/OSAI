@@ -307,40 +307,40 @@ test("shell exposes a shared notification center and controls", () => {
   assert.match(settingsPane, /native alerts/);
 });
 
-test("money agents open as chatpane-backed agents", () => {
+test("scheduled agents open as chatpane-backed agents", () => {
   const app = read("src/App.tsx");
-  const pane = read("src/components/MoneyAgentsPane.tsx");
-  const section = read("src/components/MoneyAgentsSection.tsx");
+  const pane = read("src/components/ScheduledAgentsPane.tsx");
+  const section = read("src/components/ScheduledAgentsSection.tsx");
   const idle = read("src/components/IdleDashboard.tsx");
   const apps = read("src/lib/apps.ts");
-  const agents = read("src/lib/moneyAgents.ts");
+  const agents = read("src/lib/scheduledAgents.ts");
 
-  assert.match(apps, /\| \{ type: "money-agents" \}/);
+  assert.match(apps, /\| \{ type: "scheduled-agents" \}/);
   assert.match(apps, /agentId\?: string/);
   assert.match(apps, /modelId\?: string/);
-  assert.match(app, /import\("\.\/components\/MoneyAgentsPane"\)/);
-  assert.match(app, /pane\.kind\.type === "money-agents"/);
-  assert.match(app, /<MoneyAgentsPane onOpenAgentChat=\{onOpenMoneyAgentChat\} \/>/);
-  assert.match(app, /moneyAgentsSlot=/);
+  assert.match(app, /import\("\.\/components\/ScheduledAgentsPane"\)/);
+  assert.match(app, /pane\.kind\.type === "scheduled-agents"/);
+  assert.match(app, /<ScheduledAgentsPane onOpenAgentChat=\{onOpenScheduledAgentChat\} \/>/);
+  assert.match(app, /scheduledAgentsSlot=/);
   assert.match(app, /chatpaneAgentsOnly/);
   assert.match(app, /embedded/);
-  assert.match(app, /moneyAgentChatStates/);
-  // money-agent chatpanes boot on the user's BASE model (follows their installed
+  assert.match(app, /scheduledAgentChatStates/);
+  // scheduled-agent chatpanes boot on the user's BASE model (follows their installed
   // engine), not a hardcoded codex model that fails when codex isn't installed.
   assert.match(app, /modelId: agentChatModelId\(\)/);
   assert.match(app, /function agentChatModelId\(\)[\s\S]*baseModelId\(/);
   assert.match(app, /modelId=\{pane\.kind\.type === "chat" \? pane\.kind\.modelId : undefined\}/);
   assert.match(app, /focusPane\(existingPane\.key\)/);
   assert.match(app, /reattach: live\.id/);
-  assert.match(app, /moneyAgentBootstrapRef/);
+  assert.match(app, /scheduledAgentBootstrapRef/);
   assert.match(app, /setHiddenKeys\(\(current\)/);
   assert.match(app, /if \(command\) submitWhenReady\(existingPane\.key, command\);\s*else focusPane\(existingPane\.key\)/);
   assert.match(app, /if \(command\) \{\s*setHiddenKeys\(\(current\) => \(current\.includes\(key\) \? current : \[\.\.\.current, key\]\)\);/);
-  assert.match(app, /buildMoneyAgentChatSeed/);
-  assert.match(app, /loadMoneyAgentChatSession/);
+  assert.match(app, /buildScheduledAgentChatSeed/);
+  assert.match(app, /loadScheduledAgentChatSession/);
   assert.match(app, /resume: \{ id: saved\.sessionId, title: saved\.title \}/);
   assert.match(section, /embedded/);
-  assert.match(section, /createMoneyAgent/);
+  assert.match(section, /createScheduledAgent/);
   assert.match(section, /new chatpane agent/);
   assert.match(section, /chatStateLabel/);
   assert.match(section, /onOpenAgentChat/);
@@ -350,18 +350,18 @@ test("money agents open as chatpane-backed agents", () => {
   assert.match(pane, /run pulse now/);
   assert.match(pane, /control update for all agents/);
   assert.match(pane, /state and evidence/);
-  assert.match(idle, /onOpenMoneyAgentChat/);
-  assert.match(agents, /buildMoneyAgentChatSeed/);
-  assert.match(agents, /buildMoneyAgentRunCommand/);
+  assert.match(idle, /onOpenScheduledAgentChat/);
+  assert.match(agents, /buildScheduledAgentChatSeed/);
+  assert.match(agents, /buildScheduledAgentRunCommand/);
   assert.match(agents, /shell control plane/);
-  assert.match(agents, /saveMoneyAgentChatSession/);
+  assert.match(agents, /saveScheduledAgentChatSession/);
   // no developer name anywhere — the cleanse migration heals legacy stored
   // absolute home paths generically (no hardcoded username).
   assert.doesNotMatch(agents, /firazfhansurie/);
   assert.match(agents, /cleanseStored/);
-  assert.match(agents, /ensureMoneyAgentHome/);
-  assert.match(agents, /loadConfiguredMoneyAgents/);
-  assert.match(agents, /createMoneyAgent/);
+  assert.match(agents, /ensureScheduledAgentHome/);
+  assert.match(agents, /loadConfiguredScheduledAgents/);
+  assert.match(agents, /createScheduledAgent/);
 });
 
 test("idle dashboard is a minimal home: clock + command line + usage glance, not lanes", () => {
@@ -714,7 +714,7 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
   ratchet("text-white", /text-white/g, 0);
   ratchet("text-black", /text-black/g, 0);
   // floor is 10, not 0: the survivors are TRUE primary/add affordances per
-  // DESIGN.md §6 (palette ask-CTA, oracle/notes/money add-CTAs, reply action
+  // DESIGN.md §6 (palette ask-CTA, oracle/notes/scheduled add-CTAs, reply action
   // buttons, snippet tip). Decoration (rows, chips, floats) is border-strong.
   ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 10);
   // floor is 3, not 0: TerminalComposer.tsx is locked (never edited) and

@@ -41,7 +41,7 @@ interface Props {
   iconsOnly?: boolean;
   onAttachOracle: (identity: string) => void;
   onAttachTmux: (socket: string, session: string, label?: string) => void;
-  moneyAgentsSlot?: ReactNode;
+  scheduledAgentsSlot?: ReactNode;
   chatpaneAgentsOnly?: boolean;
 }
 
@@ -73,7 +73,7 @@ export function OracleRoster({
   iconsOnly = false,
   onAttachOracle,
   onAttachTmux,
-  moneyAgentsSlot,
+  scheduledAgentsSlot,
   chatpaneAgentsOnly = false,
 }: Props) {
   const nativeReady = isTauriRuntime();
@@ -203,7 +203,7 @@ export function OracleRoster({
               <Terminal size={13} />
             </button>
           ))}
-        {moneyAgentsSlot}
+        {scheduledAgentsSlot}
       </div>
     );
   }
@@ -311,7 +311,7 @@ export function OracleRoster({
                 }}
               />
             ))}
-          {moneyAgentsSlot}
+          {scheduledAgentsSlot}
         </div>
         )}
 

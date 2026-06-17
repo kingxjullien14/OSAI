@@ -62,7 +62,7 @@ import { FileFinder } from "./components/FileFinder";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { IdleDashboard } from "./components/IdleDashboard";
 import { MirrorViewer } from "./components/MirrorViewer";
-import { MoneyAgentsSection, type MoneyAgentChatState } from "./components/MoneyAgentsSection";
+import { ScheduledAgentsSection, type ScheduledAgentChatState } from "./components/ScheduledAgentsSection";
 import { OracleRoster } from "./components/OracleRoster";
 import { PaneErrorBoundary } from "./components/PaneErrorBoundary";
 import { ResizableGrid } from "./components/ResizableGrid";
@@ -89,15 +89,15 @@ import { dictateCancel, dictateStart, dictateStop } from "./lib/voice";
 import { parseConductor, type ConductorStep } from "./lib/conductor";
 import { monitorStart, monitorStop } from "./lib/monitor";
 import {
-  MONEY_AGENTS,
-  buildMoneyAgentChatSeed,
-  buildMoneyAgentRunCommand,
-  dueMoneyAgents,
-  loadConfiguredMoneyAgents,
-  loadMoneyAgentChatSession,
-  moneyAgentById,
-  saveMoneyAgentLastScheduledRun,
-} from "./lib/moneyAgents";
+  SCHEDULED_AGENTS,
+  buildScheduledAgentChatSeed,
+  buildScheduledAgentRunCommand,
+  dueScheduledAgents,
+  loadConfiguredScheduledAgents,
+  loadScheduledAgentChatSession,
+  scheduledAgentById,
+  saveScheduledAgentLastScheduledRun,
+} from "./lib/scheduledAgents";
 import {
   chatHandles,
   detachBusyChats,
@@ -228,8 +228,8 @@ const FilesPane = lazy(() => import("./components/FilesPane").then((m) => ({ def
 const FileViewerPane = lazy(() =>
   import("./components/FileViewerPane").then((m) => ({ default: m.FileViewerPane })),
 );
-const MoneyAgentsPane = lazy(() =>
-  import("./components/MoneyAgentsPane").then((m) => ({ default: m.MoneyAgentsPane })),
+const ScheduledAgentsPane = lazy(() =>
+  import("./components/ScheduledAgentsPane").then((m) => ({ default: m.ScheduledAgentsPane })),
 );
 const NotesPane = lazy(() => import("./components/NotesPane").then((m) => ({ default: m.NotesPane })));
 const PluginsPane = lazy(() => import("./components/PluginsPane").then((m) => ({ default: m.PluginsPane })));
@@ -433,7 +433,7 @@ function startWindowDrag(e: React.MouseEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch((e) => reportDiag("app.window", e, { action: "startDragging" }));
 }
 
-/** The model a money-agent chatpane should boot on — the user's base model
+/** The model a scheduled-agent chatpane should boot on — the user's base model
  *  (which follows their installed/chosen engine via the §13 base sweep), NOT a
  *  hardcoded codex model that fails with "program not found" when codex isn't
  *  installed. Read fresh at spawn time so it reflects the self-healed provider. */
@@ -1351,7 +1351,7 @@ function App() {
   const [oracles, setOracles] = useState<OracleInfo[]>([]);
   const [chats, setChats] = useState<ChatSessionInfo[]>([]);
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
-  const [moneyAgentSessionVersion, setMoneyAgentSessionVersion] = useState(0);
+  const [scheduledAgentSessionVersion, setScheduledAgentSessionVersion] = useState(0);
   // every runnable project under ~/Repo (auto-scanned), merged with the user's
   // project store (custom adds / hides / name+cmd overrides — CRUD from Settings).
   const [scanned, setScanned] = useState<ProjectInfo[]>([]);
@@ -1365,7 +1365,7 @@ function App() {
       listOracles(loadSettings().terminalSocket || "aios").then((v) => alive && setOracles(v)).catch((e) => reportDiag("app.load", e, { action: "oracles" }));
       listChatSessions(12).then((v) => alive && setChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatSessions" }));
       listChatLive().then((v) => alive && setLiveChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatLive" }));
-      if (alive) setMoneyAgentSessionVersion(Date.now());
+      if (alive) setScheduledAgentSessionVersion(Date.now());
     };
     load();
     const t = setInterval(load, 30_000);
@@ -2324,11 +2324,11 @@ function App() {
   const talkToJarvis = useCallback((seed: string) => {
     spawn({ type: "chat", seed }, "chat");
   }, [spawn]);
-  const openMoneyAgentChat = useCallback(
+  const openScheduledAgentChat = useCallback(
     // Returns the pane key it landed in (null if the agent is unknown) so the
     // scheduler can deep-link its notification at the background pane.
     (id: string, label: string, command?: string): string | null => {
-      const agent = moneyAgentById(id);
+      const agent = scheduledAgentById(id);
       if (!agent) return null;
       const submitWhenReady = (key: string, text: string, reveal = false) => {
         let tries = 0;
@@ -2375,7 +2375,7 @@ function App() {
         }
         return key;
       }
-      const saved = loadMoneyAgentChatSession(agent.id);
+      const saved = loadScheduledAgentChatSession(agent.id);
       if (saved) {
         const key = spawn(
           {
@@ -2396,7 +2396,7 @@ function App() {
       const key = spawn(
         {
           type: "chat",
-          seed: command ? `${buildMoneyAgentChatSeed(agent)}\n\noperator command:\n${command}` : buildMoneyAgentChatSeed(agent),
+          seed: command ? `${buildScheduledAgentChatSeed(agent)}\n\noperator command:\n${command}` : buildScheduledAgentChatSeed(agent),
           modelId: agentChatModelId(),
           agentId: agent.id,
           agentLabel: agent.label,
@@ -2413,10 +2413,10 @@ function App() {
 
   // (the agent scheduler lives below, beside the agent bootstrap — upgraded
   //  in W4-7 with deep-linked notifications + the lib cadence parser)
-  const openMoneyAgentChatRef = useRef(openMoneyAgentChat);
+  const openScheduledAgentChatRef = useRef(openScheduledAgentChat);
   useEffect(() => {
-    openMoneyAgentChatRef.current = openMoneyAgentChat;
-  }, [openMoneyAgentChat]);
+    openScheduledAgentChatRef.current = openScheduledAgentChat;
+  }, [openScheduledAgentChat]);
 
   // ── W4-8: Conductor — speak a workspace into existence ─────────────────
   // mod+shift+J toggles push-to-talk (whisper pre-flight from W4-1 means a
@@ -2450,7 +2450,7 @@ function App() {
                     : s.pane === "chat"
                       ? { type: "chat" }
                       : s.pane === "agents"
-                        ? { type: "money-agents" }
+                        ? { type: "scheduled-agents" }
                         : { type: s.pane },
                 s.pane,
               ),
@@ -2535,25 +2535,25 @@ function App() {
   useEffect(() => {
     conductorCancelRef.current = conductorCancel;
   }, [conductorCancel]);
-  const moneyAgentChatStates = useMemo(() => {
-    const out: Partial<Record<(typeof MONEY_AGENTS)[number]["id"], MoneyAgentChatState>> = {};
-    for (const agent of loadConfiguredMoneyAgents()) {
+  const scheduledAgentChatStates = useMemo(() => {
+    const out: Partial<Record<(typeof SCHEDULED_AGENTS)[number]["id"], ScheduledAgentChatState>> = {};
+    for (const agent of loadConfiguredScheduledAgents()) {
       const open = panes.some((pane) => pane.kind.type === "chat" && pane.kind.agentId === agent.id);
       const live = liveChats.some(
         (chat) => chat.title === agent.label || chat.title === agent.shortLabel,
       );
-      const saved = loadMoneyAgentChatSession(agent.id);
+      const saved = loadScheduledAgentChatSession(agent.id);
       out[agent.id] = open ? "open" : live ? "running" : saved ? "saved" : "none";
     }
     return out;
-  }, [liveChats, moneyAgentSessionVersion, panes]);
-  const moneyAgentBootstrapRef = useRef(false);
+  }, [liveChats, scheduledAgentSessionVersion, panes]);
+  const scheduledAgentBootstrapRef = useRef(false);
   useEffect(() => {
-    if (moneyAgentBootstrapRef.current || !nativeRuntime) return;
-    moneyAgentBootstrapRef.current = true;
-    for (const agent of loadConfiguredMoneyAgents()) {
+    if (scheduledAgentBootstrapRef.current || !nativeRuntime) return;
+    scheduledAgentBootstrapRef.current = true;
+    for (const agent of loadConfiguredScheduledAgents()) {
       if (panes.some((pane) => pane.kind.type === "chat" && pane.kind.agentId === agent.id)) continue;
-      const saved = loadMoneyAgentChatSession(agent.id);
+      const saved = loadScheduledAgentChatSession(agent.id);
       const key = spawn(
         saved
           ? {
@@ -2565,7 +2565,7 @@ function App() {
             }
           : {
               type: "chat",
-              seed: buildMoneyAgentChatSeed(agent),
+              seed: buildScheduledAgentChatSeed(agent),
               modelId: agentChatModelId(),
               agentId: agent.id,
               agentLabel: agent.label,
@@ -2576,7 +2576,7 @@ function App() {
     }
   }, [nativeRuntime, panes, spawn]);
   // The agent scheduler (W4-7 upgrade). Each due agent fires its pulse into a
-  // BACKGROUND chat (openMoneyAgentChat hides command-spawned panes — no focus
+  // BACKGROUND chat (openScheduledAgentChat hides command-spawned panes — no focus
   // stealing; its existing-pane path submits without reveal), then a
   // high-priority notification deep-links at that pane (focusPane un-hides).
   // The stamp writes BEFORE the fire so a slow spawn can never double-pulse.
@@ -2587,12 +2587,12 @@ function App() {
   useEffect(() => {
     if (!nativeRuntime) return;
     const tick = () => {
-      for (const agent of dueMoneyAgents()) {
-        saveMoneyAgentLastScheduledRun(agent.id, Date.now());
-        const key = openMoneyAgentChatRef.current(
+      for (const agent of dueScheduledAgents()) {
+        saveScheduledAgentLastScheduledRun(agent.id, Date.now());
+        const key = openScheduledAgentChatRef.current(
           agent.id,
           agent.label,
-          buildMoneyAgentRunCommand(agent, "scheduled"),
+          buildScheduledAgentRunCommand(agent, "scheduled"),
         );
         pushNotification({
           kind: "agent.scheduled",
@@ -2820,13 +2820,13 @@ function App() {
                 onAttachOracle={addOracle}
                 onAttachTmux={addTmux}
                 chatpaneAgentsOnly
-                moneyAgentsSlot={
-                  <MoneyAgentsSection
+                scheduledAgentsSlot={
+                  <ScheduledAgentsSection
                     iconsOnly={iconsOnly}
                     embedded={!iconsOnly}
-                    agentChatStates={moneyAgentChatStates}
-                    onOpenOverview={() => spawn({ type: "money-agents" }, "agents")}
-                    onOpenAgentChat={openMoneyAgentChat}
+                    agentChatStates={scheduledAgentChatStates}
+                    onOpenOverview={() => spawn({ type: "scheduled-agents" }, "agents")}
+                    onOpenAgentChat={openScheduledAgentChat}
                   />
                 }
               />
@@ -2903,9 +2903,9 @@ function App() {
                 onOpenProject={(p) => spawn({ type: "shell", cwd: p.root }, p.name)}
                 onOpenSidebarItem={spawnSidebarItem}
                 onRevealSidebar={() => setSidebarOpen(true)}
-                onOpenMoneyAgents={() => spawn({ type: "money-agents" }, "agents")}
+                onOpenScheduledAgents={() => spawn({ type: "scheduled-agents" }, "agents")}
                 onOpenPet={() => spawn({ type: "pet" }, "pet")}
-                onOpenMoneyAgentChat={openMoneyAgentChat}
+                onOpenScheduledAgentChat={openScheduledAgentChat}
                 onOpenPalette={() => setPaletteOpen(true)}
                 onResumeLast={chats.length ? () => resumeChat(chats[0]) : undefined}
                 resumeLabel={chats[0]?.title}
@@ -2987,7 +2987,7 @@ function App() {
                   onMarkAllNotificationsRead={markAllNotificationsRead}
                   onClearNotification={clearNotification}
                   onClearAllNotifications={clearAllNotifications}
-                  onOpenMoneyAgentChat={openMoneyAgentChat}
+                  onOpenScheduledAgentChat={openScheduledAgentChat}
                   onAttachApp={(app) =>
                     spawn(
                       { type: "app", name: app.name, bundleId: app.bundle_id },
@@ -4597,7 +4597,7 @@ function PaneCard({
   onMarkAllNotificationsRead,
   onClearNotification,
   onClearAllNotifications,
-  onOpenMoneyAgentChat,
+  onOpenScheduledAgentChat,
   onAttachApp,
   onProfileChange,
   onChangeCwd,
@@ -4643,7 +4643,7 @@ function PaneCard({
   onMarkAllNotificationsRead: () => void;
   onClearNotification: (id: string) => void;
   onClearAllNotifications: () => void;
-  onOpenMoneyAgentChat: (id: string, label: string) => void;
+  onOpenScheduledAgentChat: (id: string, label: string) => void;
   onAttachApp: (app: { name: string; bundle_id: string | null }) => void;
   onProfileChange: (profile: string) => void;
   onChangeCwd: (dir: string) => void;
@@ -4972,8 +4972,8 @@ function PaneCard({
               onClear={onClearNotification}
               onClearAll={onClearAllNotifications}
             />
-          ) : pane.kind.type === "money-agents" ? (
-            <MoneyAgentsPane onOpenAgentChat={onOpenMoneyAgentChat} />
+          ) : pane.kind.type === "scheduled-agents" ? (
+            <ScheduledAgentsPane onOpenAgentChat={onOpenScheduledAgentChat} />
           ) : pane.kind.type === "apps" ? (
             <AttachAppsPane onAttachApp={onAttachApp} />
           ) : pane.kind.type === "app" ? (

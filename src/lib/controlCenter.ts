@@ -1,5 +1,5 @@
 import type { AiosNotification } from "./notifications";
-import type { MoneyAgentSummary } from "./moneyAgents";
+import type { ScheduledAgentSummary } from "./scheduledAgents";
 import type { MemoryFocus } from "./dashboard";
 
 export interface AgentFleetSummary {
@@ -33,7 +33,7 @@ export function formatRelativeRunAge(lastRunAt: number | null | undefined, now =
   return `${Math.floor(hour / 24)}d ago`;
 }
 
-export function agentUrgency(agent: Pick<MoneyAgentSummary, "health" | "nextAction">): "critical" | "control" | "active" | "idle" {
+export function agentUrgency(agent: Pick<ScheduledAgentSummary, "health" | "nextAction">): "critical" | "control" | "active" | "idle" {
   if (agent.health === "failed") return "critical";
   if (agent.health === "needs-steer" || /approve|review|missing|blocked|control/i.test(agent.nextAction)) {
     return "control";
@@ -42,12 +42,12 @@ export function agentUrgency(agent: Pick<MoneyAgentSummary, "health" | "nextActi
   return "idle";
 }
 
-export function agentRunLabel(agent: Pick<MoneyAgentSummary, "schedule" | "lastRunAt">): string {
+export function agentRunLabel(agent: Pick<ScheduledAgentSummary, "schedule" | "lastRunAt">): string {
   const schedule = agent.schedule || "manual";
   return `${schedule} · last ${formatRelativeRunAge(agent.lastRunAt)}`;
 }
 
-export function summarizeAgentFleet(agents: MoneyAgentSummary[]): AgentFleetSummary {
+export function summarizeAgentFleet(agents: ScheduledAgentSummary[]): AgentFleetSummary {
   const runningOrScheduled = agents.filter((agent) => agent.health === "running" || agent.health === "scheduled").length;
   const failed = agents.filter((agent) => agent.health === "failed").length;
   const needsControl = agents.filter((agent) => agentUrgency(agent) === "control" || agentUrgency(agent) === "critical").length;
@@ -91,7 +91,7 @@ export function buildJarvisBriefing({
   notifications,
   focus,
 }: {
-  agents: MoneyAgentSummary[];
+  agents: ScheduledAgentSummary[];
   notifications: AiosNotification[];
   focus: MemoryFocus | { title?: string; detail?: string } | null;
 }): JarvisBriefing {

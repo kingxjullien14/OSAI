@@ -4,16 +4,16 @@ import { MessageSquare, RefreshCw, Target, TriangleAlert } from "lucide-react";
 
 import { PaneEmpty } from "./ui";
 import {
-  buildMoneyAgentRunCommand,
-  loadMoneyAgentDetails,
-  type MoneyAgentDetail,
-} from "../lib/moneyAgents";
+  buildScheduledAgentRunCommand,
+  loadScheduledAgentDetails,
+  type ScheduledAgentDetail,
+} from "../lib/scheduledAgents";
 
 interface Props {
   onOpenAgentChat: (id: string, label: string, command?: string) => void;
 }
 
-function healthColor(health: MoneyAgentDetail["health"]): string {
+function healthColor(health: ScheduledAgentDetail["health"]): string {
   if (health === "running") return "var(--color-success)";
   if (health === "scheduled") return "var(--color-info)";
   if (health === "needs-steer") return "var(--color-warning)";
@@ -21,13 +21,13 @@ function healthColor(health: MoneyAgentDetail["health"]): string {
   return "var(--color-faint)";
 }
 
-function healthLabel(health: MoneyAgentDetail["health"]): string {
+function healthLabel(health: ScheduledAgentDetail["health"]): string {
   if (health === "needs-steer") return "needs steer";
   return health;
 }
 
-export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
-  const [agents, setAgents] = useState<MoneyAgentDetail[]>([]);
+export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
+  const [agents, setAgents] = useState<ScheduledAgentDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [steerAll, setSteerAll] = useState("");
@@ -35,7 +35,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
   const refresh = () => {
     setLoading(true);
     setError(null);
-    loadMoneyAgentDetails()
+    loadScheduledAgentDetails()
       .then(setAgents)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -162,7 +162,7 @@ export function MoneyAgentsPane({ onOpenAgentChat }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => onOpenAgentChat(agent.id, agent.label, buildMoneyAgentRunCommand(agent))}
+                onClick={() => onOpenAgentChat(agent.id, agent.label, buildScheduledAgentRunCommand(agent))}
                 className="ml-2 mt-3 inline-flex h-8 items-center gap-2 rounded-md border border-[var(--color-accent)]/45 bg-[var(--color-accent-soft)] px-3 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/75"
                 title={`run ${agent.label} now`}
               >

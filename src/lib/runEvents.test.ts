@@ -202,3 +202,50 @@ test("run event state parser rejects malformed storage", () => {
     },
   );
 });
+
+test("reduceRunEvents emits file.changed for an Edit, not for a read-only tool", () => {
+  let state = emptyRunEventState();
+  state = reduceRunEvents(
+    state,
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_edit",
+            name: "Edit",
+            input: { file_path: "src/a.ts", old_string: "a\nb", new_string: "a\nB\nc" },
+          },
+        ],
+      },
+    },
+    { now: 5 },
+  );
+  const fc = state.events.find((e) => e.type === "file.changed");
+  assert.ok(fc, "an Edit emits a file.changed event");
+  assert.equal(fc.path, "src/a.ts");
+  assert.equal(fc.dels, 2);
+  assert.equal(fc.adds, 3);
+  // it rides alongside the action.started, not instead of it
+  assert.equal(state.events.some((e) => e.type === "action.started"), true);
+
+  // a read-only tool (Read) emits NO file.changed
+  let ro = emptyRunEventState();
+  ro = reduceRunEvents(
+    ro,
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t", name: "Read", input: { file_path: "x" } }],
+      },
+    },
+    { now: 1 },
+  );
+  assert.equal(
+    ro.events.some((e) => e.type === "file.changed"),
+    false,
+  );
+});

@@ -38,6 +38,17 @@ export type RunEvent =
       at: number;
     }
   | {
+      type: "file.changed";
+      id: string;
+      /** Absolute or workspace-relative path the tool wrote. */
+      path: string;
+      /** Cheap +adds / −dels line estimate for the change card; the real diff is
+       *  rendered lazily on expand (P4). */
+      adds: number;
+      dels: number;
+      at: number;
+    }
+  | {
       type: "permission.requested";
       id: string;
       toolName: string;
@@ -137,6 +148,46 @@ function append(state: RunEventState, events: RunEvent[], phase: RunPhase): RunE
   };
 }
 
+/** Derives a `file.changed` event from a file-writing tool call (Edit / MultiEdit
+ *  / Write; codex apply_patch is normalized to `edit` upstream). Returns null for
+ *  non-writing tools (Read / Bash / Grep …). Line counts are a cheap estimate for
+ *  the change card — the real diff renders lazily on expand (P4). */
+function fileChangeEvent(
+  name: string | undefined,
+  input: Record<string, unknown> | undefined,
+  at: number,
+): Extract<RunEvent, { type: "file.changed" }> | null {
+  const tool = (name ?? "").toLowerCase();
+  const inp = input ?? {};
+  const path =
+    typeof inp.file_path === "string"
+      ? inp.file_path
+      : typeof inp.path === "string"
+        ? inp.path
+        : typeof inp.notebook_path === "string"
+          ? inp.notebook_path
+          : null;
+  if (!path) return null;
+  const lineCount = (s: unknown): number =>
+    typeof s === "string" && s.length > 0 ? s.split("\n").length : 0;
+  let adds = 0;
+  let dels = 0;
+  if (tool === "write") {
+    adds = lineCount(inp.content);
+  } else if (tool === "edit") {
+    dels = lineCount(inp.old_string);
+    adds = lineCount(inp.new_string);
+  } else if (tool === "multiedit" && Array.isArray(inp.edits)) {
+    for (const e of inp.edits as Array<Record<string, unknown>>) {
+      dels += lineCount(e.old_string);
+      adds += lineCount(e.new_string);
+    }
+  } else {
+    return null;
+  }
+  return { type: "file.changed", id: nextId("fc"), path, adds, dels, at };
+}
+
 /** Normalizes raw chat stream frames into a durable run timeline. */
 export function reduceRunEvents(
   state: RunEventState,
@@ -215,6 +266,8 @@ export function reduceRunEvents(
           input: block.input ?? {},
           at,
         });
+        const change = fileChangeEvent(block.name, block.input, at);
+        if (change) out.push(change);
       }
     }
     return out.length ? append(state, out, out.some((e) => e.type === "action.started") ? "acting" : "writing") : state;
@@ -326,6 +379,7 @@ function isRunEvent(value: unknown): value is RunEvent {
     event.type === "message.delta" ||
     event.type === "action.started" ||
     event.type === "action.completed" ||
+    event.type === "file.changed" ||
     event.type === "permission.requested" ||
     event.type === "run.completed" ||
     event.type === "run.failed" ||

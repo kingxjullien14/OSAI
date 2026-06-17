@@ -1,8 +1,8 @@
 import { joinPath } from "./paths.ts";
 
-export type MoneyAgentHealth = "running" | "scheduled" | "needs-steer" | "failed" | "unknown";
+export type ScheduledAgentHealth = "running" | "scheduled" | "needs-steer" | "failed" | "unknown";
 
-export interface MoneyAgentConfig {
+export interface ScheduledAgentConfig {
   id: string;
   label: string;
   shortLabel: string;
@@ -16,21 +16,21 @@ export interface MoneyAgentConfig {
   schedule?: string;
 }
 
-export interface MoneyAgentLaunchdState {
+export interface ScheduledAgentLaunchdState {
   running: boolean;
   lastExit: number | null;
 }
 
-export interface MoneyAgentRawState {
+export interface ScheduledAgentRawState {
   status?: Record<string, any> | null;
   queue?: any[] | Record<string, any> | null;
-  launchd?: MoneyAgentLaunchdState | null;
+  launchd?: ScheduledAgentLaunchdState | null;
 }
 
-export interface MoneyAgentSummary {
-  id: MoneyAgentConfig["id"];
+export interface ScheduledAgentSummary {
+  id: ScheduledAgentConfig["id"];
   label: string;
-  health: MoneyAgentHealth;
+  health: ScheduledAgentHealth;
   primaryMetric: string;
   nextAction: string;
   currentJob: string;
@@ -38,7 +38,7 @@ export interface MoneyAgentSummary {
   lastRunAt?: number | null;
 }
 
-export interface MoneyAgentDetail extends MoneyAgentSummary {
+export interface ScheduledAgentDetail extends ScheduledAgentSummary {
   mission: string;
   schedule: string;
   stdoutPath: string;
@@ -48,7 +48,7 @@ export interface MoneyAgentDetail extends MoneyAgentSummary {
   logTail: string[];
 }
 
-export interface MoneyAgentChatSession {
+export interface ScheduledAgentChatSession {
   sessionId: string;
   title: string;
   updatedAt: number;
@@ -56,10 +56,10 @@ export interface MoneyAgentChatSession {
 
 // The agent home is resolved from the backend at runtime — nothing in this
 // module may bake in a developer's home directory. Sync callers read the
-// cached value; async loaders await ensureMoneyAgentHome() first. Until the
+// cached value; async loaders await ensureScheduledAgentHome() first. Until the
 // cache is warm, derived paths use "~" (readJson fails soft → health unknown).
 let runtimeHome = "";
-export async function ensureMoneyAgentHome(): Promise<string> {
+export async function ensureScheduledAgentHome(): Promise<string> {
   if (runtimeHome) return runtimeHome;
   try {
     const { homeDir } = await import("./fs");
@@ -81,7 +81,7 @@ const lastScheduledRunKey = (id: string) => `aios.chatAgents.lastScheduledRun:${
 
 /** Legacy catalog — intentionally empty. The shell ships with no agents; only
  *  the fleets users create exist. (Kept as an export for type/id lookups.) */
-export const MONEY_AGENTS: MoneyAgentConfig[] = [];
+export const SCHEDULED_AGENTS: ScheduledAgentConfig[] = [];
 
 function normalizeAgentId(value: string): string {
   return value
@@ -103,20 +103,20 @@ const cleanseStored = (value: unknown): string | undefined => {
   return s;
 };
 
-function readStoredAgents(): Partial<MoneyAgentConfig>[] {
+function readStoredAgents(): Partial<ScheduledAgentConfig>[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(customAgentsKey) || "[]") as Partial<MoneyAgentConfig>[];
+    return JSON.parse(localStorage.getItem(customAgentsKey) || "[]") as Partial<ScheduledAgentConfig>[];
   } catch {
     return [];
   }
 }
 
-export function loadCustomMoneyAgents(): MoneyAgentConfig[] {
+export function loadCustomScheduledAgents(): ScheduledAgentConfig[] {
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = readStoredAgents();
-    return raw.reduce<MoneyAgentConfig[]>((agents, agent) => {
+    return raw.reduce<ScheduledAgentConfig[]>((agents, agent) => {
         const id = normalizeAgentId(String(agent.id || agent.label || ""));
         if (!id || !agent.label) return agents;
         const label = String(agent.label).trim();
@@ -141,12 +141,12 @@ export function loadCustomMoneyAgents(): MoneyAgentConfig[] {
   }
 }
 
-export function loadConfiguredMoneyAgents(): MoneyAgentConfig[] {
+export function loadConfiguredScheduledAgents(): ScheduledAgentConfig[] {
   // Default: NO agents. The shell ships with an empty sidebar — only agents the
-  // user explicitly creates show up. `MONEY_AGENTS` stays as a catalog of known
+  // user explicitly creates show up. `SCHEDULED_AGENTS` stays as a catalog of known
   // ids (for seed/role lookups), but is no longer auto-populated.
   const seen = new Set<string>();
-  return loadCustomMoneyAgents().filter((agent) => {
+  return loadCustomScheduledAgents().filter((agent) => {
     if (seen.has(agent.id)) return false;
     seen.add(agent.id);
     return true;
@@ -154,9 +154,9 @@ export function loadConfiguredMoneyAgents(): MoneyAgentConfig[] {
 }
 
 /** Removes a user-created agent and its persisted chat session / schedule state.
- *  Built-in catalog agents (MONEY_AGENTS) aren't shown by default, so this only
+ *  Built-in catalog agents (SCHEDULED_AGENTS) aren't shown by default, so this only
  *  ever needs to drop a custom agent. No-op if the id isn't a custom agent. */
-export function removeMoneyAgent(id: string): void {
+export function removeScheduledAgent(id: string): void {
   if (typeof localStorage === "undefined") return;
   const next = readStoredAgents().filter(
     (agent) => normalizeAgentId(String(agent.id || agent.label || "")) !== id,
@@ -170,19 +170,19 @@ export function removeMoneyAgent(id: string): void {
   }
 }
 
-export function createMoneyAgent(input: {
+export function createScheduledAgent(input: {
   label: string;
   mission?: string;
   schedule?: string;
   cwd?: string;
-}): MoneyAgentConfig | null {
+}): ScheduledAgentConfig | null {
   if (typeof localStorage === "undefined") return null;
   const label = input.label.trim();
   const id = normalizeAgentId(label);
   if (!id) return null;
-  const existing = loadConfiguredMoneyAgents().find((agent) => agent.id === id);
+  const existing = loadConfiguredScheduledAgents().find((agent) => agent.id === id);
   if (existing) return existing;
-  const agent: MoneyAgentConfig = {
+  const agent: ScheduledAgentConfig = {
     id,
     label,
     shortLabel: id,
@@ -197,7 +197,7 @@ export function createMoneyAgent(input: {
   };
   // Persist only the user's inputs — derived paths re-resolve at load so they
   // always track the runtime home, never a frozen snapshot.
-  const stored: Partial<MoneyAgentConfig> = {
+  const stored: Partial<ScheduledAgentConfig> = {
     id,
     label,
     mission: agent.mission,
@@ -209,18 +209,18 @@ export function createMoneyAgent(input: {
   return agent;
 }
 
-export function moneyAgentById(id: string): MoneyAgentConfig | undefined {
-  return loadConfiguredMoneyAgents().find((agent) => agent.id === id);
+export function scheduledAgentById(id: string): ScheduledAgentConfig | undefined {
+  return loadConfiguredScheduledAgents().find((agent) => agent.id === id);
 }
 
-const agentChatSessionKey = (id: string) => `aios.moneyAgent.chatSession:${id}`;
+const agentChatSessionKey = (id: string) => `aios.scheduledAgent.chatSession:${id}`;
 
-export function loadMoneyAgentChatSession(id: string): MoneyAgentChatSession | null {
+export function loadScheduledAgentChatSession(id: string): ScheduledAgentChatSession | null {
   if (typeof localStorage === "undefined") return null;
   try {
     const raw = localStorage.getItem(agentChatSessionKey(id));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<MoneyAgentChatSession>;
+    const parsed = JSON.parse(raw) as Partial<ScheduledAgentChatSession>;
     if (!parsed.sessionId || !parsed.title) return null;
     return {
       sessionId: parsed.sessionId,
@@ -232,7 +232,7 @@ export function loadMoneyAgentChatSession(id: string): MoneyAgentChatSession | n
   }
 }
 
-export function saveMoneyAgentChatSession(id: string, session: MoneyAgentChatSession): void {
+export function saveScheduledAgentChatSession(id: string, session: ScheduledAgentChatSession): void {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(agentChatSessionKey(id), JSON.stringify(session));
@@ -241,13 +241,13 @@ export function saveMoneyAgentChatSession(id: string, session: MoneyAgentChatSes
   }
 }
 
-export function loadMoneyAgentLastScheduledRun(id: string): number | null {
+export function loadScheduledAgentLastScheduledRun(id: string): number | null {
   if (typeof localStorage === "undefined") return null;
   const value = Number(localStorage.getItem(lastScheduledRunKey(id)) || "0");
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-export function saveMoneyAgentLastScheduledRun(id: string, at: number): void {
+export function saveScheduledAgentLastScheduledRun(id: string, at: number): void {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(lastScheduledRunKey(id), String(at));
@@ -285,10 +285,10 @@ export function scheduleIntervalMs(schedule: string | undefined | null): number 
 /** True when an agent's cadence says it should pulse now. A never-stamped
  *  agent with a cadence is due immediately (the user asked for autonomy —
  *  the first pulse starts the clock). */
-export function isMoneyAgentDue(
-  agent: Pick<MoneyAgentConfig, "id" | "schedule">,
+export function isScheduledAgentDue(
+  agent: Pick<ScheduledAgentConfig, "id" | "schedule">,
   now: number,
-  lastRun: number | null = loadMoneyAgentLastScheduledRun(agent.id),
+  lastRun: number | null = loadScheduledAgentLastScheduledRun(agent.id),
 ): boolean {
   const interval = scheduleIntervalMs(agent.schedule);
   if (interval == null) return false;
@@ -296,11 +296,11 @@ export function isMoneyAgentDue(
 }
 
 /** Every configured agent whose schedule is due. */
-export function dueMoneyAgents(now = Date.now()): MoneyAgentConfig[] {
-  return loadConfiguredMoneyAgents().filter((agent) => isMoneyAgentDue(agent, now));
+export function dueScheduledAgents(now = Date.now()): ScheduledAgentConfig[] {
+  return loadConfiguredScheduledAgents().filter((agent) => isScheduledAgentDue(agent, now));
 }
 
-export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
+export function buildScheduledAgentChatSeed(agent: ScheduledAgentConfig): string {
   return [
     `you are the aios ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`,
     "",
@@ -327,7 +327,7 @@ export function buildMoneyAgentChatSeed(agent: MoneyAgentConfig): string {
   ].join("\n");
 }
 
-export function buildMoneyAgentRunCommand(
+export function buildScheduledAgentRunCommand(
   agent: { label: string; mission?: string },
   reason = "manual",
 ): string {
@@ -346,7 +346,7 @@ export function buildMoneyAgentRunCommand(
   ].join("\n");
 }
 
-function queueCount(queue: MoneyAgentRawState["queue"]): number {
+function queueCount(queue: ScheduledAgentRawState["queue"]): number {
   if (Array.isArray(queue)) return queue.length;
   if (queue && typeof queue === "object") {
     const values = Object.values(queue);
@@ -356,10 +356,10 @@ function queueCount(queue: MoneyAgentRawState["queue"]): number {
   return 0;
 }
 
-export function summarizeMoneyAgentState(
-  agent: MoneyAgentConfig,
-  raw: MoneyAgentRawState,
-): MoneyAgentSummary {
+export function summarizeScheduledAgentState(
+  agent: ScheduledAgentConfig,
+  raw: ScheduledAgentRawState,
+): ScheduledAgentSummary {
   const status = raw.status ?? {};
   const launchd = raw.launchd;
   const queued = typeof status.queued === "number" ? status.queued : queueCount(raw.queue);
@@ -367,7 +367,7 @@ export function summarizeMoneyAgentState(
   const next = status.next ?? status.agents?.["social-media-agent"]?.next;
   const nextName = next?.name ?? next?.id ?? next?.route ?? "";
 
-  let health: MoneyAgentHealth = "unknown";
+  let health: ScheduledAgentHealth = "unknown";
   if (launchd?.lastExit && launchd.lastExit !== 0) health = "failed";
   else if (launchd?.running) health = dryRun ? "needs-steer" : "running";
   else if (launchd && launchd.lastExit === 0) health = "scheduled";
@@ -383,7 +383,7 @@ export function summarizeMoneyAgentState(
       ? "review the pending draft before approving"
       : "open the agent chat to steer",
     schedule: agent.schedule || "manual",
-    lastRunAt: loadMoneyAgentLastScheduledRun(agent.id),
+    lastRunAt: loadScheduledAgentLastScheduledRun(agent.id),
   };
 }
 
@@ -396,15 +396,15 @@ async function readJson(path: string): Promise<any | null> {
   }
 }
 
-export async function loadMoneyAgentSummaries(): Promise<MoneyAgentSummary[]> {
-  await ensureMoneyAgentHome();
+export async function loadScheduledAgentSummaries(): Promise<ScheduledAgentSummary[]> {
+  await ensureScheduledAgentHome();
   const rows = await Promise.all(
-    loadConfiguredMoneyAgents().map(async (agent) => {
+    loadConfiguredScheduledAgents().map(async (agent) => {
       const [status, queue] = await Promise.all([
         readJson(agent.statePath),
         readJson(agent.queuePath),
       ]);
-      return summarizeMoneyAgentState(agent, { status, queue });
+      return summarizeScheduledAgentState(agent, { status, queue });
     }),
   );
   return rows;
@@ -419,10 +419,10 @@ async function tailText(path: string, maxLines = 28): Promise<string[]> {
   }
 }
 
-export async function loadMoneyAgentDetails(): Promise<MoneyAgentDetail[]> {
-  await ensureMoneyAgentHome();
+export async function loadScheduledAgentDetails(): Promise<ScheduledAgentDetail[]> {
+  await ensureScheduledAgentHome();
   return Promise.all(
-    loadConfiguredMoneyAgents().map(async (agent) => {
+    loadConfiguredScheduledAgents().map(async (agent) => {
       const [status, queue, stdout, stderr] = await Promise.all([
         readJson(agent.statePath),
         readJson(agent.queuePath),
@@ -430,7 +430,7 @@ export async function loadMoneyAgentDetails(): Promise<MoneyAgentDetail[]> {
         tailText(agent.stderrPath, 10),
       ]);
       return {
-        ...summarizeMoneyAgentState(agent, { status, queue }),
+        ...summarizeScheduledAgentState(agent, { status, queue }),
         mission: agent.mission,
         schedule: agent.schedule || "manual",
         stdoutPath: agent.stdoutPath,

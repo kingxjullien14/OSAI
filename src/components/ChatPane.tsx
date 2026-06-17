@@ -100,7 +100,7 @@ import {
   type WebChatTurn,
 } from "../lib/chat";
 import { detectAvailableEngines } from "../lib/providerDetect";
-import { saveMoneyAgentChatSession } from "../lib/moneyAgents";
+import { saveScheduledAgentChatSession } from "../lib/scheduledAgents";
 import { fileSrc, homeDir, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { SHIFT, chord } from "../lib/platform";
@@ -147,10 +147,14 @@ import {
   type RunPhase,
 } from "../lib/runEvents";
 import {
+  compactionSummary,
+  detectCompaction,
   finalizeStreamingTurns,
   reduceChatStreamEvent,
+  replayHistoryToTurns,
   type ChatTurn,
 } from "../lib/chatStream";
+import { readChatHistory } from "../lib/chatHistory";
 import { memorySearch, type MemoryHit } from "../lib/memory";
 import {
   onPetResult,
@@ -193,6 +197,7 @@ type RenderBlock =
   | { kind: "thinking"; id: string; turn: Extract<Turn, { kind: "thinking" }> }
   | { kind: "approval"; id: string; turn: Extract<Turn, { kind: "approval" }> }
   | { kind: "result"; id: string; turn: Extract<Turn, { kind: "result" }> }
+  | { kind: "compaction"; id: string; turn: Extract<Turn, { kind: "compaction" }> }
   | { kind: "ask"; id: string; turn: ToolTurn }
   | { kind: "activity"; id: string; tools: ToolTurn[]; durationMs?: number };
 
@@ -207,6 +212,8 @@ function blockSearchText(b: RenderBlock): string {
       return b.turn.text;
     case "result":
       return b.turn.text ?? "";
+    case "compaction":
+      return b.turn.summary ?? "context compacted";
     case "approval":
       return `${b.turn.toolName} ${JSON.stringify(b.turn.input ?? {})}`;
     case "ask":
@@ -1663,6 +1670,42 @@ export function ChatPane({
       return;
     }
 
+    // ---- compaction (P2) ----------------------------------------------------
+    // claude emits a `system`/`compact_boundary` (token metadata) then a synthetic
+    // "continued from a previous conversation" user message (the summary). Render
+    // a collapsible segment card; neither goes through the turn reducer below.
+    const comp = detectCompaction(ev);
+    if (comp) {
+      setTurns((prev) => [
+        ...prev,
+        { kind: "compaction", id: uid(), createdAt: Date.now(), ...comp },
+      ]);
+      return;
+    }
+    const compSummary = compactionSummary(ev);
+    if (compSummary) {
+      setTurns((prev) => {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].kind === "compaction") {
+            const next = [...prev];
+            next[i] = { ...next[i], summary: compSummary } as Turn;
+            return next;
+          }
+        }
+        return prev;
+      });
+      return;
+    }
+    // drop other synthetic / replay user plumbing (e.g. "<local-command-stdout>")
+    // so it never renders as a bogus user bubble.
+    if (
+      ev.type === "user" &&
+      ((ev as { isSynthetic?: boolean }).isSynthetic ||
+        (ev as { isReplay?: boolean }).isReplay)
+    ) {
+      return;
+    }
+
     const reduced = (() => {
       let handled = false;
       setTurns((prev) => {
@@ -2525,7 +2568,7 @@ export function ChatPane({
           if (promoteCodex) codexTitleLockedRef.current = false;
         });
         if (agentId) {
-          saveMoneyAgentChatSession(agentId, {
+          saveScheduledAgentChatSession(agentId, {
             sessionId: sid,
             title: stableTitle,
             updatedAt: Date.now(),
@@ -2817,13 +2860,27 @@ export function ChatPane({
       // session-restart effect never clears `turns`, so this is safe).
       setTurns([]);
       setRunEventState(emptyRunEventState());
-      readChatTranscript(session.id)
-        .then((rows) => {
-          if (rows.length) setTurns(transcriptToTurns(rows));
+      // Repaint from OUR durable store first (full fidelity — thinking, tool
+      // calls, diffs), replayed through the SAME reducer the live stream uses.
+      // Fall back to the engine's text-only transcript for foreign/legacy chats
+      // with no store yet (D4).
+      const repaintFromTranscript = () =>
+        readChatTranscript(session.id)
+          .then((rows) => {
+            if (rows.length) setTurns(transcriptToTurns(rows));
+          })
+          .catch(() => {
+            // transcript unavailable → leave the pane empty but still resumable
+          });
+      readChatHistory(session.id)
+        .then((page) => {
+          if (page.lines.length) {
+            setTurns(replayHistoryToTurns(page.lines, uid));
+          } else {
+            void repaintFromTranscript();
+          }
         })
-        .catch(() => {
-          // transcript unavailable → leave the pane empty but still resumable
-        });
+        .catch(() => void repaintFromTranscript());
       // bump restartKey too so re-picking the SAME session still re-spins
       setRestartKey((k) => k + 1);
     },
@@ -4242,6 +4299,8 @@ export function ChatPane({
         out.push({ kind: "thinking", id: t.id, turn: t });
       } else if (t.kind === "approval") {
         out.push({ kind: "approval", id: t.id, turn: t });
+      } else if (t.kind === "compaction") {
+        out.push({ kind: "compaction", id: t.id, turn: t });
       } else if (t.kind === "result") {
         const act = lastActivity();
         if (act && t.durationMs != null) act.durationMs = t.durationMs;
@@ -4767,6 +4826,8 @@ export function ChatPane({
                     disabled={streaming}
                     onOpenUrl={onOpenUrl}
                   />
+                ) : b.kind === "compaction" ? (
+                  <CompactionCard turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
                 ) : b.kind === "thinking" ? (
                   <ThinkingBlock turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
                 ) : b.kind === "approval" ? (
@@ -4789,6 +4850,7 @@ export function ChatPane({
                 b.kind === "user" ||
                 b.kind === "approval" ||
                 b.kind === "ask" ||
+                b.kind === "compaction" ||
                 b.kind === "result";
               const setBlockEl = (el: HTMLElement | null) => {
                 if (el) blockElsRef.current.set(b.id, el);
@@ -5466,6 +5528,76 @@ function toolDetail(turn: ToolTurn): React.ReactNode {
   }
 
   return null;
+}
+
+/** Collapsible context-compaction segment card (P2). Claude folds the running
+ *  context into a summary; this marks the boundary inline — a quiet divider with
+ *  the token savings, expanding to the trigger, before/after tokens, duration and
+ *  the recap the model now carries forward. Built from a `system`/`compact_boundary`
+ *  event + the synthetic summary that follows (see detectCompaction / compactionSummary). */
+function CompactionCard({
+  turn,
+  forceOpen,
+}: {
+  turn: Extract<Turn, { kind: "compaction" }>;
+  forceOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const expanded = open || Boolean(forceOpen);
+  const { preTokens: pre, postTokens: post } = turn;
+  const savedPct =
+    pre != null && post != null && pre > 0 ? Math.round((1 - post / pre) * 100) : null;
+  const fmtTok = (n?: number) =>
+    n == null ? "?" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  const headline =
+    pre != null && post != null
+      ? `${fmtTok(pre)} → ${fmtTok(post)} tokens${savedPct != null ? ` · saved ${savedPct}%` : ""}`
+      : "context compacted";
+  return (
+    <div className="my-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="group flex w-full items-center gap-2.5 text-[11px] text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
+        title={expanded ? "hide compaction details" : "show what was compacted"}
+        aria-expanded={expanded}
+      >
+        <span className="h-px flex-1 bg-[var(--color-border)]" />
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <History size={11} className="text-[var(--color-accent)]" />
+          compacted · {headline}
+          {turn.trigger ? ` · ${turn.trigger}` : ""}
+          <ChevronRight
+            size={11}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+        </span>
+        <span className="h-px flex-1 bg-[var(--color-border)]" />
+      </button>
+      <div className="disclose" data-open={expanded}>
+        <div>
+          <div className="mt-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[11.5px] leading-relaxed text-[var(--color-text-2)]">
+            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px] text-[var(--color-muted)]">
+              {turn.trigger && <span>trigger: {turn.trigger}</span>}
+              {pre != null && <span>before: {pre.toLocaleString()}</span>}
+              {post != null && <span>after: {post.toLocaleString()}</span>}
+              {pre != null && post != null && <span>saved: {(pre - post).toLocaleString()}</span>}
+              {turn.durationMs != null && <span>took: {(turn.durationMs / 1000).toFixed(1)}s</span>}
+            </div>
+            {turn.summary ? (
+              <div className="max-h-72 overflow-auto whitespace-pre-wrap break-words">
+                {turn.summary}
+              </div>
+            ) : (
+              <div className="italic text-[var(--color-faint)]">
+                summary not captured — the conversation continues from the compacted context.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** A red/green diff for an Edit's old → new strings. Long sides cap to a preview

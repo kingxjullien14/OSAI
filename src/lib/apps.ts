@@ -29,7 +29,7 @@ export type PaneContent =
   | { type: "plugins" }
   | { type: "pulse" }
   | { type: "notifications" }
-  | { type: "money-agents" }
+  | { type: "scheduled-agents" }
   | { type: "apps" }
   | { type: "app"; name: string; bundleId?: string | null }
   | {

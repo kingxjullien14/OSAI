@@ -130,6 +130,11 @@ struct ChatSession {
     /// claude's own session uuid (from the init event) — used to match a
     /// reopened pane back to this live process.
     claude_id: Mutex<Option<String>>,
+    /// Durable, append-only history log (AIOS-owned, full-fidelity). Mirrors this
+    /// session's settled event stream to `~/.aios/state/chat-history/<id>/` so the
+    /// conversation survives engine compaction and can be replayed/searched later.
+    /// See `chat_history.rs` + `PLAN-chatpane-history-and-navigation.md` §2.
+    history: Mutex<crate::chat_history::HistoryLog>,
     /// Human label for the tray + notification.
     title: Mutex<String>,
     /// True while a turn is in flight (set on send, cleared on `result`).
@@ -776,6 +781,7 @@ pub fn chat_start(
         sink: Mutex::new(Some(on_event)),
         buffer: Mutex::new(VecDeque::with_capacity(256)),
         claude_id: Mutex::new(None),
+        history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
         detached: AtomicBool::new(false),
@@ -899,6 +905,7 @@ fn start_per_turn(
         sink: Mutex::new(Some(on_event)),
         buffer: Mutex::new(VecDeque::with_capacity(256)),
         claude_id: Mutex::new(None),
+        history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
         detached: AtomicBool::new(false),
@@ -1319,6 +1326,7 @@ fn start_codex_appserver(
         sink: Mutex::new(Some(on_event)),
         buffer: Mutex::new(VecDeque::with_capacity(256)),
         claude_id: Mutex::new(None),
+        history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
         detached: AtomicBool::new(false),
@@ -2067,12 +2075,24 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
     // Learn claude's session uuid once, from the init event.
     if sess.claude_id.lock().is_none() {
         if let Some(sid) = extract_json_str(line, "session_id") {
-            *sess.claude_id.lock() = Some(sid);
+            *sess.claude_id.lock() = Some(sid.clone());
+            // Key the durable history log by the engine session id + flush any
+            // lines that streamed before the id was known.
+            sess.history.lock().set_id(&sid);
         }
     }
 
     // A `result` event ends the current turn.
     let is_result = line.contains("\"type\":\"result\"");
+
+    // Mirror every SETTLED event into the durable history store. `record` skips
+    // the partial `stream_event` token deltas (the reducer coalesces those; the
+    // settled assistant/user/result lines carry the full content), so the outer
+    // guard here just keeps the hot delta path off the history mutex. Runs on the
+    // reader thread, so capture continues even while the pane is detached.
+    if !line.contains("\"type\":\"stream_event\"") {
+        sess.history.lock().record(line);
+    }
 
     // Forward the line itself first (buffer + live sink), so the pane sees the
     // turn close before the usage tick that follows it.
@@ -2257,6 +2277,13 @@ pub fn chat_send(
     };
     s.busy.store(true, Ordering::SeqCst);
     let images = image_paths.unwrap_or_default();
+    // Persist the user's turn to the durable history log (text only — image
+    // base64 isn't worth storing). Engine OUTPUT is captured in `ingest_line`;
+    // the user line goes to the engine's stdin and is never echoed back as an
+    // event, so it must be recorded here to keep the log complete.
+    if !text.trim().is_empty() {
+        s.history.lock().record(&user_line(&text));
+    }
     if matches!(s.engine, Engine::Codex) {
         return codex_send_turn(&s, text, &images);
     }

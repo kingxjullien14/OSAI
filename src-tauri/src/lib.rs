@@ -8,6 +8,7 @@ mod bridges;
 mod browser;
 mod browser_store;
 mod chat;
+mod chat_history;
 mod device;
 mod diag;
 mod files;
@@ -434,6 +435,8 @@ pub fn run() {
             chat::list_chat_sessions,
             chat::record_chat_session,
             chat::read_chat_transcript,
+            chat_history::read_chat_history,
+            chat_history::chat_history_meta,
             chat::detect_providers,
             browser::browser_show,
             browser::browser_set_bounds,

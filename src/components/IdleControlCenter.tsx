@@ -60,7 +60,7 @@ import { engineForProvider } from "../lib/chat";
 import type { IdleRate, MemoryFocus } from "../lib/dashboard";
 import type { RepoPulse } from "../lib/fs";
 import { loadSettings } from "../lib/settings";
-import type { MoneyAgentSummary } from "../lib/moneyAgents";
+import type { ScheduledAgentSummary } from "../lib/scheduledAgents";
 import type { AiosNotification } from "../lib/notifications";
 import type { ProjectInfo } from "../lib/run";
 import type { SidebarItem, SidebarState } from "../lib/sidebar";
@@ -95,13 +95,13 @@ export function IdleControlCenter({
   rate,
   focus,
   pulse,
-  moneyAgents,
+  scheduledAgents,
   notifications,
   onSpawn,
   onOpenProject,
   onOpenSidebarItem,
   onRevealSidebar,
-  onOpenMoneyAgents,
+  onOpenScheduledAgents,
   onOpenPet,
   onOpenPalette,
   onResumeLast,
@@ -118,13 +118,13 @@ export function IdleControlCenter({
   rate: IdleRate | null;
   focus: MemoryFocus | null;
   pulse: RepoPulse[];
-  moneyAgents: MoneyAgentSummary[];
+  scheduledAgents: ScheduledAgentSummary[];
   notifications: AiosNotification[];
   onSpawn: (kind: AppDef["kind"], label: string) => void;
   onOpenProject: (p: ProjectInfo) => void;
   onOpenSidebarItem: (item: SidebarItem) => void;
   onRevealSidebar: () => void;
-  onOpenMoneyAgents: () => void;
+  onOpenScheduledAgents: () => void;
   onOpenPet: () => void;
   onOpenPalette: () => void;
   /** resume the most recent chat session (omitted when there are none). */
@@ -140,7 +140,7 @@ export function IdleControlCenter({
 }) {
   // ── derived state — declared BEFORE any JSX/hook that reads them (TDZ-safe) ──
   const recent = [...projects].sort((a, b) => b.mtime - a.mtime).slice(0, 5);
-  const activeAgents = moneyAgents.filter(
+  const activeAgents = scheduledAgents.filter(
     (agent) => agent.health === "running" || agent.health === "scheduled",
   ).length;
   const unread = notifications.filter((item) => !item.read).length;
@@ -342,10 +342,10 @@ export function IdleControlCenter({
             )}
             <StatusFooter
               activeAgents={activeAgents}
-              totalAgents={moneyAgents.length}
+              totalAgents={scheduledAgents.length}
               unread={unread}
               dirtyProjects={dirtyProjects}
-              onOpenMoneyAgents={onOpenMoneyAgents}
+              onOpenScheduledAgents={onOpenScheduledAgents}
               onRevealSidebar={onRevealSidebar}
             />
               </div>
@@ -860,14 +860,14 @@ function StatusFooter({
   totalAgents,
   unread,
   dirtyProjects,
-  onOpenMoneyAgents,
+  onOpenScheduledAgents,
   onRevealSidebar,
 }: {
   activeAgents: number;
   totalAgents: number;
   unread: number;
   dirtyProjects: number;
-  onOpenMoneyAgents: () => void;
+  onOpenScheduledAgents: () => void;
   onRevealSidebar: () => void;
 }) {
   return (
@@ -875,7 +875,7 @@ function StatusFooter({
       {totalAgents > 0 && (
         <button
           type="button"
-          onClick={onOpenMoneyAgents}
+          onClick={onOpenScheduledAgents}
           className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--color-text-2)]"
           title="open agent monitor"
         >

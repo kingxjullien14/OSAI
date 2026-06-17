@@ -3,17 +3,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  MONEY_AGENTS,
-  buildMoneyAgentChatSeed,
-  buildMoneyAgentRunCommand,
-  createMoneyAgent,
-  isMoneyAgentDue,
-  loadCustomMoneyAgents,
-  loadMoneyAgentChatSession,
-  saveMoneyAgentChatSession,
+  SCHEDULED_AGENTS,
+  buildScheduledAgentChatSeed,
+  buildScheduledAgentRunCommand,
+  createScheduledAgent,
+  isScheduledAgentDue,
+  loadCustomScheduledAgents,
+  loadScheduledAgentChatSession,
+  saveScheduledAgentChatSession,
   scheduleIntervalMs,
-  summarizeMoneyAgentState,
-} from "./moneyAgents.ts";
+  summarizeScheduledAgentState,
+} from "./scheduledAgents.ts";
 
 function withLocalStorage(fn) {
   const store = new Map();
@@ -30,10 +30,10 @@ function withLocalStorage(fn) {
 }
 
 test("the shell ships with no built-in agents and no stranger identity", () => {
-  assert.deepEqual(MONEY_AGENTS, []);
+  assert.deepEqual(SCHEDULED_AGENTS, []);
   withLocalStorage(() => {
-    const agent = createMoneyAgent({ label: "research scout", mission: "find leads" });
-    const seed = buildMoneyAgentChatSeed(agent);
+    const agent = createScheduledAgent({ label: "research scout", mission: "find leads" });
+    const seed = buildScheduledAgentChatSeed(agent);
     assert.match(seed, /you are the aios research scout agent/);
     assert.match(seed, /mission: find leads/);
     assert.match(seed, /first task:/);
@@ -44,14 +44,14 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
 
 test("created agents derive paths from the runtime home, never a baked-in one", () => {
   withLocalStorage((store) => {
-    const agent = createMoneyAgent({ label: "ops", mission: "keep things green" });
+    const agent = createScheduledAgent({ label: "ops", mission: "keep things green" });
     assert.doesNotMatch(agent.stdoutPath, /Library\/Logs/);
     // storage holds only the user's inputs — derived paths re-resolve at load.
     const stored = JSON.parse(store.get("aios.chatAgents.custom"));
     assert.equal(stored.length, 1);
     assert.equal(stored[0].statePath, undefined);
     assert.equal(stored[0].stdoutPath, undefined);
-    const loaded = loadCustomMoneyAgents();
+    const loaded = loadCustomScheduledAgents();
     assert.equal(loaded.length, 1);
     assert.match(loaded[0].statePath, /\.aios[\\/]state[\\/]chat-agents[\\/]ops[\\/]status\.json$/);
   });
@@ -71,30 +71,30 @@ test("stored agents pointing at another machine's home self-heal", () => {
         },
       ]),
     );
-    const [agent] = loadCustomMoneyAgents();
+    const [agent] = loadCustomScheduledAgents();
     assert.doesNotMatch(agent.statePath, /olduser/);
     assert.doesNotMatch(agent.cwd, /olduser/);
   });
 });
 
-test("money agent chat sessions persist by agent id", () => {
+test("scheduled agent chat sessions persist by agent id", () => {
   withLocalStorage(() => {
-    saveMoneyAgentChatSession("growth", {
+    saveScheduledAgentChatSession("growth", {
       sessionId: "claude-agent-session",
       title: "growth agents",
       updatedAt: 123,
     });
 
-    assert.deepEqual(loadMoneyAgentChatSession("growth"), {
+    assert.deepEqual(loadScheduledAgentChatSession("growth"), {
       sessionId: "claude-agent-session",
       title: "growth agents",
       updatedAt: 123,
     });
-    assert.equal(loadMoneyAgentChatSession("outreach"), null);
+    assert.equal(loadScheduledAgentChatSession("outreach"), null);
   });
 });
 
-test("summarizeMoneyAgentState reports neutral goal-oriented status for any agent", () => {
+test("summarizeScheduledAgentState reports neutral goal-oriented status for any agent", () => {
   withLocalStorage(() => {
     const config = {
       id: "growth",
@@ -109,7 +109,7 @@ test("summarizeMoneyAgentState reports neutral goal-oriented status for any agen
       mission: "grow",
       schedule: "daily",
     };
-    const summary = summarizeMoneyAgentState(config, {
+    const summary = summarizeScheduledAgentState(config, {
       status: { ok: true, drafted: 3, queued: 8 },
       queue: [{ status: "drafted" }],
       launchd: { running: true, lastExit: 0 },
@@ -118,14 +118,14 @@ test("summarizeMoneyAgentState reports neutral goal-oriented status for any agen
     assert.equal(summary.primaryMetric, "8 queued");
 
     // no forced-green special case for any id — health derives from state only.
-    const noState = summarizeMoneyAgentState({ ...config, id: "scout", label: "scout" }, {});
+    const noState = summarizeScheduledAgentState({ ...config, id: "scout", label: "scout" }, {});
     assert.equal(noState.health, "unknown");
     assert.doesNotMatch(noState.currentJob, /personal goals/);
   });
 });
 
 test("run commands speak the agent's own mission, not a stranger's business", () => {
-  const cmd = buildMoneyAgentRunCommand({ label: "scout", mission: "qualify leads" }, "scheduled");
+  const cmd = buildScheduledAgentRunCommand({ label: "scout", mission: "qualify leads" }, "scheduled");
   assert.match(cmd, /run a scheduled pulse for scout/);
   assert.match(cmd, /goal: qualify leads/);
   assert.doesNotMatch(cmd, /sales for aios/);
@@ -158,11 +158,11 @@ test("due-math: never-stamped fires, fresh stamp holds, elapsed cadence re-fires
   const now = 1_750_000_000_000;
   const agent = { id: "scout", schedule: "hourly" };
   // never stamped → due immediately (the user asked for autonomy)
-  assert.equal(isMoneyAgentDue(agent, now, null), true);
+  assert.equal(isScheduledAgentDue(agent, now, null), true);
   // stamped 10 minutes ago → not due
-  assert.equal(isMoneyAgentDue(agent, now, now - 10 * 60_000), false);
+  assert.equal(isScheduledAgentDue(agent, now, now - 10 * 60_000), false);
   // stamped over an hour ago → due again
-  assert.equal(isMoneyAgentDue(agent, now, now - HOUR - 1), true);
+  assert.equal(isScheduledAgentDue(agent, now, now - HOUR - 1), true);
   // manual never fires, stamped or not
-  assert.equal(isMoneyAgentDue({ id: "m", schedule: "manual" }, now, null), false);
+  assert.equal(isScheduledAgentDue({ id: "m", schedule: "manual" }, now, null), false);
 });
