@@ -63,6 +63,53 @@ const agentChatSessionKey = (id: string) => `aios.scheduledAgent.chatSession:${i
  *  exist. (Kept as an export for type/id lookups.) */
 export const SCHEDULED_AGENTS: ScheduledAgentConfig[] = [];
 
+/** A starter the create form can pre-fill — makes the feature's purpose obvious.
+ *  `schedule` is a cadence preset (manual/hourly/daily/weekly) or an interval. */
+export interface ScheduledAgentTemplate {
+  label: string;
+  blurb: string;
+  schedule: string;
+  mission: string;
+}
+
+export const SCHEDULED_AGENT_TEMPLATES: ScheduledAgentTemplate[] = [
+  {
+    label: "repo digest",
+    blurb: "daily summary of what changed",
+    schedule: "daily",
+    mission:
+      "Summarize this repo's git activity since your last run: notable commits, what changed and why, and anything that looks unfinished or risky. Keep it to a tight bulleted brief.",
+  },
+  {
+    label: "nightly tests",
+    blurb: "run the suite, report failures",
+    schedule: "daily",
+    mission:
+      "Run this project's test suite. If anything fails, report the first failures with file:line and a likely root cause. If everything passes, say so in one line.",
+  },
+  {
+    label: "dependency audit",
+    blurb: "weekly outdated + advisories",
+    schedule: "weekly",
+    mission:
+      "Check this project for outdated dependencies and known security advisories. List the most important/riskiest upgrades, each with a one-line reason. Don't change anything — just report.",
+  },
+  {
+    label: "url watch",
+    blurb: "poll a URL, flag changes",
+    schedule: "hourly",
+    mission:
+      "Fetch <PUT A URL HERE> and report whether anything meaningful changed since your last run. Flag errors, downtime, or notable differences.",
+  },
+  {
+    label: "morning briefing",
+    blurb: "scannable start-of-day recap",
+    schedule: "daily",
+    mission:
+      "Give me a short morning briefing: recent activity across my repos, open TODO/FIXME items worth attention, and anything time-sensitive. Keep it scannable.",
+  },
+];
+
 function normalizeAgentId(value: string): string {
   return value
     .trim()

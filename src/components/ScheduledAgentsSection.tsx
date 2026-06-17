@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { ChevronRight, MessageSquare, Play, Plus, RefreshCw, X } from "lucide-react";
 
 import {
+  SCHEDULED_AGENT_TEMPLATES,
   buildScheduledAgentRunCommand,
   createScheduledAgent,
   loadScheduledAgentSummaries,
   removeScheduledAgent,
   type ScheduledAgentSummary,
+  type ScheduledAgentTemplate,
 } from "../lib/scheduledAgents";
 import { formatRelativeRunAge } from "../lib/controlCenter";
 
@@ -97,6 +99,16 @@ export function ScheduledAgentsSection({
       row.label,
       buildScheduledAgentRunCommand({ label: row.label, mission: row.currentJob }, "manual"),
     );
+  // Pre-fill the create form from a starter template (the user then tweaks +
+  // creates — e.g. point "url watch" at a real URL, set a cwd).
+  const applyTemplate = (t: ScheduledAgentTemplate) => {
+    setCreating(true);
+    setDraftName(t.label);
+    setDraftPrompt(t.mission);
+    const isPreset = (CADENCE_PRESETS as readonly string[]).includes(t.schedule);
+    setCadenceMode(isPreset ? (t.schedule as CadenceMode) : "custom");
+    setDraftCustomCadence(isPreset ? "" : t.schedule);
+  };
   const create = () => {
     const schedule = cadenceMode === "custom" ? draftCustomCadence.trim() || "manual" : cadenceMode;
     const agent = createScheduledAgent({
@@ -117,6 +129,24 @@ export function ScheduledAgentsSection({
   };
   // No defaults — the sidebar is empty until the user creates an agent.
   const rows = summaries;
+
+  // One-click starters — pre-fill the create form so the feature's purpose is
+  // obvious. Shown at the top of the form and in the empty state.
+  const templateChips = (
+    <div className="flex flex-wrap gap-1">
+      {SCHEDULED_AGENT_TEMPLATES.map((t) => (
+        <button
+          key={t.label}
+          type="button"
+          onClick={() => applyTemplate(t)}
+          title={`${t.blurb} · runs ${t.schedule}`}
+          className="rounded-full border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2 py-0.5 text-[10px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
 
   if (iconsOnly) {
     return (
@@ -155,6 +185,9 @@ export function ScheduledAgentsSection({
           }}
           className="mb-1 flex flex-col gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-pane)] p-2"
         >
+          <div className="text-[9.5px] uppercase tracking-wider text-[var(--color-faint)]">start from a template</div>
+          {templateChips}
+          <div className="my-0.5 h-px bg-[var(--color-border)]" />
           <input
             autoFocus
             value={draftName}
@@ -218,13 +251,19 @@ export function ScheduledAgentsSection({
         </form>
       )}
       {rows.length === 0 && !creating ? (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="rounded-md border border-dashed border-[var(--color-border)] px-2 py-2 text-left text-[10.5px] text-[var(--color-faint)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-muted)]"
-        >
-          no agents — click + to create one
-        </button>
+        <div className="flex flex-col gap-1.5 rounded-md border border-dashed border-[var(--color-border)] px-2 py-2">
+          <div className="text-[10.5px] text-[var(--color-faint)]">
+            recurring AI tasks — start from a template:
+          </div>
+          {templateChips}
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="self-start text-[10px] text-[var(--color-muted)] underline-offset-2 transition-colors hover:text-[var(--color-accent)] hover:underline"
+          >
+            or create a blank agent
+          </button>
+        </div>
       ) : (
         rows.map((row) => (
           <AgentRow

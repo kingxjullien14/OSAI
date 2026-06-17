@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   SCHEDULED_AGENTS,
+  SCHEDULED_AGENT_TEMPLATES,
   buildScheduledAgentChatSeed,
   buildScheduledAgentRunCommand,
   createScheduledAgent,
@@ -112,6 +113,21 @@ test("summarizeScheduledAgentState derives schedule-based health from cadence + 
     assert.equal(manual.health, "manual");
     assert.equal(manual.nextDueAt, null);
   });
+});
+
+test("starter templates are well-formed: label, prompt, and a parseable cadence", () => {
+  assert.ok(SCHEDULED_AGENT_TEMPLATES.length > 0);
+  for (const t of SCHEDULED_AGENT_TEMPLATES) {
+    assert.ok(t.label.trim().length > 0, "template needs a label");
+    assert.ok(t.mission.trim().length > 0, `template "${t.label}" needs a prompt`);
+    if (t.schedule !== "manual") {
+      assert.notEqual(
+        scheduleIntervalMs(t.schedule),
+        null,
+        `template "${t.label}" cadence "${t.schedule}" must parse`,
+      );
+    }
+  }
 });
 
 test("run commands speak the agent's own mission, not a stranger's business", () => {
