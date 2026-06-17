@@ -1,51 +1,36 @@
-import { joinPath } from "./paths.ts";
+// Scheduled Agents — recurring AI tasks. Each agent has a mission (the prompt it
+// runs) and a schedule (cadence); the in-app scheduler (App.tsx) runs due agents
+// in a background chat and notifies. Health/run-state is derived purely from the
+// cadence + the last-run stamp — the old launchd/state-file runner is gone (the
+// in-app tick replaced it), so there are no more state/queue/log files to read.
 
-export type ScheduledAgentHealth = "running" | "scheduled" | "needs-steer" | "failed" | "unknown";
+export type ScheduledAgentHealth = "scheduled" | "due" | "manual";
 
 export interface ScheduledAgentConfig {
   id: string;
   label: string;
   shortLabel: string;
-  launchdLabel: string;
-  statePath: string;
-  queuePath: string;
-  stdoutPath: string;
-  stderrPath: string;
   cwd: string;
   mission: string;
   schedule?: string;
-}
-
-export interface ScheduledAgentLaunchdState {
-  running: boolean;
-  lastExit: number | null;
-}
-
-export interface ScheduledAgentRawState {
-  status?: Record<string, any> | null;
-  queue?: any[] | Record<string, any> | null;
-  launchd?: ScheduledAgentLaunchdState | null;
 }
 
 export interface ScheduledAgentSummary {
   id: ScheduledAgentConfig["id"];
   label: string;
   health: ScheduledAgentHealth;
+  /** Short metric for compact rows — the cadence, "due now", or "manual". */
   primaryMetric: string;
   nextAction: string;
+  /** The mission, surfaced as the "current job" line. */
   currentJob: string;
-  schedule?: string;
-  lastRunAt?: number | null;
+  schedule: string;
+  lastRunAt: number | null;
+  nextDueAt: number | null;
 }
 
 export interface ScheduledAgentDetail extends ScheduledAgentSummary {
   mission: string;
-  schedule: string;
-  stdoutPath: string;
-  stderrPath: string;
-  statePath: string;
-  queuePath: string;
-  logTail: string[];
 }
 
 export interface ScheduledAgentChatSession {
@@ -54,10 +39,8 @@ export interface ScheduledAgentChatSession {
   updatedAt: number;
 }
 
-// The agent home is resolved from the backend at runtime — nothing in this
-// module may bake in a developer's home directory. Sync callers read the
-// cached value; async loaders await ensureScheduledAgentHome() first. Until the
-// cache is warm, derived paths use "~" (readJson fails soft → health unknown).
+// The agent home (only used as the default cwd now) is resolved from the backend
+// at runtime — nothing here bakes in a developer's home directory.
 let runtimeHome = "";
 export async function ensureScheduledAgentHome(): Promise<string> {
   if (runtimeHome) return runtimeHome;
@@ -71,16 +54,13 @@ export async function ensureScheduledAgentHome(): Promise<string> {
 }
 
 const agentHome = () => runtimeHome || "~";
-const defaultStatePath = (id: string) => joinPath(agentHome(), ".aios", "state", "chat-agents", id, "status.json");
-const defaultQueuePath = (id: string) => joinPath(agentHome(), ".aios", "state", "chat-agents", id, "queue.json");
-const defaultStdoutPath = (id: string) => joinPath(agentHome(), ".aios", "logs", "chat-agents", `${id}-out.log`);
-const defaultStderrPath = (id: string) => joinPath(agentHome(), ".aios", "logs", "chat-agents", `${id}-err.log`);
 
 const customAgentsKey = "aios.chatAgents.custom";
 const lastScheduledRunKey = (id: string) => `aios.chatAgents.lastScheduledRun:${id}`;
+const agentChatSessionKey = (id: string) => `aios.scheduledAgent.chatSession:${id}`;
 
-/** Legacy catalog — intentionally empty. The shell ships with no agents; only
- *  the fleets users create exist. (Kept as an export for type/id lookups.) */
+/** Empty catalog — the shell ships with no agents; only the ones users create
+ *  exist. (Kept as an export for type/id lookups.) */
 export const SCHEDULED_AGENTS: ScheduledAgentConfig[] = [];
 
 function normalizeAgentId(value: string): string {
@@ -115,36 +95,26 @@ function readStoredAgents(): Partial<ScheduledAgentConfig>[] {
 export function loadCustomScheduledAgents(): ScheduledAgentConfig[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    const raw = readStoredAgents();
-    return raw.reduce<ScheduledAgentConfig[]>((agents, agent) => {
-        const id = normalizeAgentId(String(agent.id || agent.label || ""));
-        if (!id || !agent.label) return agents;
-        const label = String(agent.label).trim();
-        const mission = String(agent.mission || "custom aios chatpane agent").trim();
-        agents.push({
-          id,
-          label,
-          shortLabel: String(agent.shortLabel || id).trim(),
-          launchdLabel: `aios.chatpane.${id}`,
-          statePath: cleanseStored(agent.statePath) ?? defaultStatePath(id),
-          queuePath: cleanseStored(agent.queuePath) ?? defaultQueuePath(id),
-          stdoutPath: cleanseStored(agent.stdoutPath) ?? defaultStdoutPath(id),
-          stderrPath: cleanseStored(agent.stderrPath) ?? defaultStderrPath(id),
-          cwd: cleanseStored(agent.cwd) ?? agentHome(),
-          mission,
-          schedule: String(agent.schedule || "manual").trim(),
-        });
-        return agents;
-      }, []);
+    return readStoredAgents().reduce<ScheduledAgentConfig[]>((agents, agent) => {
+      const id = normalizeAgentId(String(agent.id || agent.label || ""));
+      if (!id || !agent.label) return agents;
+      agents.push({
+        id,
+        label: String(agent.label).trim(),
+        shortLabel: String(agent.shortLabel || id).trim(),
+        cwd: cleanseStored(agent.cwd) ?? agentHome(),
+        mission: String(agent.mission || "custom aios agent").trim(),
+        schedule: String(agent.schedule || "manual").trim(),
+      });
+      return agents;
+    }, []);
   } catch {
     return [];
   }
 }
 
 export function loadConfiguredScheduledAgents(): ScheduledAgentConfig[] {
-  // Default: NO agents. The shell ships with an empty sidebar — only agents the
-  // user explicitly creates show up. `SCHEDULED_AGENTS` stays as a catalog of known
-  // ids (for seed/role lookups), but is no longer auto-populated.
+  // Default: NO agents. Only the ones the user explicitly creates show up.
   const seen = new Set<string>();
   return loadCustomScheduledAgents().filter((agent) => {
     if (seen.has(agent.id)) return false;
@@ -153,9 +123,7 @@ export function loadConfiguredScheduledAgents(): ScheduledAgentConfig[] {
   });
 }
 
-/** Removes a user-created agent and its persisted chat session / schedule state.
- *  Built-in catalog agents (SCHEDULED_AGENTS) aren't shown by default, so this only
- *  ever needs to drop a custom agent. No-op if the id isn't a custom agent. */
+/** Removes a user-created agent and its persisted chat session / schedule state. */
 export function removeScheduledAgent(id: string): void {
   if (typeof localStorage === "undefined") return;
   const next = readStoredAgents().filter(
@@ -186,17 +154,11 @@ export function createScheduledAgent(input: {
     id,
     label,
     shortLabel: id,
-    launchdLabel: `aios.chatpane.${id}`,
-    statePath: defaultStatePath(id),
-    queuePath: defaultQueuePath(id),
-    stdoutPath: defaultStdoutPath(id),
-    stderrPath: defaultStderrPath(id),
     cwd: input.cwd?.trim() || agentHome(),
-    mission: input.mission?.trim() || "custom aios chatpane agent",
+    mission: input.mission?.trim() || "custom aios agent",
     schedule: input.schedule?.trim() || "manual",
   };
-  // Persist only the user's inputs — derived paths re-resolve at load so they
-  // always track the runtime home, never a frozen snapshot.
+  // Persist only the user's inputs; the cwd default re-resolves at load.
   const stored: Partial<ScheduledAgentConfig> = {
     id,
     label,
@@ -204,16 +166,13 @@ export function createScheduledAgent(input: {
     schedule: agent.schedule,
     ...(input.cwd?.trim() ? { cwd: input.cwd.trim() } : {}),
   };
-  const next = [...readStoredAgents(), stored];
-  localStorage.setItem(customAgentsKey, JSON.stringify(next));
+  localStorage.setItem(customAgentsKey, JSON.stringify([...readStoredAgents(), stored]));
   return agent;
 }
 
 export function scheduledAgentById(id: string): ScheduledAgentConfig | undefined {
   return loadConfiguredScheduledAgents().find((agent) => agent.id === id);
 }
-
-const agentChatSessionKey = (id: string) => `aios.scheduledAgent.chatSession:${id}`;
 
 export function loadScheduledAgentChatSession(id: string): ScheduledAgentChatSession | null {
   if (typeof localStorage === "undefined") return null;
@@ -258,9 +217,8 @@ export function saveScheduledAgentLastScheduledRun(id: string, at: number): void
 
 /** Parse the free-text `schedule` into a pulse interval. Supported cadences:
  *  "hourly" / "daily" / "weekly", "every N min|hours|days", and the legacy
- *  phrasings the old inline scheduler accepted ("always" → 6h, "work block" →
- *  daily, any "…hour…" → hourly). "manual"/empty/unknown returns null = the
- *  scheduler never fires it. */
+ *  phrasings ("always" → 6h, "work block" → daily, any "…hour…" → hourly).
+ *  "manual"/empty/unknown returns null = the scheduler never fires it. */
 export function scheduleIntervalMs(schedule: string | undefined | null): number | null {
   const HOUR = 60 * 60_000;
   const DAY = 24 * HOUR;
@@ -282,9 +240,8 @@ export function scheduleIntervalMs(schedule: string | undefined | null): number 
   return null;
 }
 
-/** True when an agent's cadence says it should pulse now. A never-stamped
- *  agent with a cadence is due immediately (the user asked for autonomy —
- *  the first pulse starts the clock). */
+/** True when an agent's cadence says it should pulse now. A never-stamped agent
+ *  with a cadence is due immediately (the first pulse starts the clock). */
 export function isScheduledAgentDue(
   agent: Pick<ScheduledAgentConfig, "id" | "schedule">,
   now: number,
@@ -309,21 +266,19 @@ export function buildScheduledAgentChatSeed(agent: ScheduledAgentConfig): string
     `- mission: ${agent.mission}`,
     `- schedule: ${agent.schedule || "manual"}`,
     `- workspace: ${agent.cwd}`,
-    `- state file: ${agent.statePath}`,
-    `- queue file: ${agent.queuePath}`,
     "",
     "operating rules:",
     "- act like a live goal-moving operator, not a logger.",
-    "- start by inspecting current state, queue, recent outputs, and repo context before proposing work.",
+    "- start by inspecting the workspace + recent context before proposing work.",
     "- do not ask the user to continue, approve, or tell you what to do next inside this agent chat.",
     "- treat this chat as an ordered execution log for the aios shell to monitor and control.",
     "- continue autonomously inside your policy limits; when blocked, write a concise pending approval item instead of asking a question.",
     "- report concrete next actions, current blockers, and what moves the goal.",
-    "- do not execute irreversible external actions. produce concrete next steps, artifacts, observable run state, and pending approval items for the shell control plane.",
+    "- do not execute irreversible external actions. produce concrete next steps, artifacts, and pending approval items for the shell control plane.",
     "- if work needs background execution, create/steer the right local process and report exactly where it is observable.",
     "",
     "first task:",
-    "load your current state, take the next useful action, and leave an ordered status entry for the shell control plane.",
+    "take the next useful action toward the mission and leave an ordered status entry for the shell control plane.",
   ].join("\n");
 }
 
@@ -337,7 +292,7 @@ export function buildScheduledAgentRunCommand(
     `goal: ${agent.mission?.trim() || "move this agent's mission forward"}.`,
     "",
     "do now:",
-    "- inspect your current state, queue, prior outputs, and relevant local context.",
+    "- inspect the workspace + relevant local context.",
     "- choose the single highest-leverage action for today.",
     "- produce the artifact or draft inside this chatpane.",
     "- do not ask the user what to do next.",
@@ -346,99 +301,38 @@ export function buildScheduledAgentRunCommand(
   ].join("\n");
 }
 
-function queueCount(queue: ScheduledAgentRawState["queue"]): number {
-  if (Array.isArray(queue)) return queue.length;
-  if (queue && typeof queue === "object") {
-    const values = Object.values(queue);
-    const firstArray = values.find(Array.isArray);
-    if (Array.isArray(firstArray)) return firstArray.length;
-  }
-  return 0;
-}
-
-export function summarizeScheduledAgentState(
-  agent: ScheduledAgentConfig,
-  raw: ScheduledAgentRawState,
-): ScheduledAgentSummary {
-  const status = raw.status ?? {};
-  const launchd = raw.launchd;
-  const queued = typeof status.queued === "number" ? status.queued : queueCount(raw.queue);
-  const dryRun = Boolean(status.dryRun ?? status.mode === "dry-run");
-  const next = status.next ?? status.agents?.["social-media-agent"]?.next;
-  const nextName = next?.name ?? next?.id ?? next?.route ?? "";
-
-  let health: ScheduledAgentHealth = "unknown";
-  if (launchd?.lastExit && launchd.lastExit !== 0) health = "failed";
-  else if (launchd?.running) health = dryRun ? "needs-steer" : "running";
-  else if (launchd && launchd.lastExit === 0) health = "scheduled";
-  else if (status.ok === true) health = dryRun ? "needs-steer" : "running";
-
+/** Derives the run-state summary purely from the cadence + last-run stamp (no
+ *  state files). "running"/"failed" would need run-result capture (a later
+ *  phase), so today health reflects scheduling. */
+export function summarizeScheduledAgentState(agent: ScheduledAgentConfig): ScheduledAgentSummary {
+  const interval = scheduleIntervalMs(agent.schedule);
+  const lastRunAt = loadScheduledAgentLastScheduledRun(agent.id);
+  const hasCadence = interval != null;
+  const due = hasCadence && (lastRunAt == null || Date.now() - lastRunAt >= interval);
+  const nextDueAt = hasCadence ? (lastRunAt == null ? Date.now() : lastRunAt + interval) : null;
+  const health: ScheduledAgentHealth = !hasCadence ? "manual" : due ? "due" : "scheduled";
   return {
     id: agent.id,
     label: agent.label,
     health,
-    primaryMetric: `${queued} queued`,
-    currentJob: nextName || "no active job",
-    nextAction: dryRun
-      ? "review the pending draft before approving"
-      : "open the agent chat to steer",
+    primaryMetric: !hasCadence ? "manual" : due ? "due now" : agent.schedule || "scheduled",
+    nextAction: due ? "run now" : "open chat to run or steer",
+    currentJob: agent.mission,
     schedule: agent.schedule || "manual",
-    lastRunAt: loadScheduledAgentLastScheduledRun(agent.id),
+    lastRunAt,
+    nextDueAt,
   };
-}
-
-async function readJson(path: string): Promise<any | null> {
-  try {
-    const { readTextFile } = await import("./fs");
-    return JSON.parse(await readTextFile(path));
-  } catch {
-    return null;
-  }
 }
 
 export async function loadScheduledAgentSummaries(): Promise<ScheduledAgentSummary[]> {
   await ensureScheduledAgentHome();
-  const rows = await Promise.all(
-    loadConfiguredScheduledAgents().map(async (agent) => {
-      const [status, queue] = await Promise.all([
-        readJson(agent.statePath),
-        readJson(agent.queuePath),
-      ]);
-      return summarizeScheduledAgentState(agent, { status, queue });
-    }),
-  );
-  return rows;
-}
-
-async function tailText(path: string, maxLines = 28): Promise<string[]> {
-  try {
-    const { readTextFile } = await import("./fs");
-    return (await readTextFile(path)).split(/\r?\n/).filter(Boolean).slice(-maxLines);
-  } catch {
-    return [];
-  }
+  return loadConfiguredScheduledAgents().map(summarizeScheduledAgentState);
 }
 
 export async function loadScheduledAgentDetails(): Promise<ScheduledAgentDetail[]> {
   await ensureScheduledAgentHome();
-  return Promise.all(
-    loadConfiguredScheduledAgents().map(async (agent) => {
-      const [status, queue, stdout, stderr] = await Promise.all([
-        readJson(agent.statePath),
-        readJson(agent.queuePath),
-        tailText(agent.stdoutPath, 18),
-        tailText(agent.stderrPath, 10),
-      ]);
-      return {
-        ...summarizeScheduledAgentState(agent, { status, queue }),
-        mission: agent.mission,
-        schedule: agent.schedule || "manual",
-        stdoutPath: agent.stdoutPath,
-        stderrPath: agent.stderrPath,
-        statePath: agent.statePath,
-        queuePath: agent.queuePath,
-        logTail: [...stdout, ...stderr].slice(-28),
-      };
-    }),
-  );
+  return loadConfiguredScheduledAgents().map((agent) => ({
+    ...summarizeScheduledAgentState(agent),
+    mission: agent.mission,
+  }));
 }

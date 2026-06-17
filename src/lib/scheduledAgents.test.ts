@@ -42,18 +42,20 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
   });
 });
 
-test("created agents derive paths from the runtime home, never a baked-in one", () => {
+test("created agents persist only the user's inputs (no baked-in derived fields)", () => {
   withLocalStorage((store) => {
-    const agent = createScheduledAgent({ label: "ops", mission: "keep things green" });
-    assert.doesNotMatch(agent.stdoutPath, /Library\/Logs/);
-    // storage holds only the user's inputs — derived paths re-resolve at load.
+    createScheduledAgent({ label: "ops", mission: "keep things green", schedule: "daily" });
     const stored = JSON.parse(store.get("aios.chatAgents.custom"));
     assert.equal(stored.length, 1);
-    assert.equal(stored[0].statePath, undefined);
-    assert.equal(stored[0].stdoutPath, undefined);
+    assert.equal(stored[0].id, "ops");
+    assert.equal(stored[0].mission, "keep things green");
+    assert.equal(stored[0].schedule, "daily");
+    // cwd is only persisted when explicitly provided (else re-resolved at load).
+    assert.equal(stored[0].cwd, undefined);
     const loaded = loadCustomScheduledAgents();
     assert.equal(loaded.length, 1);
-    assert.match(loaded[0].statePath, /\.aios[\\/]state[\\/]chat-agents[\\/]ops[\\/]status\.json$/);
+    assert.equal(loaded[0].id, "ops");
+    assert.equal(loaded[0].schedule, "daily");
   });
 });
 
@@ -62,17 +64,11 @@ test("stored agents pointing at another machine's home self-heal", () => {
     store.set(
       "aios.chatAgents.custom",
       JSON.stringify([
-        {
-          id: "legacy",
-          label: "legacy",
-          mission: "old agent",
-          statePath: "/Users/olduser/.aios/state/chat-agents/legacy/status.json",
-          cwd: "/Users/olduser/Repo/project",
-        },
+        { id: "legacy", label: "legacy", mission: "old agent", cwd: "/Users/olduser/Repo/project" },
       ]),
     );
     const [agent] = loadCustomScheduledAgents();
-    assert.doesNotMatch(agent.statePath, /olduser/);
+    // the stale foreign cwd is dropped; it falls back to the runtime home.
     assert.doesNotMatch(agent.cwd, /olduser/);
   });
 });
@@ -94,33 +90,27 @@ test("scheduled agent chat sessions persist by agent id", () => {
   });
 });
 
-test("summarizeScheduledAgentState reports neutral goal-oriented status for any agent", () => {
+test("summarizeScheduledAgentState derives schedule-based health from cadence + last run", () => {
   withLocalStorage(() => {
-    const config = {
+    const daily = {
       id: "growth",
       label: "growth agents",
       shortLabel: "growth",
-      launchdLabel: "aios.chatpane.growth",
-      statePath: "x",
-      queuePath: "y",
-      stdoutPath: "o",
-      stderrPath: "e",
       cwd: "~",
       mission: "grow",
       schedule: "daily",
     };
-    const summary = summarizeScheduledAgentState(config, {
-      status: { ok: true, drafted: 3, queued: 8 },
-      queue: [{ status: "drafted" }],
-      launchd: { running: true, lastExit: 0 },
-    });
-    assert.equal(summary.health, "running");
-    assert.equal(summary.primaryMetric, "8 queued");
+    // has a cadence + never stamped → due now; currentJob is the mission.
+    const s1 = summarizeScheduledAgentState(daily);
+    assert.equal(s1.health, "due");
+    assert.equal(s1.currentJob, "grow");
+    assert.equal(s1.schedule, "daily");
+    assert.notEqual(s1.nextDueAt, null);
 
-    // no forced-green special case for any id — health derives from state only.
-    const noState = summarizeScheduledAgentState({ ...config, id: "scout", label: "scout" }, {});
-    assert.equal(noState.health, "unknown");
-    assert.doesNotMatch(noState.currentJob, /personal goals/);
+    // manual cadence → "manual" health, never auto-fires (no next-due).
+    const manual = summarizeScheduledAgentState({ ...daily, id: "m", schedule: "manual" });
+    assert.equal(manual.health, "manual");
+    assert.equal(manual.nextDueAt, null);
   });
 });
 

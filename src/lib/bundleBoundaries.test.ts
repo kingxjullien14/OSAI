@@ -349,7 +349,7 @@ test("scheduled agents open as chatpane-backed agents", () => {
   assert.match(pane, /open chatpane/);
   assert.match(pane, /run pulse now/);
   assert.match(pane, /control update for all agents/);
-  assert.match(pane, /state and evidence/);
+  assert.match(pane, /current job/);
   assert.match(idle, /onOpenScheduledAgentChat/);
   assert.match(agents, /buildScheduledAgentChatSeed/);
   assert.match(agents, /buildScheduledAgentRunCommand/);

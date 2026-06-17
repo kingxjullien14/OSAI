@@ -14,16 +14,13 @@ interface Props {
 }
 
 function healthColor(health: ScheduledAgentDetail["health"]): string {
-  if (health === "running") return "var(--color-success)";
+  if (health === "due") return "var(--color-accent)";
   if (health === "scheduled") return "var(--color-info)";
-  if (health === "needs-steer") return "var(--color-warning)";
-  if (health === "failed") return "var(--color-danger)";
-  return "var(--color-faint)";
+  return "var(--color-faint)"; // manual
 }
 
 function healthLabel(health: ScheduledAgentDetail["health"]): string {
-  if (health === "needs-steer") return "needs steer";
-  return health;
+  return health; // "scheduled" | "due" | "manual" are already readable
 }
 
 export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
@@ -47,8 +44,8 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  const earning = agents.filter((agent) => agent.health === "running" || agent.health === "scheduled").length;
-  const steer = agents.filter((agent) => agent.health === "needs-steer" || agent.health === "failed").length;
+  const scheduledCount = agents.filter((agent) => agent.health === "scheduled" || agent.health === "due").length;
+  const manualCount = agents.filter((agent) => agent.health === "manual").length;
   const sendSteerAll = () => {
     const instruction = steerAll.trim();
     if (!instruction) return;
@@ -86,8 +83,8 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
       </div>
 
       <div className="grid grid-cols-3 gap-2 border-b border-[var(--color-border)] p-3">
-        <Metric label="active loops" value={earning} />
-        <Metric label="needs steer" value={steer} warn={steer > 0} />
+        <Metric label="scheduled" value={scheduledCount} />
+        <Metric label="manual" value={manualCount} />
         <Metric label="agents" value={agents.length} />
       </div>
 
@@ -185,22 +182,6 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
                 <div className="text-[10px] uppercase tracking-wider text-[var(--color-faint)]">next steer</div>
                 <div className="mt-1 text-[12.5px] text-[var(--color-text-2)]">{agent.nextAction}</div>
               </div>
-
-              <details className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-pane)]">
-                <summary className="cursor-pointer px-2 py-1.5 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)]">
-                  state and evidence
-                </summary>
-                <div className="border-t border-[var(--color-border)] p-2">
-                  <div className="mb-2 grid gap-1 font-mono text-[9.5px] text-[var(--color-faint)]">
-                    <span>state: {agent.statePath}</span>
-                    <span>queue: {agent.queuePath}</span>
-                    <span>events: {agent.stdoutPath}</span>
-                  </div>
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[var(--color-bg)]/60 p-2 font-mono text-[10.5px] leading-relaxed text-[var(--color-text-2)]">
-                    {agent.logTail.length ? agent.logTail.join("\n") : "no log tail available yet"}
-                  </pre>
-                </div>
-              </details>
             </section>
           ))}
         </div>

@@ -141,7 +141,7 @@ export function IdleControlCenter({
   // ── derived state — declared BEFORE any JSX/hook that reads them (TDZ-safe) ──
   const recent = [...projects].sort((a, b) => b.mtime - a.mtime).slice(0, 5);
   const activeAgents = scheduledAgents.filter(
-    (agent) => agent.health === "running" || agent.health === "scheduled",
+    (agent) => agent.health === "due" || agent.health === "scheduled",
   ).length;
   const unread = notifications.filter((item) => !item.read).length;
   const dirtyProjects = pulse.filter(

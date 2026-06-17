@@ -21,11 +21,9 @@ const COLLAPSE_KEY = "aios.scheduledAgentsCollapsed";
 export type ScheduledAgentChatState = "open" | "running" | "saved" | "none";
 
 function healthColor(health: ScheduledAgentSummary["health"]): string {
-  if (health === "running") return "var(--color-success)";
+  if (health === "due") return "var(--color-accent)";
   if (health === "scheduled") return "var(--color-info)";
-  if (health === "needs-steer") return "var(--color-warning)";
-  if (health === "failed") return "var(--color-danger)";
-  return "var(--color-faint)";
+  return "var(--color-faint)"; // manual
 }
 
 function chatStateLabel(state: ScheduledAgentChatState): string {

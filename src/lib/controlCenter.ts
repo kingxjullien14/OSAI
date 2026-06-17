@@ -34,11 +34,9 @@ export function formatRelativeRunAge(lastRunAt: number | null | undefined, now =
 }
 
 export function agentUrgency(agent: Pick<ScheduledAgentSummary, "health" | "nextAction">): "critical" | "control" | "active" | "idle" {
-  if (agent.health === "failed") return "critical";
-  if (agent.health === "needs-steer" || /approve|review|missing|blocked|control/i.test(agent.nextAction)) {
-    return "control";
-  }
-  if (agent.health === "running" || agent.health === "scheduled") return "active";
+  if (/approve|review|missing|blocked|control/i.test(agent.nextAction)) return "control";
+  // "due"/"scheduled" = the cadence is active; "manual" = run-on-demand only.
+  if (agent.health === "due" || agent.health === "scheduled") return "active";
   return "idle";
 }
 
@@ -48,8 +46,8 @@ export function agentRunLabel(agent: Pick<ScheduledAgentSummary, "schedule" | "l
 }
 
 export function summarizeAgentFleet(agents: ScheduledAgentSummary[]): AgentFleetSummary {
-  const runningOrScheduled = agents.filter((agent) => agent.health === "running" || agent.health === "scheduled").length;
-  const failed = agents.filter((agent) => agent.health === "failed").length;
+  const runningOrScheduled = agents.filter((agent) => agent.health === "due" || agent.health === "scheduled").length;
+  const failed = 0; // no failure detection without run-result capture (a later phase)
   const needsControl = agents.filter((agent) => agentUrgency(agent) === "control" || agentUrgency(agent) === "critical").length;
   const headline =
     failed > 0
