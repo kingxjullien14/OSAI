@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, MessageSquare, Plus, RefreshCw, X } from "lucide-react";
+import { ChevronRight, MessageSquare, Play, Plus, RefreshCw, X } from "lucide-react";
 
 import {
+  buildScheduledAgentRunCommand,
   createScheduledAgent,
   loadScheduledAgentSummaries,
   removeScheduledAgent,
   type ScheduledAgentSummary,
 } from "../lib/scheduledAgents";
+import { formatRelativeRunAge } from "../lib/controlCenter";
+
+/** Cadence presets for the create form; "custom" reveals an interval input. */
+const CADENCE_PRESETS = ["manual", "hourly", "daily", "weekly", "custom"] as const;
+type CadenceMode = (typeof CADENCE_PRESETS)[number];
 
 interface Props {
   iconsOnly?: boolean;
@@ -51,8 +57,10 @@ export function ScheduledAgentsSection({
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
-  const [draftMission, setDraftMission] = useState("");
-  const [draftSchedule, setDraftSchedule] = useState("manual");
+  const [draftPrompt, setDraftPrompt] = useState("");
+  const [cadenceMode, setCadenceMode] = useState<CadenceMode>("manual");
+  const [draftCustomCadence, setDraftCustomCadence] = useState("");
+  const [draftCwd, setDraftCwd] = useState("");
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
 
   const refresh = () => {
@@ -82,16 +90,27 @@ export function ScheduledAgentsSection({
     removeScheduledAgent(id);
     setSummaries((prev) => prev.filter((agent) => agent.id !== id));
   };
+  // Fire a one-off run into a background chat (independent of the cadence).
+  const runNow = (row: ScheduledAgentSummary) =>
+    onOpenAgentChat(
+      row.id,
+      row.label,
+      buildScheduledAgentRunCommand({ label: row.label, mission: row.currentJob }, "manual"),
+    );
   const create = () => {
+    const schedule = cadenceMode === "custom" ? draftCustomCadence.trim() || "manual" : cadenceMode;
     const agent = createScheduledAgent({
       label: draftName,
-      mission: draftMission,
-      schedule: draftSchedule,
+      mission: draftPrompt,
+      schedule,
+      cwd: draftCwd.trim() || undefined,
     });
     if (!agent) return;
     setDraftName("");
-    setDraftMission("");
-    setDraftSchedule("manual");
+    setDraftPrompt("");
+    setCadenceMode("manual");
+    setDraftCustomCadence("");
+    setDraftCwd("");
     setCreating(false);
     refresh();
     onOpenAgentChat(agent.id, agent.label);
@@ -143,18 +162,42 @@ export function ScheduledAgentsSection({
             placeholder="agent name"
             className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           />
-          <input
-            value={draftMission}
-            onChange={(event) => setDraftMission(event.target.value)}
-            placeholder="what should this agent do?"
-            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+          <textarea
+            value={draftPrompt}
+            onChange={(event) => setDraftPrompt(event.target.value)}
+            placeholder="what should it do each run? (the prompt) — e.g. summarize today's git activity"
+            rows={3}
+            className="resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           />
+          <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-muted)]">
+            <span className="shrink-0">runs</span>
+            <select
+              value={cadenceMode}
+              onChange={(event) => setCadenceMode(event.target.value as CadenceMode)}
+              title="a cadence makes the agent pulse on its own in a background chat (with a clickable notification); 'manual' = run on demand"
+              className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            >
+              <option value="manual">manual (run on demand)</option>
+              <option value="hourly">hourly</option>
+              <option value="daily">daily</option>
+              <option value="weekly">weekly</option>
+              <option value="custom">custom interval…</option>
+            </select>
+          </label>
+          {cadenceMode === "custom" && (
+            <input
+              value={draftCustomCadence}
+              onChange={(event) => setDraftCustomCadence(event.target.value)}
+              placeholder="every 30 min · every 2 hours · every 3 days"
+              className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            />
+          )}
           <input
-            value={draftSchedule}
-            onChange={(event) => setDraftSchedule(event.target.value)}
-            placeholder="manual · hourly · daily · weekly · every 30 min"
-            title="a cadence makes this agent pulse on its own: it runs in a background chat and you get a clickable notification"
-            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            value={draftCwd}
+            onChange={(event) => setDraftCwd(event.target.value)}
+            placeholder="working directory (optional — defaults to home)"
+            spellCheck={false}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono text-[10.5px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           />
           <div className="flex items-center justify-end gap-1">
             <button
@@ -189,6 +232,7 @@ export function ScheduledAgentsSection({
             row={row}
             chatState={agentChatStates[row.id] ?? "none"}
             onOpen={() => open(row.id, row.label)}
+            onRun={() => runNow(row)}
             onRemove={() => remove(row.id)}
           />
         ))
@@ -264,15 +308,19 @@ function AgentRow({
   row,
   chatState,
   onOpen,
+  onRun,
   onRemove,
 }: {
   row: ScheduledAgentSummary;
   chatState: ScheduledAgentChatState;
   onOpen: () => void;
+  onRun: () => void;
   onRemove: () => void;
 }) {
   const controlLabel = chatStateLabel(chatState);
   const controlColor = chatStateColor(chatState);
+  // cadence + last-run, e.g. "daily · last 2h ago" / "manual · never".
+  const cadenceLine = `${row.primaryMetric} · last ${formatRelativeRunAge(row.lastRunAt)}`;
   // two-click delete: first click arms (danger state, auto-disarms), second fires.
   const [confirmRemove, setConfirmRemove] = useState(false);
   useEffect(() => {
@@ -286,7 +334,7 @@ function AgentRow({
         type="button"
         onClick={onOpen}
         className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
-        title={`${controlLabel} ${row.label} chatpane · ${row.nextAction}`}
+        title={`${controlLabel} ${row.label} chatpane · ${cadenceLine}`}
       >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: healthColor(row.health) }} />
         <span className="min-w-0 flex-1">
@@ -305,6 +353,17 @@ function AgentRow({
           <MessageSquare size={10} />
           {controlLabel}
         </span>
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRun();
+        }}
+        className="grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-all hover:text-[var(--color-accent)] group-hover:opacity-100 group-focus-within:opacity-100"
+        title={`run ${row.label} now (one-off pulse in a background chat)`}
+      >
+        <Play size={11} />
       </button>
       <button
         type="button"
