@@ -70,13 +70,16 @@ export function PulsePane() {
         )}
         {/* streak hero */}
         {extras && (
-          <div className="mb-6 flex items-center gap-3">
+          <div className="surface-card mb-6 flex items-center gap-3 rounded-2xl p-4">
             <Flame
               size={28}
               className={extras.currentStreak > 0 ? "aios-flame text-[var(--color-accent)]" : "text-[var(--color-faint)]"}
               fill={extras.currentStreak > 0 ? "currentColor" : "none"}
             />
-            <span className="font-mono text-[44px] font-semibold leading-none text-[var(--color-text)]">
+            <span
+              className="font-mono text-[44px] font-semibold leading-none text-[var(--color-text)]"
+              style={extras.currentStreak > 0 ? { textShadow: "0 0 18px color-mix(in srgb, var(--color-accent) 55%, transparent)" } : undefined}
+            >
               {extras.currentStreak}
             </span>
             <div className="flex flex-col leading-tight">
@@ -107,7 +110,7 @@ export function PulsePane() {
 
         {/* the three rate windows as rings */}
         {rate && (rate.fiveHour.pct != null || rate.sevenDay.pct != null || rate.contextPct != null) && (
-          <div className="mb-6 flex flex-wrap gap-7">
+          <div className="surface-card mb-6 flex flex-wrap items-center gap-7 rounded-2xl p-5">
             {rate.fiveHour.pct != null && (
               <Ring label="5h" pct={rate.fiveHour.pct} resetsAt={rate.fiveHour.resetsAt} size={72} />
             )}
@@ -128,8 +131,8 @@ export function PulsePane() {
 
         {/* large activity heatmap — full available width */}
         {!!weeks.length && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-muted)]">
+          <div className="surface-card flex flex-col gap-1.5 rounded-2xl p-4">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-muted)]">
               {days.length}-day activity
             </span>
             <div className="flex h-[170px] gap-[3px]">

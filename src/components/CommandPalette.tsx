@@ -556,7 +556,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
-        className="glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
+        className="absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_80%,transparent)] shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // focus can sit on a clicked row, not just the input — Escape still
@@ -629,7 +629,7 @@ export function CommandPalette({
               return (
                 <div key={c.id}>
                   {showHeader && (
-                    <div className="px-4 pb-1 pt-2.5 text-[10px] font-medium lowercase tracking-[0.14em] text-[var(--color-faint)]">
+                    <div className="px-4 pb-1 pt-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
                       {g}
                     </div>
                   )}
@@ -651,10 +651,18 @@ export function CommandPalette({
                         runCommand(c);
                       }}
                       className={`relative flex w-full items-center gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-2 text-left transition-colors ${
-                        active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel-2)]/50"
+                        active
+                          ? "bg-[color-mix(in_srgb,var(--color-accent)_13%,transparent)] shadow-[inset_0_0_26px_-12px_var(--color-accent)]"
+                          : "hover:bg-[var(--color-panel-2)]/50"
                       } ${c.disabled ? "opacity-50" : ""}`}
                       title={c.disabled ? "unavailable right now — running it explains why" : undefined}
                     >
+                      {active && (
+                        <span
+                          aria-hidden
+                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                        />
+                      )}
                       {c.icon && (
                         <span
                           className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--aios-radius-sm)] border transition-colors ${

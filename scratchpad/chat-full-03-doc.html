@@ -1,0 +1,125 @@
+<title>AIOS Chat — 03 Document Flow (full pane)</title>
+<style>
+  :root{--ground:#0A0713;--void:#06040D;--text:#ECE9F7;--text-2:#C4BEDA;--muted:#8A83A3;--faint:#5C5673;
+    --accent:#A86BFF;--accent-2:#3DE8FF;--hair:rgba(255,255,255,0.08);--hair-2:rgba(255,255,255,0.12);
+    --glass:rgba(28,20,46,0.42);--glow-v:rgba(168,107,255,0.45);--ok:#46e08a;--add:#46e08a;--del:#ff6b8b;--info:#60a5fa;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;--mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;}
+  *{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 620px at 10% -8%,rgba(168,107,255,0.16),transparent 56%),radial-gradient(820px 600px at 110% 116%,rgba(61,232,255,0.10),transparent 54%),var(--ground);
+    display:grid;place-items:center;padding:22px;}
+  .lbl{position:fixed;top:12px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);z-index:9;}
+  .pane{width:min(860px,100%);height:min(760px,94vh);display:flex;flex-direction:column;position:relative;border-radius:18px;overflow:hidden;
+    border:1px solid var(--hair-2);background:rgba(12,8,20,0.32);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 30px 80px -30px #000,inset 0 1px 0 rgba(255,255,255,0.05);}
+  .dots{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.5;background-image:radial-gradient(rgba(255,255,255,.045) 1px,transparent 1px);background-size:24px 24px;-webkit-mask-image:radial-gradient(760px 540px at 50% 30%,#000,transparent 80%);mask-image:radial-gradient(760px 540px at 50% 30%,#000,transparent 80%);}
+  .chrome{position:relative;z-index:2;display:flex;align-items:center;gap:10px;height:30px;padding:0 14px;flex:none;border-bottom:1px solid var(--hair);background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);}
+  .chrome .st{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 9px var(--ok);} .chrome .ti{font-family:var(--mono);font-size:11px;color:var(--muted);} .chrome .x{margin-left:auto;display:flex;gap:12px;color:var(--faint);}
+  .thread{position:relative;z-index:1;flex:1;overflow:auto;padding:24px 0 14px;} .col{max-width:640px;margin:0 auto;padding:0 34px;}
+  .day{text-align:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin:0 0 22px;position:relative;}
+  .day::before,.day::after{content:"";position:absolute;top:50%;width:34%;height:1px;background:var(--hair);} .day::before{left:0;}.day::after{right:0;}
+  .pr{font-size:14px;line-height:1.66;color:var(--text-2);margin:0 0 11px;} .pr b{color:var(--text);}
+  ul.bl{list-style:none;margin:0 0 11px;padding:0;display:flex;flex-direction:column;gap:7px;} ul.bl li{position:relative;padding-left:17px;font-size:14px;line-height:1.5;color:var(--text-2);} ul.bl li::before{content:"";position:absolute;left:1px;top:8px;width:5px;height:5px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 6px var(--glow-v);}
+  .take{border-left:2px solid;border-image:linear-gradient(180deg,var(--accent),var(--accent-2)) 1;padding-left:14px;margin:0 0 11px;} .take .pr{margin:0;}
+  .change{border-radius:12px;overflow:hidden;border:1px solid var(--hair);background:color-mix(in srgb,var(--glass) 82%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+  .change .hd{display:flex;align-items:center;gap:8px;padding:8px 11px;} .change .fi{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:rgba(168,107,255,.14);color:var(--accent);} .change .nm{font-family:var(--mono);font-size:11.5px;} .change .stat{margin-left:auto;font-family:var(--mono);font-size:10px;} .change .stat .a{color:var(--add);} .change .stat .d{color:var(--del);}
+  .diff{font-family:var(--mono);font-size:10.5px;line-height:1.6;border-top:1px solid var(--hair);padding:6px 0;} .diff .l{display:flex;padding:0 11px;white-space:pre;} .diff .l.add{background:rgba(70,224,138,.08);} .diff .l.del{background:rgba(255,107,139,.08);} .diff .g{width:13px;color:var(--faint);} .diff .l.add .g{color:var(--add);} .diff .l.del .g{color:var(--del);} .diff .x{color:var(--text-2);}
+  .code{border-radius:12px;overflow:hidden;border:1px solid var(--hair);background:color-mix(in srgb,var(--glass) 82%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+  .code .ch{display:flex;align-items:center;justify-content:space-between;padding:5px 11px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:10px;color:var(--faint);} .code pre{margin:0;padding:9px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.65;color:var(--text);overflow-x:auto;} .code .k{color:var(--accent);} .code .s{color:var(--ok);} .code .c{color:var(--faint);}
+  .sources{border-top:1px solid var(--hair);margin-top:10px;padding-top:10px;} .sources .sh{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;} .sources a{display:flex;align-items:center;gap:7px;color:var(--accent);text-decoration:none;font-size:13px;padding:3px 0;} .sources a:hover{text-shadow:0 0 10px var(--glow-v);}
+  .shimmer{display:inline-block;background:linear-gradient(90deg,var(--muted),var(--text),var(--muted));background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 1.6s linear infinite;} @keyframes sh{to{background-position:-200% 0;}}
+
+  /* 03 document flow */
+  .you{display:flex;justify-content:flex-end;margin:0 0 18px;}
+  .youtag{font-family:var(--mono);font-size:9.5px;color:var(--faint);align-self:center;margin-right:11px;letter-spacing:.08em;white-space:nowrap;}
+  .youtext{max-width:76%;font-size:14px;line-height:1.5;color:var(--text);border-right:2px solid var(--accent);padding-right:14px;text-align:right;}
+  .doc{padding-left:17px;border-left:1px solid var(--hair);margin-bottom:26px;} .doc>*+*{margin-top:12px;}
+  .meta{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:9px;display:flex;align-items:center;gap:7px;} .meta .d{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok);}
+  .dh{font-size:17px;font-weight:700;letter-spacing:-0.01em;margin:0;} .dh::after{content:"";display:block;width:34px;height:2px;margin-top:8px;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 8px var(--glow-v);}
+
+  .rail{position:absolute;top:38px;bottom:122px;right:4px;width:8px;z-index:4;}
+  .rail .tk{position:absolute;right:1px;width:6px;height:2px;border-radius:2px;} .rail .thumb{position:absolute;right:2px;width:4px;border-radius:999px;background:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:0 0 8px -1px var(--glow-v);top:7%;height:30%;}
+
+  .foot{position:relative;z-index:5;flex:none;padding:8px 18px 16px;background:linear-gradient(180deg,transparent,rgba(6,4,13,0.6) 55%);}
+  .esttok{font-family:var(--mono);font-size:10px;color:var(--faint);padding:0 6px 7px;}
+  .composer{position:relative;border-radius:18px;background:var(--glass);border:1px solid rgba(168,107,255,0.45);-webkit-backdrop-filter:blur(20px) saturate(1.5);backdrop-filter:blur(20px) saturate(1.5);box-shadow:0 0 0 1px rgba(168,107,255,0.12),0 18px 50px -24px var(--glow-v),inset 0 1px 0 rgba(255,255,255,0.08);}
+  .composer::before{content:"";position:absolute;left:14px;right:14px;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent-2),transparent);opacity:.9;}
+  .composer .in{padding:15px 16px 8px;font-size:14px;color:var(--faint);} .gradline{height:1px;margin:0 14px;background:linear-gradient(90deg,transparent,rgba(168,107,255,.3),rgba(61,232,255,.28),transparent);}
+  .bar{display:flex;align-items:center;gap:8px;padding:9px 10px;flex-wrap:wrap;}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair);background:rgba(255,255,255,.04);border-radius:999px;padding:5px 10px;font-size:11px;color:var(--text-2);cursor:pointer;} .pill.on{border-color:rgba(168,107,255,.55);background:rgba(168,107,255,.12);color:var(--text);box-shadow:0 0 16px -6px var(--glow-v);} .pill.model{border-color:rgba(168,107,255,.4);background:rgba(168,107,255,.1);color:var(--text);}
+  .send{margin-left:auto;display:inline-flex;align-items:center;gap:6px;border:none;cursor:pointer;color:var(--void);font-weight:600;font-size:12px;font-family:var(--sans);background:linear-gradient(135deg,var(--accent),var(--accent-2));border-radius:999px;padding:7px 15px;box-shadow:0 0 20px -4px var(--glow-v);}
+  .pop{position:absolute;left:18px;bottom:64px;z-index:8;width:300px;border-radius:14px;overflow:hidden;border:1px solid var(--hair-2);background:rgba(20,14,33,0.86);-webkit-backdrop-filter:blur(22px) saturate(1.4);backdrop-filter:blur(22px) saturate(1.4);box-shadow:0 24px 60px -24px #000,inset 0 1px 0 rgba(255,255,255,.07);}
+  .pop .ph{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--hair);} .pop .ph input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:12px;} .pop .ph input::placeholder{color:var(--faint);}
+  .pop .gh{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);padding:9px 12px 4px;}
+  .pop .it{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer;border-left:2px solid transparent;} .pop .it:hover{background:rgba(255,255,255,.04);} .pop .it.on{background:rgba(168,107,255,.12);border-left-color:var(--accent);box-shadow:inset 0 0 22px -12px var(--glow-v);}
+  .pop .it .fi{color:var(--accent);} .pop .it .nm{font-size:12.5px;color:var(--text);} .pop .it .pa{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:auto;} .pop .it .ck{color:var(--accent);}
+  svg{display:block;}
+</style>
+<div class="lbl">03 · Document flow — full pane (scroll the transcript)</div>
+
+<div class="pane">
+  <div class="dots"></div>
+  <div class="chrome"><span class="st"></span><span class="ti">is there something like a 'dr lite' brand…</span><span class="x"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span></div>
+  <div class="rail"><span class="tk" style="top:11%;background:var(--accent);opacity:.6"></span><span class="tk" style="top:42%;background:var(--accent-2);opacity:.5"></span><span class="tk" style="top:70%;background:var(--accent);opacity:.6"></span><span class="thumb"></span></div>
+
+  <div class="thread"><div class="col">
+    <div class="day">Fri, Jun 19</div>
+
+    <div class="you"><span class="youtag">YOU · 12:31</span><span class="youtext">what's the best 5070ti, and do you think the super series cards are coming soon?</span></div>
+    <div class="doc">
+      <div class="meta"><span class="d"></span>AIOS · sonnet 4.6 · thought 4s · worked 12s · 3 steps</div>
+      <div class="change"><div class="hd"><span class="fi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><span class="nm">gpu-picks.md</span><span class="stat"><span class="a">+6</span> <span class="d">−1</span></span></div><div class="diff"><div class="l del"><span class="g">-</span><span class="x">Pick the RTX 5080 for 1440p.</span></div><div class="l add"><span class="g">+</span><span class="x">Pick the RX 9070 XT — best value.</span></div><div class="l add"><span class="g">+</span><span class="x">16GB VRAM, RM 3,399.</span></div></div></div>
+      <h2 class="dh">RTX 50 Super Series — Coming Soon?</h2>
+      <div class="pr">Yes, and it's worth knowing before you buy:</div>
+      <ul class="bl"><li><b>RTX 5070 Ti Super</b> leaked with 24GB GDDR7 (vs 16GB today)</li><li>Now looking like <b>Q3 2026 at earliest</b> — slipped from Q1–Q2</li><li>Modest ~5–10% perf bump, but the VRAM jump is significant</li></ul>
+      <div class="take"><div class="pr"><b>My take:</b> need a GPU now? Go 5070 Ti — waiting 3–6 months for an unconfirmed card isn't worth it unless you specifically need &gt;16GB VRAM.</div></div>
+    </div>
+
+    <div class="you"><span class="youtag">YOU · 12:34</span><span class="youtext">im in malaysia, so maybe look at shopee instead of amazon</span></div>
+    <div class="doc">
+      <div class="meta"><span class="d"></span>AIOS · sonnet 4.6 · worked 6s</div>
+      <div class="pr">Good call — Shopee MY has better local pricing + warranty. Cheapest legit listings right now:</div>
+      <ul class="bl"><li><b>Sapphire RX 9070 XT</b> — RM 3,399 (Thunder Match, official store)</li><li><b>ASUS TUF 9070 XT OC</b> — RM 3,699 (best thermals)</li></ul>
+      <div class="sources"><div class="sh">sources</div><a href="#"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg> Sapphire RX 9070 XT — Thunder Match</a><a href="#"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg> RTX 5070 Ti pricing — Lowyat.NET</a></div>
+    </div>
+
+    <div class="you"><span class="youtag">YOU · 12:37</span><span class="youtext">okay, now please tell me what is tauri</span></div>
+    <div class="doc">
+      <div class="meta"><span class="d"></span>AIOS · sonnet 4.6 · worked 3s</div>
+      <div class="pr"><b>Tauri</b> builds desktop apps with a web frontend + a Rust backend — like Electron, but it uses the OS's native webview, so bundles are tiny (~3MB vs ~120MB) and start fast.</div>
+      <div class="code"><div class="ch"><span>rust · src-tauri/src/lib.rs</span><span>copy</span></div><pre><span class="c">// expose a command to the frontend</span>
+<span class="k">#[tauri::command]</span>
+<span class="k">fn</span> greet(name: &str) -> String {
+  <span class="k">format!</span>(<span class="s">"hello, {name}"</span>)
+}</pre></div>
+      <div class="pr">AIOS itself is a Tauri app — that's how it can drive your terminal, files, and browser natively from one window.</div>
+    </div>
+
+    <div class="doc">
+      <div class="meta"><span class="d" style="background:var(--accent-2);box-shadow:0 0 6px var(--accent-2)"></span>AIOS · <span class="shimmer">thinking…</span></div>
+      <div class="pr"><span class="shimmer">checking the latest Tauri v2 release notes…</span></div>
+    </div>
+  </div></div>
+
+  <div class="foot">
+    <div class="pop">
+      <div class="ph"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="working directory — search projects…"/></div>
+      <div class="gh">current</div>
+      <div class="it on"><span class="fi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="nm">kingx</span><span class="pa">~/</span><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5L20 6"/></svg></span></div>
+      <div class="gh">recent projects</div>
+      <div class="it"><span class="fi" style="color:var(--info)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><path d="M6 16V9a3 3 0 0 1 3-3h7"/></svg></span><span class="nm">AIOS-Superapp</span><span class="pa">~/FHE-Work</span></div>
+      <div class="it"><span class="fi" style="color:var(--info)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><path d="M6 16V9a3 3 0 0 1 3-3h7"/></svg></span><span class="nm">fathopes-web</span><span class="pa">~/Repo</span></div>
+      <div class="it"><span class="fi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="nm">Downloads</span><span class="pa">~/</span></div>
+    </div>
+    <div class="esttok">120 est tok</div>
+    <div class="composer">
+      <div class="in">ask, or describe a task — / for commands, @ for files</div>
+      <div class="gradline"></div>
+      <div class="bar">
+        <span class="pill on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>kingx <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 9l6 6 6-6"/></svg></span>
+        <span class="pill">full access</span><span class="pill">lean</span><span class="pill">medium</span>
+        <span class="pill model">sonnet 4.6 ▾</span>
+        <button class="send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>send</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,6 +1,6 @@
 [package]
 name = "aios-shell"
-version = "1.0.0"
+version = "1.1.0"
 description = "AIOS — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"
@@ -36,6 +36,23 @@ serde_json = { version = "1", features = ["preserve_order"] }
 walkdir = "2"
 ignore = "0.4"
 base64 = "0.22"
+# Control plane (Tier 2): a tiny localhost-only HTTP server so an external agent
+# (the aios-control MCP / curl / the WhatsApp bridge) can drive the app. Blocking +
+# dependency-light; runs on its own thread (see control.rs). Off by default.
+tiny_http = "0.12"
+# 256-bit control-plane bearer token from the OS CSPRNG (control.rs gen_token).
+# Pinned to 0.2 for the `getrandom(&mut buf)` API regardless of what else the
+# tree resolves; the OS backend needs no extra config on Windows/macOS/Linux.
+getrandom = "0.2"
+# BYO-key API keys (Tier 4) stored in the OS keychain — Windows Credential
+# Manager / macOS Keychain / Linux Secret Service — never localStorage. See
+# apikeys.rs. Default features pull in the platform-native backend.
+keyring = "2"
+# BYO-key API tier (Tier 4): blocking HTTP to a provider (Anthropic / OpenAI /
+# OpenRouter / Ollama) with the user's own key, on the chat reader thread (so no
+# tokio runtime needed there). rustls so there's no openssl/native-tls on Windows
+# (sqlx already pulls rustls). See chat_api.rs (pure) + chat.rs run_api_turn (I/O).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 portable-pty = "0.8"
 parking_lot = "0.12"

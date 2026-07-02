@@ -28,6 +28,9 @@ export type RunEvent =
       id: string;
       name: string;
       input: Record<string, unknown>;
+      /** tool_use id of the parent Task when this action was run by a sub-agent
+       *  (from the event's `parent_tool_use_id`); undefined for main-agent calls. */
+      parentId?: string;
       at: number;
     }
   | {
@@ -245,6 +248,8 @@ export function reduceRunEvents(
 
   if (ev.type === "assistant") {
     const out: RunEvent[] = [];
+    const parentId =
+      typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
     for (const block of ev.message?.content ?? []) {
       if (block.type === "thinking" && block.thinking?.trim()) {
         out.push({
@@ -264,6 +269,7 @@ export function reduceRunEvents(
           id: block.id ?? nextId("tool"),
           name: block.name ?? "tool",
           input: block.input ?? {},
+          ...(parentId ? { parentId } : {}),
           at,
         });
         const change = fileChangeEvent(block.name, block.input, at);

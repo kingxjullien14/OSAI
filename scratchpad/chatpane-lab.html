@@ -1,0 +1,129 @@
+<title>AIOS — Chat Pane treatments (pick one)</title>
+<style>
+  :root{
+    --ground:#0A0713;--void:#06040D;--text:#ECE9F7;--text-2:#C4BEDA;--muted:#8A83A3;--faint:#5C5673;
+    --accent:#A86BFF;--accent-2:#3DE8FF;--hair:rgba(255,255,255,0.08);--hair-2:rgba(255,255,255,0.12);
+    --glass:rgba(28,20,46,0.42);--glow-v:rgba(168,107,255,0.45);--ok:#46e08a;--add:#46e08a;--del:#ff6b8b;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;} body{margin:0;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1000px 700px at 10% -8%,rgba(168,107,255,0.16),transparent 56%),
+      radial-gradient(900px 650px at 110% 60%,rgba(61,232,255,0.09),transparent 54%),var(--ground);background-attachment:fixed;}
+  .wrap{max-width:760px;margin:0 auto;padding:34px 26px 80px;}
+  .pagehead .k{font-family:var(--mono);font-size:10px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent);}
+  .pagehead h1{font-size:23px;font-weight:700;letter-spacing:-0.02em;margin:8px 0 6px;}
+  .pagehead p{color:var(--muted);font-size:13.5px;margin:0;line-height:1.6;}
+  .variant{margin-top:42px;}
+  .vlabel{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;}
+  .vlabel .n{font-family:var(--mono);font-size:11px;color:var(--void);background:linear-gradient(135deg,var(--accent),var(--accent-2));padding:3px 9px;border-radius:6px;font-weight:700;}
+  .vlabel .t{font-size:15px;font-weight:600;} .vlabel .d{font-size:12px;color:var(--muted);}
+  .stage{border:1px solid var(--hair-2);border-radius:16px;padding:22px 22px 24px;background:rgba(12,8,20,0.34);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
+
+  /* shared bits */
+  h2.h{font-size:16px;font-weight:700;letter-spacing:-0.01em;margin:0 0 7px;}
+  .p{font-size:13.5px;line-height:1.6;color:var(--text-2);margin:0 0 9px;} .p b{color:var(--text);}
+  .fold{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  .fold svg{color:var(--accent);}
+  .change{border-radius:12px;overflow:hidden;border:1px solid var(--hair);background:color-mix(in srgb,var(--glass) 82%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+  .change .hd{display:flex;align-items:center;gap:8px;padding:8px 11px;}
+  .change .fi{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:rgba(168,107,255,.14);color:var(--accent);}
+  .change .nm{font-family:var(--mono);font-size:11.5px;} .change .stat{margin-left:auto;font-family:var(--mono);font-size:10px;}
+  .change .stat .a{color:var(--add);} .change .stat .d{color:var(--del);}
+  .diff{font-family:var(--mono);font-size:10.5px;line-height:1.6;border-top:1px solid var(--hair);padding:6px 0;}
+  .diff .l{display:flex;padding:0 11px;white-space:pre;} .diff .l.add{background:rgba(70,224,138,.08);} .diff .l.del{background:rgba(255,107,139,.08);}
+  .diff .g{width:13px;color:var(--faint);} .diff .l.add .g{color:var(--add);} .diff .l.del .g{color:var(--del);} .diff .x{color:var(--text-2);}
+  .note{margin-top:13px;font-size:12px;color:var(--faint);line-height:1.5;} .note b{color:var(--text-2);}
+
+  /* ===== 01 Avatar lanes ===== */
+  .v1 .turn{display:grid;grid-template-columns:30px 1fr;gap:12px;margin-bottom:20px;}
+  .v1 .av{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:700;flex:none;}
+  .v1 .av.you{background:rgba(255,255,255,.06);border:1px solid var(--hair-2);color:var(--text-2);}
+  .v1 .av.ai{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:var(--void);box-shadow:0 0 14px -3px var(--glow-v);}
+  .v1 .who{font-size:11px;color:var(--muted);margin-bottom:5px;font-family:var(--mono);letter-spacing:.04em;}
+  .v1 .who b{color:var(--text);font-family:var(--sans);font-weight:600;letter-spacing:0;}
+  .v1 .body>*+*{margin-top:9px;}
+
+  /* ===== 02 Framed turns ===== */
+  .v2 .card2{border:1px solid var(--hair);border-radius:14px;overflow:hidden;margin-bottom:14px;background:color-mix(in srgb,var(--glass) 70%,transparent);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+  .v2 .card2.you{border-color:rgba(168,107,255,.28);box-shadow:0 0 26px -14px var(--glow-v),inset 0 1px 0 rgba(255,255,255,.06);}
+  .v2 .strip{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+  .v2 .strip .dot{width:7px;height:7px;border-radius:50%;}
+  .v2 .strip .who{color:var(--text-2);letter-spacing:.05em;} .v2 .strip .tm{margin-left:auto;color:var(--faint);}
+  .v2 .in{padding:13px;} .v2 .in>*+*{margin-top:9px;}
+
+  /* ===== 03 Document flow ===== */
+  .v3 .you{display:flex;justify-content:flex-end;margin:0 0 18px;}
+  .v3 .youtag{font-family:var(--mono);font-size:10px;color:var(--faint);align-self:center;margin-right:10px;letter-spacing:.08em;}
+  .v3 .youtext{max-width:74%;font-size:14px;line-height:1.5;color:var(--text);border-right:2px solid var(--accent);padding-right:13px;text-align:right;}
+  .v3 .doc{padding-left:16px;border-left:1px solid var(--hair);margin-bottom:6px;}
+  .v3 .doc>*+*{margin-top:11px;}
+  .v3 h2.h{font-size:17px;position:relative;} .v3 h2.h::after{content:"";display:block;width:34px;height:2px;margin-top:7px;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 8px var(--glow-v);}
+  .v3 .meta{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:8px;}
+  svg{display:block;}
+  ul.bl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+  ul.bl li{position:relative;padding-left:16px;font-size:13.5px;line-height:1.45;color:var(--text-2);}
+  ul.bl li::before{content:"";position:absolute;left:1px;top:7px;width:5px;height:5px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 6px var(--glow-v);}
+  .ub{display:inline-block;border-radius:14px 14px 4px 14px;padding:9px 13px;font-size:13.5px;line-height:1.5;background:rgba(168,107,255,.14);border:1px solid rgba(168,107,255,.24);}
+</style>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="k">AIOS · Neon Glass · chat transcript</div>
+    <h1>Three ways to render the conversation</h1>
+    <p>Same turn (your question → AIOS thinks, edits a file, answers), three structures. Pick the rhythm that feels right — then I build it for real.</p>
+  </div>
+
+  <!-- 01 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">01</span><span class="t">Avatar lanes</span><span class="d">— identity gutter per turn · clear who‑said‑what rhythm</span></div>
+    <div class="stage v1">
+      <div class="turn"><div class="av you">JN</div><div><div class="who"><b>you</b> · 12:38 AM</div><div class="body"><div class="ub">what's the best 5070ti, and do you think the super series cards are coming soon?</div></div></div></div>
+      <div class="turn"><div class="av ai"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l2.4 5.4L20 11l-5.6 2.6L12 19l-2.4-5.4L4 11l5.6-2.6z"/></svg></div>
+        <div><div class="who"><b>AIOS</b> · sonnet 4.6</div><div class="body">
+          <div class="fold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg> thought for 4s · worked 12s</div>
+          <div class="change"><div class="hd"><span class="fi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><span class="nm">gpu-picks.md</span><span class="stat"><span class="a">+6</span> <span class="d">−1</span></span></div>
+            <div class="diff"><div class="l del"><span class="g">-</span><span class="x">Pick the RTX 5080 for 1440p.</span></div><div class="l add"><span class="g">+</span><span class="x">Pick the RX 9070 XT — best value.</span></div></div></div>
+          <h2 class="h">RTX 50 Super Series — Coming Soon?</h2>
+          <ul class="bl"><li><b>RTX 5070 Ti Super</b> leaked with 24GB GDDR7</li><li>Now looking like <b>Q3 2026 at earliest</b></li></ul>
+        </div></div></div>
+    </div>
+    <div class="note"><b>Best for:</b> a familiar threaded chat with strong identity — easy to scan long back‑and‑forths.</div>
+  </div>
+
+  <!-- 02 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">02</span><span class="t">Framed turns</span><span class="d">— every turn is its own glass card with a header strip</span></div>
+    <div class="stage v2">
+      <div class="card2 you"><div class="strip"><span class="dot" style="background:var(--accent);box-shadow:0 0 7px var(--glow-v)"></span><span class="who">YOU</span><span class="tm">12:38 AM</span></div><div class="in"><div class="p" style="margin:0;color:var(--text)">what's the best 5070ti, and do you think the super series cards are coming soon?</div></div></div>
+      <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">AIOS · SONNET 4.6</span><span class="tm">worked 12s · 3 steps</span></div>
+        <div class="in">
+          <div class="fold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg> thought for 4s</div>
+          <div class="change"><div class="hd"><span class="fi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><span class="nm">gpu-picks.md</span><span class="stat"><span class="a">+6</span> <span class="d">−1</span></span></div>
+            <div class="diff"><div class="l del"><span class="g">-</span><span class="x">Pick the RTX 5080 for 1440p.</span></div><div class="l add"><span class="g">+</span><span class="x">Pick the RX 9070 XT — best value.</span></div></div></div>
+          <h2 class="h">RTX 50 Super Series — Coming Soon?</h2>
+          <ul class="bl"><li><b>RTX 5070 Ti Super</b> leaked with 24GB GDDR7</li><li>Now looking like <b>Q3 2026 at earliest</b></li></ul>
+        </div></div>
+    </div>
+    <div class="note"><b>Best for:</b> a structured "session log" — like the files pane's framing. Each exchange is a discrete, scannable unit.</div>
+  </div>
+
+  <!-- 03 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">03</span><span class="t">Document flow</span><span class="d">— no bubbles; AIOS reads like a polished doc, you = a quiet right note</span></div>
+    <div class="stage v3">
+      <div class="you"><span class="youtag">YOU · 12:38</span><span class="youtext">what's the best 5070ti, and do you think the super series cards are coming soon?</span></div>
+      <div class="meta">AIOS · sonnet 4.6 · thought 4s · worked 12s</div>
+      <div class="doc">
+        <div class="change"><div class="hd"><span class="fi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><span class="nm">gpu-picks.md</span><span class="stat"><span class="a">+6</span> <span class="d">−1</span></span></div>
+          <div class="diff"><div class="l del"><span class="g">-</span><span class="x">Pick the RTX 5080 for 1440p.</span></div><div class="l add"><span class="g">+</span><span class="x">Pick the RX 9070 XT — best value.</span></div></div></div>
+        <h2 class="h">RTX 50 Super Series — Coming Soon?</h2>
+        <p class="p">Yes, and it's worth knowing before you buy:</p>
+        <ul class="bl"><li><b>RTX 5070 Ti Super</b> leaked with 24GB GDDR7 (vs 16GB today)</li><li>Now looking like <b>Q3 2026 at earliest</b> — slipped from Q1–Q2</li></ul>
+      </div>
+    </div>
+    <div class="note"><b>Best for:</b> reading. The answer is the hero — generous type, accent‑ruled headings; chat chrome nearly disappears.</div>
+  </div>
+</div>

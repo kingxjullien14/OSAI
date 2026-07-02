@@ -1,0 +1,188 @@
+<title>AIOS — Mission Control (idle home redesign)</title>
+<style>
+  :root {
+    --ground:#0A0713; --void:#06040D; --text:#ECE9F7; --text-2:#C4BEDA;
+    --muted:#8A83A3; --faint:#5C5673; --accent:#A86BFF; --accent-2:#3DE8FF;
+    --hair:rgba(255,255,255,0.07); --hair-2:rgba(255,255,255,0.12);
+    --glass:rgba(28,20,46,0.42); --glass-2:rgba(20,14,33,0.6);
+    --glow-v:rgba(168,107,255,0.45); --ok:#46e08a; --warn:#facc15;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",Roboto,system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;} html,body{min-height:100%;}
+  body{margin:0;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1000px 680px at 8% -10%,rgba(168,107,255,0.20),transparent 58%),
+      radial-gradient(900px 640px at 108% 8%,rgba(61,232,255,0.12),transparent 56%),
+      radial-gradient(1200px 900px at 60% 120%,rgba(168,107,255,0.10),transparent 65%),var(--ground);
+    background-attachment:fixed;}
+  .grid-tex{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+    background-image:linear-gradient(rgba(255,255,255,.016) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.016) 1px,transparent 1px);
+    background-size:46px 46px;-webkit-mask-image:radial-gradient(1100px 760px at 50% 30%,#000,transparent 80%);mask-image:radial-gradient(1100px 760px at 50% 30%,#000,transparent 80%);}
+  .wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:22px 30px 70px;}
+
+  /* top strip */
+  .top{display:flex;align-items:center;gap:14px;margin-bottom:54px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 18px -2px var(--glow-v);position:relative;}
+  .mark::after{content:"";position:absolute;inset:7px;border-radius:3px;background:var(--void);}
+  .brand b{font-family:var(--mono);font-size:13px;letter-spacing:.34em;font-weight:600;}
+  .top .spacer{flex:1;}
+  .top .when{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.06em;}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);background:var(--glass);
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:999px;padding:5px 11px;font-size:11px;color:var(--text-2);}
+  .chip .d{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);}
+
+  /* hero */
+  .hero{text-align:center;margin-bottom:18px;}
+  .hero .greet{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:lowercase;color:var(--muted);margin-bottom:14px;}
+  .hero h1{font-size:34px;font-weight:600;letter-spacing:-0.02em;margin:0 0 26px;}
+  .hero h1 em{font-style:normal;background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;}
+
+  .composer{max-width:640px;margin:0 auto 46px;position:relative;border-radius:18px;background:var(--glass);
+    border:1px solid rgba(168,107,255,0.30);-webkit-backdrop-filter:blur(20px) saturate(1.5);backdrop-filter:blur(20px) saturate(1.5);
+    box-shadow:0 0 0 1px rgba(168,107,255,0.08),0 24px 60px -26px var(--glow-v),inset 0 1px 0 rgba(255,255,255,0.08);}
+  .composer::before{content:"";position:absolute;left:14px;right:14px;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent-2),transparent);opacity:.85;}
+  .composer .in{padding:17px 18px 8px;font-size:14.5px;color:var(--faint);}
+  .composer .bar{display:flex;align-items:center;gap:8px;padding:8px 10px 11px;flex-wrap:wrap;}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair);background:rgba(255,255,255,.04);border-radius:999px;padding:5px 11px;font-size:11.5px;color:var(--text-2);}
+  .pill.model{border-color:rgba(168,107,255,.4);background:rgba(168,107,255,.10);color:var(--text);}
+  .send{margin-left:auto;display:inline-flex;align-items:center;gap:7px;border:none;cursor:pointer;color:var(--void);font-weight:600;font-size:12.5px;font-family:var(--sans);
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));border-radius:999px;padding:8px 16px;box-shadow:0 0 22px -4px var(--glow-v);}
+
+  .eyebrow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);margin:0 2px 12px;}
+  .eyebrow .tk{width:5px;height:5px;border-radius:1px;background:var(--accent);box-shadow:0 0 8px var(--glow-v);}
+  .eyebrow .ln{flex:1;height:1px;background:linear-gradient(90deg,var(--hair),transparent);}
+
+  /* quick launch tiles */
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:40px;}
+  .tile{display:flex;flex-direction:column;gap:10px;padding:16px 14px;border-radius:14px;cursor:pointer;
+    background:var(--glass);border:1px solid var(--hair);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);transition:transform .15s,border-color .15s,box-shadow .15s;}
+  .tile:hover{transform:translateY(-2px);border-color:rgba(168,107,255,.4);box-shadow:0 12px 30px -16px var(--glow-v),inset 0 1px 0 rgba(255,255,255,.08);}
+  .tile .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--accent);
+    background:rgba(168,107,255,.12);border:1px solid rgba(168,107,255,.22);}
+  .tile .nm{font-size:13px;font-weight:500;}
+  .tile .kb{font-family:var(--mono);font-size:9.5px;color:var(--faint);}
+
+  /* two-column grid */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-bottom:40px;}
+  .card{padding:12px;border-radius:14px;background:var(--glass);border:1px solid var(--hair);
+    -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+  .row{display:flex;align-items:flex-start;gap:10px;padding:9px 8px;border-radius:10px;border:1px solid transparent;transition:all .15s;cursor:pointer;}
+  .row:hover{border-color:var(--hair);background:rgba(255,255,255,.03);}
+  .row.live{border-color:rgba(168,107,255,.28);background:rgba(168,107,255,.06);box-shadow:0 0 22px -10px var(--glow-v);}
+  .ico{margin-top:1px;color:var(--accent);flex:none;}
+  .row .col{display:flex;flex-direction:column;min-width:0;gap:2px;flex:1;}
+  .row .t{font-size:13px;color:var(--text);display:flex;align-items:center;gap:7px;min-width:0;}
+  .row .t .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .badge{flex:none;border:1px solid;border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px;}
+  .badge.claude{color:var(--accent);border-color:rgba(168,107,255,.4);}
+  .badge.live{color:var(--ok);border-color:rgba(70,224,138,.45);display:inline-flex;align-items:center;gap:4px;border-radius:999px;text-transform:uppercase;letter-spacing:.06em;}
+  .badge.live .d{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok);}
+  .row .sub{font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .meta{font-family:var(--mono);font-size:10px;color:var(--faint);display:flex;gap:7px;}
+  .row .meta b{color:var(--border-strong,#6a647d);font-weight:400;}
+
+  /* usage */
+  .usage{display:grid;grid-template-columns:1fr 1fr;gap:26px;}
+  .meter{margin-bottom:12px;}
+  .meter .lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-bottom:5px;}
+  .bar{height:5px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;}
+  .bar>i{display:block;height:100%;border-radius:999px;}
+  .bar>i.ok{background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 10px var(--glow-v);}
+  .bar>i.lo{background:var(--ok);box-shadow:0 0 8px rgba(70,224,138,.5);}
+
+  @media (max-width:760px){.tiles{grid-template-columns:repeat(2,1fr);}.cols,.usage{grid-template-columns:1fr;}}
+  svg{display:block;}
+</style>
+
+<div class="grid-tex"></div>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand"><div class="mark"></div><b>AIOS</b></div>
+    <div class="spacer"></div>
+    <span class="when">FRI · JUN 19 · 12:38 AM</span>
+    <span class="chip"><span class="d"></span>2 agents live</span>
+    <span class="chip">claude · 92% / 5h</span>
+  </div>
+
+  <div class="hero">
+    <div class="greet">good evening, Jul.Nazz</div>
+    <h1>what should we <em>work</em> on?</h1>
+  </div>
+
+  <div class="composer">
+    <div class="in">ask, or describe a task — / for commands, @ for files</div>
+    <div class="bar">
+      <span class="pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>kingx</span>
+      <span class="pill">full access</span>
+      <span class="pill">lean</span>
+      <span class="pill">medium</span>
+      <span class="pill model">sonnet 4.6 ▾</span>
+      <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>send</button>
+    </div>
+  </div>
+
+  <div class="eyebrow"><span class="tk"></span> quick launch <span class="ln"></span></div>
+  <div class="tiles">
+    <div class="tile"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="nm">new chat</span><span class="kb">⌘N</span></div>
+    <div class="tile"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span><span class="nm">terminal</span><span class="kb">⌘T</span></div>
+    <div class="tile"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="nm">files</span><span class="kb">⌘E</span></div>
+    <div class="tile"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg></span><span class="nm">browser</span><span class="kb">⌘B</span></div>
+    <div class="tile"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></span><span class="nm">history</span><span class="kb">⌘Y</span></div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="eyebrow"><span class="tk"></span> active agents <span class="ln"></span></div>
+      <div class="card">
+        <div class="row live">
+          <span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">spawn an oracle</span><span class="badge live"><span class="d"></span>live</span></span><span class="meta">oracle · streaming · 1m12s</span></span>
+        </div>
+        <div class="row">
+          <span class="ico" style="color:var(--muted)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">pablo</span></span><span class="meta">oracle · offline · last 3d ago</span></span>
+        </div>
+        <div class="row">
+          <span class="ico" style="color:var(--accent-2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">nightly tests</span></span><span class="meta">scheduled · next 9:00 PM</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="eyebrow"><span class="tk"></span> pick up where you left off <span class="ln"></span></div>
+      <div class="card">
+        <div class="row">
+          <span class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">is there something like a 'dr lite' brand</span><span class="badge claude">claude</span></span><span class="sub">Go with the RX 9070 XT — at 1440p it's…</span><span class="meta">kingx · 3d ago · sonnet 4.6</span></span>
+        </div>
+        <div class="row">
+          <span class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">okay, now please tell me what is tauri</span><span class="badge claude">claude</span></span><span class="sub">Tauri is a framework for building…</span><span class="meta">kingx · 4d ago · sonnet 4.6</span></span>
+        </div>
+        <div class="row">
+          <span class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg></span>
+          <span class="col"><span class="t"><span class="nm">what did attach as context?</span><span class="badge claude">claude</span></span><span class="sub">hi — you attached 2 files…</span><span class="meta">kingx · 1w ago · sonnet 4.6</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="eyebrow"><span class="tk"></span> usage <span class="ln"></span></div>
+  <div class="card">
+    <div class="usage">
+      <div>
+        <div class="meter"><div class="lab"><span>CLAUDE · 5H</span><span>92% left · resets 4h 11m</span></div><div class="bar"><i class="lo" style="width:8%"></i></div></div>
+        <div class="meter" style="margin:0"><div class="lab"><span>CLAUDE · 7D</span><span>97% left · resets 5d 4h</span></div><div class="bar"><i class="lo" style="width:3%"></i></div></div>
+      </div>
+      <div>
+        <div class="meter"><div class="lab"><span>SONNET · 7D</span><span>100% left</span></div><div class="bar"><i class="ok" style="width:2%"></i></div></div>
+        <div class="meter" style="margin:0"><div class="lab"><span>CONTEXT · THIS SESSION</span><span>12.4K · 6%</span></div><div class="bar"><i class="ok" style="width:6%"></i></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>

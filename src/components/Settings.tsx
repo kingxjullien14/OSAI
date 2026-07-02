@@ -16,17 +16,17 @@ import {
   Activity,
   Bell,
   Blocks,
-  Brain,
   Check,
   Cpu,
   DownloadCloud,
   RefreshCw,
-  FolderGit2,
+  SquareTerminal,
   Info,
   Keyboard,
   Minus,
   Eye,
   EyeOff,
+  FileText,
   Monitor,
   MonitorUp,
   Moon,
@@ -36,6 +36,7 @@ import {
   Plus,
   Radio,
   RotateCcw,
+  Search,
   Trash2,
   Settings as SettingsIcon,
   Sun,
@@ -43,20 +44,36 @@ import {
   X,
 } from "lucide-react";
 
-import { listProjects, type ProjectInfo } from "../lib/run";
+import {
+  scanWorkspaces,
+  suggestedScanRoots,
+  detectWorkspace,
+  previewWorkspaceContext,
+  generateWorkspaceContext,
+} from "../lib/run";
 import { AnimatePresence, m } from "motion/react";
 
 import { modalPop, overlayFade } from "./fx/motionTokens";
 import { SlidingIndicator } from "./fx/SlidingIndicator";
 import { trapTab } from "./ui";
 import {
-  loadProjectsStore,
-  subscribeProjects,
-  addCustomProject,
-  removeCustomProject,
-  setHidden as setProjectHidden,
-  setOverride as setProjectOverride,
-} from "../lib/projects";
+  type ProjectWorkspace,
+  type ProjectComponent,
+  loadProjectWorkspacesStore,
+  subscribeProjectWorkspaces,
+  getScanRoots,
+  addScanRoot,
+  removeScanRoot,
+  setWorkspaceName,
+  setWorkspaceHidden,
+  setWorkspaceRemoved,
+  restoreAllRemoved,
+  addCustomWorkspace,
+  removeCustomWorkspace,
+  projectShapeLabel,
+  allComponents,
+  normRoot,
+} from "../lib/projectWorkspaces";
 
 import {
   type AppSettings,
@@ -68,7 +85,7 @@ import {
   loadSettings,
   saveSettings,
   applyFlashLevel,
-  MEMORY_VAULT_PATH,
+  DEFAULT_SETTINGS,
 } from "../lib/settings";
 import {
   type Density,
@@ -114,7 +131,9 @@ import {
   type DiagEvent,
   type DiagInfo,
 } from "../lib/diag";
-import { isTauriRuntime } from "../lib/tauri";
+import { invoke, isTauriRuntime } from "../lib/tauri";
+import { API_PROVIDERS, type ApiProviderId } from "../lib/providers";
+import { setApiKey, deleteApiKey, listConfiguredProviders } from "../lib/apiKeys";
 import { checkForUpdate, installUpdate, type UpdatePhase } from "../lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
 
@@ -161,12 +180,17 @@ function Toggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="relative h-[22px] w-[38px] rounded-full border transition-colors"
+      className="press relative h-[22px] w-[38px] rounded-full border transition-all duration-200"
       style={{
-        background: checked ? "var(--color-accent)" : "var(--color-panel-2)",
+        background: checked
+          ? "var(--color-accent)"
+          : "color-mix(in srgb, var(--color-panel-2) 70%, transparent)",
         borderColor: checked
           ? "var(--color-accent)"
           : "var(--color-border-strong)",
+        boxShadow: checked
+          ? "var(--aios-glow-soft)"
+          : "inset 0 1px 0 0 var(--aios-glass-edge)",
       }}
     >
       <span
@@ -194,12 +218,14 @@ function Stepper({
   onChange: (v: number) => void;
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  const stepBtn =
+    "press grid h-6 w-6 place-items-center rounded-md text-[var(--color-text-2)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-2)]";
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 p-0.5">
+    <div className="flex items-center gap-1 rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] p-0.5 backdrop-blur-sm">
       <button
         onClick={() => onChange(clamp(value - step))}
         disabled={value <= min}
-        className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-text-2)] hover:bg-[var(--color-pane)] disabled:opacity-30"
+        className={stepBtn}
       >
         <Minus size={12} />
       </button>
@@ -210,7 +236,7 @@ function Stepper({
       <button
         onClick={() => onChange(clamp(value + step))}
         disabled={value >= max}
-        className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-text-2)] hover:bg-[var(--color-pane)] disabled:opacity-30"
+        className={stepBtn}
       >
         <Plus size={12} />
       </button>
@@ -239,9 +265,9 @@ function Slider({
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow"
+        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_28%,transparent),0_1px_3px_rgba(0,0,0,0.4)] [&::-webkit-slider-thumb]:transition-shadow hover:[&::-webkit-slider-thumb]:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-accent)_40%,transparent),0_1px_3px_rgba(0,0,0,0.4)]"
         style={{
-          background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-panel-2) ${pct}%)`,
+          background: `linear-gradient(to right, var(--color-accent) 0%, var(--aios-accent-2) ${pct}%, color-mix(in srgb, white 8%, transparent) ${pct}%)`,
         }}
       />
       <span className="w-7 text-right font-mono text-[11px] tabular-nums text-[var(--color-muted)]">
@@ -262,17 +288,21 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 p-0.5">
-      {options.map((o) => {
+    <div className="inline-flex overflow-hidden rounded-[9px] border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] backdrop-blur-sm">
+      {options.map((o, i) => {
         const active = o.value === value;
         return (
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
-            className="rounded-md px-2.5 py-1 text-[12px] transition-colors"
+            className={`press px-3 py-1.5 text-[12px] transition-colors ${
+              i > 0 ? "border-l border-[var(--aios-surface-edge)]" : ""
+            }`}
             style={{
-              background: active ? "var(--color-accent)" : "transparent",
-              color: active ? "var(--color-accent-fg)" : "var(--color-text-2)",
+              background: active
+                ? "color-mix(in srgb, var(--color-accent) 18%, transparent)"
+                : "transparent",
+              color: active ? "var(--color-text)" : "var(--color-text-2)",
             }}
           >
             {o.label}
@@ -584,14 +614,40 @@ function AppearancePreview({ fontPx }: { fontPx: number }) {
   );
 }
 
-/** A small section sub-heading inside a pane. */
+/** The card eyebrow — mono machine-voice label that sits at the top of a card. */
 function GroupLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+    <div className="px-4 pt-3 font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
       {children}
     </div>
   );
 }
+
+/** A labeled group of controls rendered as one Neon Glass card — the building
+ *  block every section is composed from. The eyebrow rides inside the card lip;
+ *  rows are separated by a whisper divider (a single custom child draws none). */
+function Card({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <section className="mb-4 last:mb-1">
+      <div className="surface-card rounded-[14px]">
+        {label && <GroupLabel>{label}</GroupLabel>}
+        <div className="flex flex-col divide-y divide-[color-mix(in_srgb,var(--color-border)_60%,transparent)] px-4">
+          {children}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Shared glass field styles — a translucent fill + accent focus-glow, so every
+   text input across the sections reads the same. Add a width per use. */
+const FIELD =
+  "glow-focus rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text)] outline-none";
+const FIELD_MONO =
+  "glow-focus rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none";
+/** Quiet glass button — the secondary action across the sections. */
+const GHOST_BTN =
+  "press flex items-center gap-1.5 rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--aios-surface-edge-strong)] hover:text-[var(--color-text)]";
 
 /* ── sections ───────────────────────────────────────────────────────── */
 
@@ -604,25 +660,57 @@ type SectionId =
   | "oracles"
   | "channels"
   | "plugins"
-  | "memory"
   | "diagnostics"
   | "shortcuts"
   | "about";
 
-const NAV: { id: SectionId; label: string; icon: ComponentType<{ size?: number }> }[] = [
-  { id: "general", label: "general", icon: SettingsIcon },
-  { id: "appearance", label: "appearance", icon: Palette },
-  { id: "sidebar", label: "sidebar", icon: PanelLeft },
-  { id: "notifications", label: "notifications", icon: Bell },
-  { id: "projects", label: "projects", icon: FolderGit2 },
-  { id: "oracles", label: "oracles", icon: Cpu },
-  { id: "channels", label: "channels", icon: Radio },
-  { id: "plugins", label: "plugins", icon: Blocks },
-  { id: "memory", label: "memory", icon: Brain },
-  { id: "diagnostics", label: "diagnostics", icon: Activity },
-  { id: "shortcuts", label: "shortcuts", icon: Keyboard },
-  { id: "about", label: "about", icon: Info },
+type NavGroup = "preferences" | "workspace" | "system";
+
+type NavItem = {
+  id: SectionId;
+  label: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+  group: NavGroup;
+  /** Extra search terms so the rail filter finds a section by what's inside it. */
+  keywords?: string;
+};
+
+const NAV: NavItem[] = [
+  // preferences — how the cockpit looks + behaves for you
+  { id: "general", label: "general", icon: SettingsIcon, group: "preferences", keywords: "name startup tray socket mirror codex dictation pane reopen layout" },
+  { id: "appearance", label: "appearance", icon: Palette, group: "preferences", keywords: "theme accent color font size density motion splash top bar flash dark light" },
+  { id: "sidebar", label: "sidebar", icon: PanelLeft, group: "preferences", keywords: "rail items pin reorder icons hide" },
+  { id: "notifications", label: "notifications", icon: Bell, group: "preferences", keywords: "alerts native quiet sound soundscape effects bell" },
+  // workspace — the agents + data the cockpit drives (projects live in their own sidebar pane now)
+  { id: "oracles", label: "oracles", icon: Cpu, group: "workspace", keywords: "agent tmux session refresh interval" },
+  { id: "channels", label: "channels", icon: Radio, group: "workspace", keywords: "bridge integrations connect pair" },
+  { id: "plugins", label: "plugins", icon: Blocks, group: "workspace", keywords: "extensions blocks add-ons" },
+  // system — diagnostics, bindings, the build itself
+  { id: "diagnostics", label: "diagnostics", icon: Activity, group: "system", keywords: "logs errors events local install usage perf" },
+  { id: "shortcuts", label: "shortcuts", icon: Keyboard, group: "system", keywords: "keys bindings hotkeys chords keyboard" },
+  { id: "about", label: "about", icon: Info, group: "system", keywords: "version update github docs build" },
 ];
+
+const NAV_GROUPS: { id: NavGroup; title: string }[] = [
+  { id: "preferences", title: "preferences" },
+  { id: "workspace", title: "workspace" },
+  { id: "system", title: "system" },
+];
+
+/** One-line orientation under each section title. */
+const SECTION_BLURB: Record<SectionId, string> = {
+  general: "identity, startup, and the integrations the cockpit talks to.",
+  appearance: "theme, accent, type, and how much the cockpit moves.",
+  sidebar: "what shows in the rail, and how it's laid out.",
+  notifications: "how panes and background runs are allowed to interrupt you.",
+  projects: "the repos the homescreen offers — add, hide, or rename them.",
+  oracles: "defaults for the agents AIOS spawns into terminals.",
+  channels: "bridges to the services AIOS speaks to.",
+  plugins: "extensions that add panes and capabilities.",
+  diagnostics: "local-first event log — nothing leaves this machine.",
+  shortcuts: "every keyboard chord, straight from the live catalog.",
+  about: "build, credits, and software updates.",
+};
 
 /** A keycap chip — font-mono, raised. */
 function Keycap({ children }: { children: ReactNode }) {
@@ -710,7 +798,7 @@ function UpdateCard() {
   })();
 
   return (
-    <div className="mt-2 w-full max-w-[360px] rounded-xl border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 p-3 text-left">
+    <div className="surface-card mt-1 w-full max-w-[360px] p-3 text-left">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] font-medium text-[var(--color-text)]">software update</span>
         {phase.kind === "available" ? (
@@ -727,7 +815,7 @@ function UpdateCard() {
             type="button"
             onClick={runCheck}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-3 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
+            className={`${GHOST_BTN} disabled:opacity-50`}
           >
             <RefreshCw size={13} className={busy ? "animate-spin" : ""} /> check
           </button>
@@ -821,7 +909,7 @@ function DiagnosticsSection() {
   return (
     <div className="flex flex-col gap-4 text-[12px]">
       {/* header: install id + version + os */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 px-3 py-2">
+      <div className="surface-card flex flex-wrap items-center justify-between gap-2 px-3 py-2">
         <div className="flex flex-col gap-0.5">
           <span className="text-[11px] uppercase tracking-wide text-[var(--color-muted)]">
             install id
@@ -882,7 +970,7 @@ function DiagnosticsSection() {
         <select
           value={kindFilter}
           onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2 py-1 text-[11px] text-[var(--color-text)]"
+          className="rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
         >
           <option value="all">all kinds</option>
           <option value="error">errors</option>
@@ -892,7 +980,7 @@ function DiagnosticsSection() {
         <select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2 py-1 text-[11px] text-[var(--color-text)]"
+          className="rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
         >
           <option value="all">all sources</option>
           {sources.map((s) => (
@@ -901,15 +989,12 @@ function DiagnosticsSection() {
             </option>
           ))}
         </select>
-        <button
-          onClick={refresh}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-        >
+        <button onClick={refresh} className={`${GHOST_BTN} text-[11px]`}>
           refresh
         </button>
         <button
           onClick={clearAll}
-          className="ml-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[11px] text-[var(--color-danger)] transition-colors hover:border-[var(--color-danger)]"
+          className="press ml-auto rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[11px] text-[var(--color-danger)] transition-colors hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)]"
         >
           clear
         </button>
@@ -928,7 +1013,7 @@ function DiagnosticsSection() {
           filtered.map((ev, i) => (
             <div
               key={`${ev.ts}-${i}`}
-              className="flex flex-col gap-0.5 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/30 px-2.5 py-1.5"
+              className="surface-card flex flex-col gap-0.5 px-2.5 py-1.5"
             >
               <div className="flex items-center gap-2">
                 <span className={`font-mono text-[10px] uppercase ${kindClass(ev.kind)}`}>
@@ -955,131 +1040,684 @@ function DiagnosticsSection() {
   );
 }
 
-/* ── projects CRUD section ──────────────────────────────────────────── */
+/* ── projects (structured workspaces) section ───────────────────────── */
 
-type ProjRow = ProjectInfo & { hidden: boolean; custom: boolean };
+const ICON_BTN =
+  "press grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]";
 
-function ProjectsSection() {
-  const [scanned, setScanned] = useState<ProjectInfo[]>([]);
-  const [store, setStore] = useState(loadProjectsStore);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [dName, setDName] = useState("");
-  const [dCmd, setDCmd] = useState("");
+/** A small role / stack / status chip (mono, tinted by tone). */
+function MetaChip({
+  label,
+  tone = "muted",
+}: {
+  label: string;
+  tone?: "accent" | "cyan" | "muted" | "warn" | "wip";
+}) {
+  const tones: Record<string, { bg: string; fg: string; bd: string }> = {
+    accent: {
+      bg: "color-mix(in srgb, var(--color-accent) 16%, transparent)",
+      fg: "var(--color-accent)",
+      bd: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
+    },
+    cyan: {
+      bg: "color-mix(in srgb, var(--aios-accent-2) 14%, transparent)",
+      fg: "var(--aios-accent-2)",
+      bd: "color-mix(in srgb, var(--aios-accent-2) 38%, transparent)",
+    },
+    warn: {
+      bg: "color-mix(in srgb, var(--color-warning) 16%, transparent)",
+      fg: "var(--color-warning)",
+      bd: "color-mix(in srgb, var(--color-warning) 38%, transparent)",
+    },
+    wip: {
+      bg: "color-mix(in srgb, var(--color-success) 16%, transparent)",
+      fg: "var(--color-success)",
+      bd: "color-mix(in srgb, var(--color-success) 38%, transparent)",
+    },
+    muted: {
+      bg: "color-mix(in srgb, var(--color-panel-2) 60%, transparent)",
+      fg: "var(--color-muted)",
+      bd: "var(--color-border)",
+    },
+  };
+  const t = tones[tone];
+  return (
+    <span
+      className="shrink-0 rounded-[5px] border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide"
+      style={{ background: t.bg, color: t.fg, borderColor: t.bd }}
+    >
+      {label}
+    </span>
+  );
+}
+
+const ROLE_TONE: Record<string, "accent" | "cyan" | "muted"> = {
+  frontend: "accent",
+  fullstack: "accent",
+  backend: "cyan",
+};
+
+/** One component row — name + role/stack/status chips + path. */
+function ComponentRow({ ws, comp }: { ws: ProjectWorkspace; comp: ProjectComponent }) {
+  const supName = comp.supersedes
+    ? allComponents(ws).find((c) => c.id === comp.supersedes)?.name
+    : null;
+  const status = comp.status && comp.status !== "current" ? comp.status : null;
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="truncate text-[12.5px] text-[var(--color-text-2)]">{comp.name}</span>
+        <MetaChip label={comp.role} tone={ROLE_TONE[comp.role] ?? "muted"} />
+        {comp.stack && <MetaChip label={comp.stack} tone="muted" />}
+        {status === "wip" && <MetaChip label="wip" tone="wip" />}
+        {(status === "legacy" || status === "deprecated") && <MetaChip label={status} tone="warn" />}
+        {supName && (
+          <span className="text-[10px] text-[var(--color-faint)]">↑ replaces {supName}</span>
+        )}
+      </div>
+      <span
+        className="shrink-0 truncate font-mono text-[10px] text-[var(--color-faint)]"
+        title={comp.path}
+      >
+        {comp.path === "." ? "·" : comp.path}
+      </span>
+    </div>
+  );
+}
+
+/** Renders a workspace's structure (fullstack / split / environments). */
+function WorkspaceStructure({ ws }: { ws: ProjectWorkspace }) {
+  const st = ws.structure;
+  if (st.kind === "fullstack") return <ComponentRow ws={ws} comp={st.component} />;
+  if (st.kind === "split")
+    return (
+      <>
+        {st.components.map((c) => (
+          <ComponentRow key={c.id} ws={ws} comp={c} />
+        ))}
+      </>
+    );
+  if (st.kind === "environments")
+    return (
+      <>
+        {st.environments.map((env) => (
+          <div key={env.id} className="pt-1 first:pt-0">
+            <div className="flex items-center gap-1.5 pb-0.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                {env.name}
+              </span>
+              {env.id === st.defaultEnv && <MetaChip label="default" tone="accent" />}
+            </div>
+            <div className="border-l border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] pl-2.5">
+              {env.components.map((c) => (
+                <ComponentRow key={c.id} ws={ws} comp={c} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </>
+    );
+  return (
+    <p className="py-1 text-[11px] text-[var(--color-faint)]">
+      no recognized stack — may not be a project, or configure it manually.
+    </p>
+  );
+}
+
+/** A workspace card — name (rename) + shape badge + hide/delete + structure. */
+function WorkspaceCard({
+  ws,
+  name,
+  hidden,
+  onRescan,
+  onLaunch,
+}: {
+  ws: ProjectWorkspace;
+  name: string;
+  hidden: boolean;
+  onRescan: () => void;
+  /** when set, the card shows an "open" button → opens the launch picker. */
+  onLaunch?: () => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [ctxStatus, setCtxStatus] = useState<string | null>(null);
+  const custom = ws.source === "custom";
+  const commit = () => {
+    setWorkspaceName(ws.root, draft.trim());
+    setRenaming(false);
+  };
+  const openCtx = () => {
+    setCtxOpen((v) => !v);
+    if (preview === null) {
+      previewWorkspaceContext(ws.root)
+        .then(setPreview)
+        .catch(() => setPreview("(couldn't render preview)"));
+    }
+  };
+  const writeCtx = () => {
+    setCtxStatus("writing…");
+    generateWorkspaceContext(ws.root)
+      .then((files) => {
+        setCtxStatus(`✓ wrote ${files.join(" · ")}`);
+        onRescan();
+      })
+      .catch((e) => setCtxStatus(`failed: ${e}`));
+  };
+  return (
+    <div className="surface-card mb-2.5 px-3.5 py-2.5" style={{ opacity: hidden ? 0.5 : 1 }}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {renaming ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit();
+                if (e.key === "Escape") {
+                  setDraft(name);
+                  setRenaming(false);
+                }
+              }}
+              className={`w-[170px] ${FIELD}`}
+            />
+          ) : (
+            <span className="truncate text-[13px] font-medium text-[var(--color-text)]">{name}</span>
+          )}
+          <MetaChip label={projectShapeLabel(ws)} tone="muted" />
+          {custom && <MetaChip label="custom" tone="accent" />}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {onLaunch && (
+            <button
+              onClick={onLaunch}
+              title="open in chat or terminal"
+              className="press mr-0.5 flex items-center gap-1 rounded-md border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
+            >
+              <SquareTerminal size={12} /> open
+            </button>
+          )}
+          <button
+            onClick={openCtx}
+            title="agent context (CLAUDE.md / AGENTS.md)"
+            className={ICON_BTN}
+            style={ctxOpen ? { color: "var(--color-accent)" } : undefined}
+          >
+            <FileText size={13} />
+          </button>
+          <button
+            onClick={() => {
+              setDraft(name);
+              setRenaming((v) => !v);
+            }}
+            title="rename"
+            className={ICON_BTN}
+          >
+            <Pencil size={13} />
+          </button>
+          {custom ? (
+            <button
+              onClick={() => {
+                removeCustomWorkspace(ws.root);
+                onRescan();
+              }}
+              title="remove"
+              className="press grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+            >
+              <Trash2 size={13} />
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => setWorkspaceHidden(ws.root, !hidden)}
+                title={hidden ? "show" : "hide from home"}
+                className={ICON_BTN}
+              >
+                {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+              <button
+                onClick={() => {
+                  setWorkspaceRemoved(ws.root, true);
+                  onRescan();
+                }}
+                title="remove (e.g. a mis-scanned folder) — restorable below"
+                className="press grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--color-faint)]">{ws.root}</div>
+      <div className="mt-1.5 border-t border-[color-mix(in_srgb,var(--color-border)_55%,transparent)] pt-1">
+        <WorkspaceStructure ws={ws} />
+      </div>
+      {ctxOpen && (
+        <div className="mt-2 border-t border-[color-mix(in_srgb,var(--color-border)_55%,transparent)] pt-2">
+          <div className="flex items-center justify-between gap-2 pb-1.5">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-muted)]">
+              agent context
+            </span>
+            <button
+              onClick={writeCtx}
+              className="press flex items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
+            >
+              <FileText size={12} /> write CLAUDE.md · AGENTS.md
+            </button>
+          </div>
+          <p className="pb-1.5 text-[10px] leading-snug text-[var(--color-faint)]">
+            inserts a managed block into CLAUDE.md + AGENTS.md (your own notes are untouched) and
+            writes aios.workspace.json (git-ignored). Agents launched here read it natively.
+          </p>
+          {ctxStatus && (
+            <p
+              className="pb-1.5 text-[10px]"
+              style={{ color: ctxStatus.startsWith("failed") ? "var(--color-danger)" : "var(--color-success)" }}
+            >
+              {ctxStatus}
+            </p>
+          )}
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] p-2 font-mono text-[10px] leading-snug text-[var(--color-text-2)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {preview ?? "loading…"}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ProjectsSection({
+  onLaunch,
+}: {
+  /** when set, each workspace card shows an "open" button calling this with the ws. */
+  onLaunch?: (ws: ProjectWorkspace) => void;
+} = {}) {
+  const [scannedWs, setScannedWs] = useState<ProjectWorkspace[]>([]);
+  const [store, setStore] = useState(loadProjectWorkspacesStore);
+  const [roots, setRoots] = useState<string[]>(getScanRoots);
+  const [suggested, setSuggested] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newRoot, setNewRoot] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [nName, setNName] = useState("");
   const [nPath, setNPath] = useState("");
-  const [nCmd, setNCmd] = useState("");
+  const [regenOnChange, setRegenOnChange] = useState(() => loadSettings().regenerateContextOnChange);
+
+  const rescan = () => {
+    setLoading(true);
+    scanWorkspaces(getScanRoots())
+      .then((ws) => {
+        setScannedWs(ws);
+        // keep already-generated context fresh, if the owner opted in.
+        if (loadSettings().regenerateContextOnChange) {
+          ws.filter((w) => w.manifestPath).forEach((w) => {
+            generateWorkspaceContext(w.root).catch(() => {});
+          });
+        }
+      })
+      .catch((e) => reportDiag("settings.projects", e, { action: "scan" }))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    listProjects().then(setScanned).catch((e) => reportDiag("settings.load", e, { action: "listProjects" }));
+    rescan();
+    suggestedScanRoots().then(setSuggested).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => subscribeProjects(() => setStore(loadProjectsStore())), []);
+  useEffect(
+    () =>
+      subscribeProjectWorkspaces(() => {
+        setStore(loadProjectWorkspacesStore());
+        setRoots(getScanRoots());
+      }),
+    [],
+  );
 
-  const customRoots = new Set(store.custom.map((c) => c.root));
-  const rows: ProjRow[] = [
-    ...scanned
-      .filter((p) => !customRoots.has(p.root))
-      .map((p) => ({ ...p, hidden: store.hidden.includes(p.root), custom: false })),
-    ...store.custom.map((c) => ({ ...c, hidden: false, custom: true })),
-  ].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-
-  const effName = (p: ProjRow) => store.overrides[p.root]?.name?.trim() || p.name;
-  const effCmd = (p: ProjRow) => store.overrides[p.root]?.cmd?.trim() || p.commands[0]?.cmd || "";
-
-  const beginEdit = (p: ProjRow) => {
-    setEditing(p.root);
-    setDName(effName(p));
-    setDCmd(effCmd(p));
-  };
-  const saveEdit = (p: ProjRow) => {
-    if (p.custom) addCustomProject({ name: dName, root: p.root, cmd: dCmd });
-    else setProjectOverride(p.root, { name: dName, cmd: dCmd });
-    setEditing(null);
+  const addRoot = (r: string) => {
+    const t = r.trim();
+    if (!t) return;
+    addScanRoot(t);
+    setNewRoot("");
+    rescan();
   };
   const submitAdd = () => {
-    if (!nPath.trim()) return;
-    addCustomProject({ name: nName, root: nPath, cmd: nCmd });
+    const path = nPath.trim();
+    if (!path) return;
+    detectWorkspace(path)
+      .then((ws) => {
+        addCustomWorkspace(nName.trim() ? { ...ws, name: nName.trim() } : ws);
+        rescan();
+      })
+      .catch((e) => reportDiag("settings.projects", e, { action: "add" }));
     setNName("");
     setNPath("");
-    setNCmd("");
     setAddOpen(false);
   };
 
-  const inputCls =
-    "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-pane)] px-2 py-1 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
-  const iconBtn =
-    "grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]";
+  const customRoots = new Set(store.custom.map((c) => normRoot(c.root)));
+  const nameOf = (w: ProjectWorkspace) => store.prefs[normRoot(w.root)]?.name?.trim() || w.name;
+  // REMOVED workspaces drop out of the list entirely (vs hidden, which stays
+  // greyed); a "restore removed" affordance below brings them all back.
+  const removedCount = Object.values(store.prefs).filter((p) => p.removed).length;
+  const list = [...scannedWs.filter((w) => !customRoots.has(normRoot(w.root))), ...store.custom]
+    .filter((w) => !store.prefs[normRoot(w.root)]?.removed)
+    .map((w) => ({ ws: w, name: nameOf(w), hidden: !!store.prefs[normRoot(w.root)]?.hidden }))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+  const suggestable = suggested.filter((s) => !roots.some((r) => normRoot(r) === normRoot(s)));
+  const samplePath = isApple ? "/Users/you/Repo" : "C:\\FHE-Work";
 
   return (
     <div className="-mt-1">
-      <div className="flex items-center justify-between pb-3 pt-1">
-        <p className="text-[12px] leading-snug text-[var(--color-muted)]">
-          projects under ~/Repo are auto-found. add your own, hide ones you don't
-          use, or override a name / run command. click a project on the homescreen
-          to open a terminal there.
-        </p>
-        <button
-          onClick={() => setAddOpen((v) => !v)}
-          className="ml-3 flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+      <Card label="scan roots">
+        <div className="py-1.5">
+          <p className="pb-2 text-[11px] leading-snug text-[var(--color-muted)]">
+            folders AIOS scans for projects — each sub-folder becomes a workspace, its shape
+            (fullstack · front/back · environments) detected automatically.
+          </p>
+          {roots.length === 0 && (
+            <p className="pb-2 text-[11px] text-[var(--color-faint)]">
+              none yet — using sensible defaults. add one (e.g. {samplePath}).
+            </p>
+          )}
+          {roots.map((r) => (
+            <div key={r} className="flex items-center justify-between gap-2 py-1">
+              <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]">{r}</span>
+              <button
+                onClick={() => {
+                  removeScanRoot(r);
+                  rescan();
+                }}
+                title="remove"
+                className={ICON_BTN}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+          <div className="mt-1.5 flex items-center gap-2">
+            <input
+              value={newRoot}
+              onChange={(e) => setNewRoot(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addRoot(newRoot);
+              }}
+              placeholder={samplePath}
+              spellCheck={false}
+              className={`flex-1 ${FIELD_MONO}`}
+            />
+            <button onClick={() => addRoot(newRoot)} disabled={!newRoot.trim()} className={`${GHOST_BTN} disabled:opacity-40`}>
+              <Plus size={13} /> add
+            </button>
+            <button onClick={rescan} title="rescan" className={GHOST_BTN}>
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> rescan
+            </button>
+          </div>
+          {suggestable.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] text-[var(--color-faint)]">suggested:</span>
+              {suggestable.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => addRoot(s)}
+                  className="press rounded-md border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-text-2)] transition-colors hover:border-[var(--aios-surface-edge-strong)] hover:text-[var(--color-text)]"
+                >
+                  + {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card label="agent context">
+        <Row
+          label="keep context fresh on rescan"
+          sub="when on, workspaces that already have an aios.workspace.json get their CLAUDE.md / AGENTS.md regenerated on rescan. off → generate by hand via the context button on each workspace."
         >
+          <Toggle
+            checked={regenOnChange}
+            onChange={(v) => {
+              setRegenOnChange(v);
+              saveSettings({ regenerateContextOnChange: v });
+            }}
+          />
+        </Row>
+      </Card>
+
+      <div className="mb-1.5 mt-1 flex items-center justify-between px-1">
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)]">
+          workspaces{loading ? " · scanning…" : ` · ${list.length}`}
+        </span>
+        <button onClick={() => setAddOpen((v) => !v)} className={`${GHOST_BTN} shrink-0`}>
           <Plus size={13} /> add
         </button>
       </div>
 
       {addOpen && (
-        <div className="mb-3 flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-pane)]/50 p-3">
-          <input className={inputCls} placeholder="name (e.g. my-app)" value={nName} onChange={(e) => setNName(e.target.value)} />
-          <input className={inputCls} placeholder={isApple ? "absolute path (e.g. /Users/you/Repo/project)" : "absolute path (e.g. C:\\Users\\you\\Repo\\project)"} value={nPath} onChange={(e) => setNPath(e.target.value)} />
-          <input className={inputCls} placeholder="run command (optional, e.g. npm run dev)" value={nCmd} onChange={(e) => setNCmd(e.target.value)} />
+        <div className="surface-card mb-2.5 flex flex-col gap-2 p-3">
+          <input
+            className={`w-full ${FIELD}`}
+            placeholder="name (optional — defaults to the folder name)"
+            value={nName}
+            onChange={(e) => setNName(e.target.value)}
+          />
+          <input
+            className={`w-full ${FIELD_MONO}`}
+            placeholder={isApple ? "absolute path (e.g. /Users/you/Repo/app)" : "absolute path (e.g. C:\\FHE-Work\\App)"}
+            value={nPath}
+            onChange={(e) => setNPath(e.target.value)}
+          />
+          <p className="text-[10px] text-[var(--color-faint)]">its shape is auto-detected on add.</p>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setAddOpen(false)} className="rounded-md px-2.5 py-1 text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]">cancel</button>
-            <button onClick={submitAdd} disabled={!nPath.trim()} className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-[12px] font-medium text-[var(--color-accent-fg)] disabled:opacity-40">add project</button>
+            <button onClick={() => setAddOpen(false)} className="rounded-md px-2.5 py-1 text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]">
+              cancel
+            </button>
+            <button
+              onClick={submitAdd}
+              disabled={!nPath.trim()}
+              className="press rounded-lg bg-[var(--color-accent)] px-3 py-1 text-[12px] font-medium text-[var(--color-accent-fg)] disabled:opacity-40"
+            >
+              add project
+            </button>
           </div>
         </div>
       )}
 
-      <div className="max-h-[330px] overflow-y-auto">
-        {rows.length === 0 && <p className="py-6 text-center text-[12px] text-[var(--color-faint)]">no projects found</p>}
-        {rows.map((p) => (
-          <div key={p.root} className="border-b border-[var(--color-border)] py-2 last:border-0">
-            {editing === p.root ? (
-              <div className="flex flex-col gap-2">
-                <input className={inputCls} placeholder="name" value={dName} onChange={(e) => setDName(e.target.value)} />
-                <input className={inputCls} placeholder="run command" value={dCmd} onChange={(e) => setDCmd(e.target.value)} />
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setEditing(null)} className="rounded-md px-2.5 py-1 text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)]">cancel</button>
-                  <button onClick={() => saveEdit(p)} className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-[12px] font-medium text-[var(--color-accent-fg)]">save</button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 flex-col">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px]" style={{ color: p.hidden ? "var(--color-faint)" : "var(--color-text-2)" }}>{effName(p)}</span>
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-[var(--color-faint)]">{p.kind}</span>
-                    {p.custom && <span className="shrink-0 rounded-sm bg-[var(--color-accent-soft)] px-1 text-[9px] text-[var(--color-accent)]">custom</span>}
-                  </div>
-                  <span className="truncate font-mono text-[10px] text-[var(--color-faint)]">{p.root}</span>
-                  {effCmd(p) && <span className="truncate font-mono text-[10px] text-[var(--color-muted)]">▶ {effCmd(p)}</span>}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button onClick={() => beginEdit(p)} title="edit name / run command" className={iconBtn}><Pencil size={13} /></button>
-                  {p.custom ? (
-                    <button onClick={() => removeCustomProject(p.root)} title="delete" className="grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"><Trash2 size={13} /></button>
-                  ) : (
-                    <button onClick={() => setProjectHidden(p.root, !p.hidden)} title={p.hidden ? "show" : "hide"} className={iconBtn}>{p.hidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {!loading && list.length === 0 && (
+        <p className="py-6 text-center text-[12px] text-[var(--color-faint)]">
+          no projects found — add a scan root above.
+        </p>
+      )}
+      {list.map(({ ws, name, hidden }) => (
+        <WorkspaceCard
+          key={ws.root}
+          ws={ws}
+          name={name}
+          hidden={hidden}
+          onRescan={rescan}
+          onLaunch={onLaunch ? () => onLaunch(ws) : undefined}
+        />
+      ))}
+      {removedCount > 0 && (
+        <div className="mt-1 flex items-center justify-between gap-2 px-1 py-1 text-[11px] text-[var(--color-faint)]">
+          <span>
+            {removedCount} removed workspace{removedCount === 1 ? "" : "s"} hidden from the list
+          </span>
+          <button
+            onClick={() => {
+              restoreAllRemoved();
+              rescan();
+            }}
+            className={GHOST_BTN}
+          >
+            <RotateCcw size={12} /> restore removed
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── main component ─────────────────────────────────────────────────── */
+
+/** Control-plane state mirrored from Rust (control.rs ControlStatus). */
+type ControlStatus = { enabled: boolean; running: boolean; port: number };
+
+/** Agent control (Tier 2): toggle the localhost control plane that lets an
+ *  external oracle drive AIOS via the aios-control MCP. Backed by RUST state (the
+ *  server owns the on/off + token + persisted choice), not localStorage — so this
+ *  reads/writes it over `invoke`. Hidden on the web shell and on builds that
+ *  predate the commands (the status invoke rejects → card stays hidden). */
+function AgentControlCard() {
+  const [status, setStatus] = useState<ControlStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let alive = true;
+    // a rejection here = the command isn't in this binary yet → leave the card
+    // hidden (status stays null) rather than showing a dead toggle.
+    invoke<ControlStatus>("aios_control_status")
+      .then((st) => alive && setStatus(st))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!isTauriRuntime() || status === null) return null;
+  const toggle = (on: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    invoke<ControlStatus>("aios_set_control", { on })
+      .then(setStatus)
+      .catch(() => setErr("couldn't update — is this a current build?"))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Card label="agent control">
+      <Row
+        label="allow agent control"
+        sub="let an external agent (the aios-control MCP) drive this cockpit — open panes, run terminals, read state — over a localhost-only, token-gated server. Off by default; enabling starts it immediately, no restart."
+      >
+        <Toggle checked={status.enabled} onChange={toggle} />
+      </Row>
+      {status.enabled && (
+        <Row
+          label="endpoint"
+          sub="discovery files: ~/.aios/control-token + ~/.aios/control-port — point the aios-control MCP at them, then ask your oracle to drive the app"
+        >
+          <span className="font-mono text-[11px] text-[var(--color-muted)] tabular-nums">
+            {status.running && status.port ? `127.0.0.1:${status.port}` : "starting…"}
+          </span>
+        </Row>
+      )}
+      {err && (
+        <div className="px-0.5 pt-1 text-[11px] text-[var(--color-danger)]">{err}</div>
+      )}
+    </Card>
+  );
+}
+
+/** BYO-key API keys (Tier 4): paste a provider key → stored in the OS keychain
+ *  (never plaintext), and that provider's models then appear in the composer's
+ *  picker. Keys are write-only from here — never read back into the UI. Hidden on
+ *  the web shell / builds without the commands. */
+function ApiKeysCard() {
+  const [configured, setConfigured] = useState<Set<string> | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const refresh = () =>
+    listConfiguredProviders()
+      .then(setConfigured)
+      .catch(() => setConfigured(new Set()));
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    void refresh();
+  }, []);
+  if (!isTauriRuntime() || configured === null) return null;
+  const keyed = API_PROVIDERS.filter((p) => !p.keyless);
+  const save = (id: ApiProviderId) => {
+    const key = (drafts[id] ?? "").trim();
+    if (!key) return;
+    setBusy(id);
+    setApiKey(id, key)
+      .then(() => {
+        setDrafts((d) => ({ ...d, [id]: "" }));
+        return refresh();
+      })
+      .catch(() => {})
+      .finally(() => setBusy(null));
+  };
+  const clear = (id: ApiProviderId) => {
+    setBusy(id);
+    deleteApiKey(id)
+      .then(refresh)
+      .catch(() => {})
+      .finally(() => setBusy(null));
+  };
+  return (
+    <Card label="api keys · bring your own">
+      <div className="px-0.5 pb-1.5 text-[11px] leading-snug text-[var(--color-muted)]">
+        Chat on any provider's API with your own key — stored in your OS keychain, never plaintext.
+        A provider's models appear in the composer's model picker once its key is set. Ollama is
+        local and needs no key.
+      </div>
+      {keyed.map((p) => {
+        const isSet = configured.has(p.id);
+        return (
+          <Row
+            key={p.id}
+            label={p.label}
+            sub={isSet ? "key stored in your OS keychain" : p.keyUrl ? `get a key → ${p.keyUrl}` : `paste a ${p.label} key`}
+          >
+            {isSet ? (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-[var(--color-accent)]">configured</span>
+                <button
+                  type="button"
+                  disabled={busy === p.id}
+                  onClick={() => clear(p.id)}
+                  className={GHOST_BTN}
+                >
+                  clear
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="password"
+                  value={drafts[p.id] ?? ""}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") save(p.id);
+                  }}
+                  placeholder="paste key"
+                  spellCheck={false}
+                  className={`w-[170px] ${FIELD_MONO}`}
+                />
+                <button
+                  type="button"
+                  disabled={busy === p.id || !(drafts[p.id] ?? "").trim()}
+                  onClick={() => save(p.id)}
+                  className={GHOST_BTN}
+                >
+                  save
+                </button>
+              </div>
+            )}
+          </Row>
+        );
+      })}
+    </Card>
+  );
+}
 
 export function Settings({
   open,
@@ -1102,6 +1740,8 @@ export function Settings({
   onCopyMirrorUrl?: () => void;
 }) {
   const [section, setSection] = useState<SectionId>("general");
+  const [query, setQuery] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
   const [s, setS] = useState<AppSettings>(loadSettings);
   const [sidebar, setSidebar] = useState<SidebarState>(loadSidebar);
   useEffect(() => subscribeSidebar(setSidebar), []);
@@ -1112,6 +1752,8 @@ export function Settings({
   // re-sync from store each time the window opens; honor a deep-linked section.
   useEffect(() => {
     if (open) {
+      setQuery("");
+      setConfirmReset(false);
       setS(loadSettings());
       setLocalTheme(getTheme());
       setLocalAccent(getAccent());
@@ -1171,11 +1813,43 @@ export function Settings({
     const c = navRowsRef.current;
     if (!c) return;
     const el = c.querySelector<HTMLElement>(`[data-nav-id="${section}"]`);
-    if (el) setNavRect({ top: el.offsetTop, height: el.offsetHeight });
-  }, [section, open]);
+    // when a search filters the active row out of view, collapse the indicator.
+    setNavRect(el ? { top: el.offsetTop, height: el.offsetHeight } : { top: 0, height: 0 });
+  }, [section, open, query]);
+
+  // rail search — match a section by its label or its keyword tags.
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (n: NavItem) =>
+    !q || n.label.includes(q) || (n.keywords ?? "").includes(q);
 
   /** Persist + update local state in one move. */
   const patch = (p: Partial<AppSettings>) => setS(saveSettings(p));
+
+  /** Reset behavioral / appearance / notification prefs to defaults — but keep
+   *  identity, engine choice, and onboarding state so a reset never re-triggers
+   *  first-run or forgets who you are. */
+  const doResetAll = () => {
+    const cur = loadSettings();
+    const next = saveSettings({
+      ...DEFAULT_SETTINGS,
+      userName: cur.userName,
+      onboardingComplete: cur.onboardingComplete,
+      onboardedAt: cur.onboardedAt,
+      chatProvider: cur.chatProvider,
+      chatModel: cur.chatModel,
+      chatEffort: cur.chatEffort,
+      chatAccess: cur.chatAccess,
+      chatContextBudget: cur.chatContextBudget,
+      defaultAi: cur.defaultAi,
+    });
+    setS(next);
+    applyFontScale(next.terminalFontSize);
+    applyReduceMotion(next.reduceMotion);
+    applyFlashLevel(next.flashLevel);
+    applyDensity("comfortable");
+    setLocalDensity("comfortable");
+    setConfirmReset(false);
+  };
 
   // Exit motion — AnimatePresence + fx/motionTokens (the component stays
   // mounted by App after first open so the exit can play; all content below
@@ -1195,39 +1869,115 @@ export function Settings({
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
-        className="glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
+        className="glass-strong flex h-[600px] w-[900px] max-w-full overflow-hidden rounded-[18px] shadow-[var(--aios-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
         {/* nav rail */}
-        <nav className="flex w-[180px] shrink-0 flex-col gap-0.5 border-r border-[var(--color-border)] bg-[var(--color-bg)]/40 p-2">
-          <div className="flex items-center gap-2 px-2 py-2.5">
-            <img src="/mascot.png" alt="" className="h-5 w-5 rounded-full object-cover" />
-            <span className="text-[12px] font-medium text-[var(--color-text)]">settings</span>
+        <nav className="relative flex w-[236px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_55%,transparent)] backdrop-blur-md">
+          {/* the signature gradient edge running down the rail's right border */}
+          <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-[linear-gradient(180deg,transparent,var(--color-accent)_40%,var(--aios-accent-2)_75%,transparent)] opacity-50" />
+
+          {/* brand — gradient diamond + wordmark */}
+          <div className="flex items-center gap-2.5 px-4 pb-3.5 pt-4">
+            <span
+              className="h-[22px] w-[22px] rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]"
+              style={{ boxShadow: "0 0 14px -2px color-mix(in srgb, var(--color-accent) 45%, transparent)" }}
+            />
+            <span className="text-[15px] font-semibold lowercase tracking-tight text-[var(--color-text)]">
+              settings
+            </span>
           </div>
+
+          {/* search — matches a section by label or by what's inside it */}
+          <div className="relative mx-3 mb-3">
+            <Search
+              size={12}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-faint)]"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search settings…"
+              spellCheck={false}
+              className="glow-focus w-full rounded-[9px] border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] py-1.5 pl-7 pr-6 text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="clear search"
+                className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-[var(--color-faint)] transition-colors hover:text-[var(--color-text)]"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+
           {/* rows wrapper is `relative` so the gliding indicator can sit behind
               the buttons and animate to the active row's measured offset */}
-          <div ref={navRowsRef} className="relative flex flex-col gap-0.5">
-            <SlidingIndicator
-              top={navRect.top}
-              height={navRect.height}
-              className="rounded-lg bg-[var(--color-accent-soft)]"
-            />
-            {NAV.map(({ id, label, icon: Icon }) => {
-              const active = id === section;
+          <div
+            ref={navRowsRef}
+            className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {!q && navRect.height > 0 && (
+              <SlidingIndicator
+                top={navRect.top}
+                height={navRect.height}
+                className="rounded-[9px] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),color-mix(in_srgb,var(--color-accent)_4%,transparent))] shadow-[inset_2px_0_0_var(--color-accent),0_0_22px_-10px_var(--aios-glow-accent)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-accent)_34%,transparent)]"
+              />
+            )}
+            {NAV_GROUPS.map((group, gi) => {
+              const items = NAV.filter((n) => n.group === group.id && matchesQuery(n));
+              if (!items.length) return null;
               return (
-                <button
-                  key={id}
-                  data-nav-id={id}
-                  onClick={() => setSection(id)}
-                  className="relative z-10 flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors"
-                  style={{ color: active ? "var(--color-accent)" : "var(--color-text-2)" }}
-                >
-                  <Icon size={14} />
-                  {label}
-                </button>
+                <div key={group.id} className="flex flex-col gap-0.5">
+                  {!q && (
+                    <div
+                      className={`px-2 pb-1 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)] ${gi === 0 ? "pt-1" : "pt-3"}`}
+                    >
+                      {group.title}
+                    </div>
+                  )}
+                  {items.map(({ id, label, icon: Icon }) => {
+                    const active = id === section;
+                    return (
+                      <button
+                        key={id}
+                        data-nav-id={id}
+                        onClick={() => {
+                          setSection(id);
+                          setQuery("");
+                        }}
+                        className="relative z-10 flex items-center gap-2.5 rounded-[9px] border border-transparent px-2.5 py-2 text-left text-[13px] transition-colors hover:border-[var(--color-border)] hover:bg-[color-mix(in_srgb,white_3%,transparent)]"
+                        style={{
+                          color: active ? "var(--color-text)" : "var(--color-text-2)",
+                          background:
+                            q && active
+                              ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                              : undefined,
+                        }}
+                      >
+                        <Icon
+                          size={15}
+                          className={active ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}
+                        />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
+            {q && !NAV.some(matchesQuery) && (
+              <div className="px-2 py-3 text-[11px] leading-snug text-[var(--color-faint)]">
+                nothing matches “{query}”.
+              </div>
+            )}
+          </div>
+
+          {/* footer — build line, mono + faint, capped by a hairline */}
+          <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
+            AIOS · v1.0.0 · Jul.Nazz
           </div>
         </nav>
 
@@ -1253,147 +2003,157 @@ export function Settings({
               </Suspense>
             </div>
           ) : (
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <h2 className="mb-3 text-[15px] font-medium lowercase text-[var(--color-text)]">
-              {section}
-            </h2>
-            <div className="divide-y divide-[var(--color-border)]">
+          <div className="flex-1 overflow-y-auto px-6 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <header className="mb-5">
+              <h2 className="text-[18px] font-semibold lowercase tracking-tight text-[var(--color-text)]">
+                {section}
+              </h2>
+              <p className="mt-1 text-[12.5px] leading-snug text-[var(--color-muted)]">
+                {SECTION_BLURB[section]}
+              </p>
+            </header>
+            <div>
               {section === "general" && (
                 <>
-                  <Row
-                    label="your name"
-                    sub="shown in the homescreen greeting + account row"
-                  >
-                    <input
-                      value={s.userName}
-                      onChange={(e) => patch({ userName: e.target.value })}
-                      placeholder="your name"
-                      spellCheck={false}
-                      className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </Row>
-                  <Row
-                    label="setup"
-                    sub="replay the first-run onboarding"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => window.dispatchEvent(new Event("aios:replay-onboarding"))}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-                    >
-                      replay setup
-                    </button>
-                  </Row>
-                  <Row
-                    label="reopen last layout"
-                    sub="restore your panes + sizes on startup"
-                  >
-                    <Toggle
-                      checked={s.reopenLastLayout}
-                      onChange={(v) => patch({ reopenLastLayout: v })}
-                    />
-                  </Row>
-                  <Row
-                    label="terminal socket"
-                    sub="private tmux/psmux namespace for AIOS's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
-                  >
-                    <input
-                      value={s.terminalSocket}
-                      onChange={(e) => patch({ terminalSocket: e.target.value })}
-                      placeholder="aios"
-                      spellCheck={false}
-                      className="w-[230px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </Row>
-                  <Row
-                    label="minimize to tray"
-                    sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
-                  >
-                    <Toggle
-                      checked={s.minimizeToTray}
-                      onChange={(v) => patch({ minimizeToTray: v })}
-                    />
-                  </Row>
-                  <Row
-                    label="show codex usage"
-                    sub="the codex (chatgpt-sub) usage block reads ~/.codex/auth.json — turn off to hide it (e.g. if that token isn't yours); when off it isn't fetched at all"
-                  >
-                    <Toggle
-                      checked={s.showCodexUsage}
-                      onChange={(v) => patch({ showCodexUsage: v })}
-                    />
-                  </Row>
-                  <Row
-                    label="dictation server"
-                    sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
-                  >
-                    <input
-                      value={s.whisperUrl}
-                      onChange={(e) => patch({ whisperUrl: e.target.value })}
-                      placeholder="http://localhost:9000/inference"
-                      spellCheck={false}
-                      className="w-[230px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </Row>
-                  <Row
-                    label="confirm before closing oracle pane"
-                    sub="ask before killing a live oracle session"
-                  >
-                    <Toggle
-                      checked={s.confirmCloseOraclePane}
-                      onChange={(v) => patch({ confirmCloseOraclePane: v })}
-                    />
-                  </Row>
-                  <Row label="default new-pane type">
-                    <Segmented<PaneType>
-                      value={s.defaultPaneType}
-                      onChange={(v) => patch({ defaultPaneType: v })}
-                      options={[
-                        { value: "terminal", label: "terminal" },
-                        { value: "files", label: "files" },
-                        { value: "browser", label: "browser" },
-                      ]}
-                    />
-                  </Row>
-                  {mirrorUrl && (
+                  <Card label="you">
                     <Row
-                      label="desktop mirror link"
-                      sub={`copy the pairing link to view this cockpit elsewhere · ${mirrorStatus ?? "off"}`}
+                      label="your name"
+                      sub="shown in the homescreen greeting + account row"
                     >
+                      <input
+                        value={s.userName}
+                        onChange={(e) => patch({ userName: e.target.value })}
+                        placeholder="your name"
+                        spellCheck={false}
+                        className={`w-[160px] ${FIELD}`}
+                      />
+                    </Row>
+                    <Row label="setup" sub="replay the first-run onboarding">
                       <button
                         type="button"
-                        onClick={() => onCopyMirrorUrl?.()}
-                        className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-border-strong)]"
+                        onClick={() => window.dispatchEvent(new Event("aios:replay-onboarding"))}
+                        className={GHOST_BTN}
                       >
-                        <MonitorUp size={13} />
-                        copy link
+                        replay setup
                       </button>
                     </Row>
-                  )}
+                  </Card>
+
+                  <Card label="startup & window">
+                    <Row
+                      label="reopen last layout"
+                      sub="restore your panes + sizes on startup"
+                    >
+                      <Toggle
+                        checked={s.reopenLastLayout}
+                        onChange={(v) => patch({ reopenLastLayout: v })}
+                      />
+                    </Row>
+                    <Row
+                      label="minimize to tray"
+                      sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
+                    >
+                      <Toggle
+                        checked={s.minimizeToTray}
+                        onChange={(v) => patch({ minimizeToTray: v })}
+                      />
+                    </Row>
+                  </Card>
+
+                  <Card label="panes & oracles">
+                    <Row label="default new-pane type">
+                      <Segmented<PaneType>
+                        value={s.defaultPaneType}
+                        onChange={(v) => patch({ defaultPaneType: v })}
+                        options={[
+                          { value: "terminal", label: "terminal" },
+                          { value: "files", label: "files" },
+                          { value: "browser", label: "browser" },
+                        ]}
+                      />
+                    </Row>
+                    <Row
+                      label="confirm before closing oracle pane"
+                      sub="ask before killing a live oracle session"
+                    >
+                      <Toggle
+                        checked={s.confirmCloseOraclePane}
+                        onChange={(v) => patch({ confirmCloseOraclePane: v })}
+                      />
+                    </Row>
+                  </Card>
+
+                  <Card label="integrations">
+                    <Row
+                      label="terminal socket"
+                      sub="private tmux/psmux namespace for AIOS's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
+                    >
+                      <input
+                        value={s.terminalSocket}
+                        onChange={(e) => patch({ terminalSocket: e.target.value })}
+                        placeholder="aios"
+                        spellCheck={false}
+                        className={`w-[230px] ${FIELD_MONO}`}
+                      />
+                    </Row>
+                    <Row
+                      label="dictation server"
+                      sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
+                    >
+                      <input
+                        value={s.whisperUrl}
+                        onChange={(e) => patch({ whisperUrl: e.target.value })}
+                        placeholder="http://localhost:9000/inference"
+                        spellCheck={false}
+                        className={`w-[230px] ${FIELD_MONO}`}
+                      />
+                    </Row>
+                    <Row
+                      label="show codex usage"
+                      sub="the codex (chatgpt-sub) usage block reads ~/.codex/auth.json — turn off to hide it (e.g. if that token isn't yours); when off it isn't fetched at all"
+                    >
+                      <Toggle
+                        checked={s.showCodexUsage}
+                        onChange={(v) => patch({ showCodexUsage: v })}
+                      />
+                    </Row>
+                    {mirrorUrl && (
+                      <Row
+                        label="desktop mirror link"
+                        sub={`copy the pairing link to view this cockpit elsewhere · ${mirrorStatus ?? "off"}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onCopyMirrorUrl?.()}
+                          className={GHOST_BTN}
+                        >
+                          <MonitorUp size={13} />
+                          copy link
+                        </button>
+                      </Row>
+                    )}
+                  </Card>
+
+                  <AgentControlCard />
+                  <ApiKeysCard />
                 </>
               )}
 
               {section === "appearance" && (
-                <div className="-mt-1 divide-y divide-[var(--color-border)]">
-                  {/* theme */}
-                  <div className="py-3">
-                    <div className="mb-2">
-                      <div className="text-[13px] text-[var(--color-text)]">theme</div>
-                      <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-muted)]">
+                <>
+                  <Card label="theme">
+                    <div className="py-3">
+                      <div className="mb-2 text-[11px] leading-snug text-[var(--color-muted)]">
                         use light, dark, or match your system
                       </div>
+                      <ThemePicker
+                        value={theme}
+                        onChange={(t) => {
+                          setTheme(t);
+                          setLocalTheme(t);
+                        }}
+                      />
                     </div>
-                    <ThemePicker
-                      value={theme}
-                      onChange={(t) => {
-                        setTheme(t);
-                        setLocalTheme(t);
-                      }}
-                    />
-                  </div>
-
-                  {/* accent */}
-                  <div className="py-3">
                     <Row
                       label="accent"
                       sub="pick a preset or any custom color — re-tints the whole cockpit instantly"
@@ -1406,16 +2166,15 @@ export function Settings({
                         }}
                       />
                     </Row>
-                  </div>
+                  </Card>
 
-                  {/* live preview */}
-                  <div className="py-3">
-                    <GroupLabel>preview</GroupLabel>
-                    <AppearancePreview fontPx={s.terminalFontSize} />
-                  </div>
+                  <Card label="preview">
+                    <div className="py-3">
+                      <AppearancePreview fontPx={s.terminalFontSize} />
+                    </div>
+                  </Card>
 
-                  {/* text size */}
-                  <div className="py-1">
+                  <Card label="type & density">
                     <Row
                       label="text size"
                       sub="base size for terminal + chat — scales the cockpit"
@@ -1443,77 +2202,76 @@ export function Settings({
                         />
                       </div>
                     </Row>
-                  </div>
+                    <Row label="density" sub="how tight the cockpit packs">
+                      <Segmented<Density>
+                        value={density}
+                        onChange={(d) => {
+                          applyDensity(d);
+                          setLocalDensity(d);
+                        }}
+                        options={[
+                          { value: "comfortable", label: "comfortable" },
+                          { value: "compact", label: "compact" },
+                        ]}
+                      />
+                    </Row>
+                  </Card>
 
-                  {/* density */}
-                  <Row label="density" sub="how tight the cockpit packs">
-                    <Segmented<Density>
-                      value={density}
-                      onChange={(d) => {
-                        applyDensity(d);
-                        setLocalDensity(d);
-                      }}
-                      options={[
-                        { value: "comfortable", label: "comfortable" },
-                        { value: "compact", label: "compact" },
-                      ]}
-                    />
-                  </Row>
-
-                  {/* toggles */}
-                  <Row label="splash on launch" sub="show the mascot boot screen">
-                    <Toggle
-                      checked={s.splashOnLaunch}
-                      onChange={(v) => patch({ splashOnLaunch: v })}
-                    />
-                  </Row>
-                  <Row
-                    label="composer flash"
-                    sub="ambient motion on the prompt box — calm is minimal, max adds a rotating rim + aurora"
-                  >
-                    <Segmented<FlashLevel>
-                      value={s.flashLevel}
-                      onChange={(v) => {
-                        patch({ flashLevel: v });
-                        applyFlashLevel(v);
-                      }}
-                      options={[
-                        { value: "calm", label: "calm" },
-                        { value: "lush", label: "lush" },
-                        { value: "max", label: "max" },
-                      ]}
-                    />
-                  </Row>
-                  <Row label="top bar" sub="show brand chrome, compact controls, or hide it">
-                    <Segmented<TopBarMode>
-                      value={s.topBarMode}
-                      onChange={(v) => patch({ topBarMode: v })}
-                      options={[
-                        { value: "full", label: "full" },
-                        { value: "compact", label: "compact" },
-                        { value: "hidden", label: "hidden" },
-                      ]}
-                    />
-                  </Row>
-                  <Row label="reduce motion" sub="cut animations + transitions">
-                    <Toggle
-                      checked={s.reduceMotion}
-                      onChange={(v) => {
-                        patch({ reduceMotion: v });
-                        applyReduceMotion(v);
-                      }}
-                    />
-                  </Row>
-                </div>
+                  <Card label="chrome & motion">
+                    <Row label="splash on launch" sub="show the mascot boot screen">
+                      <Toggle
+                        checked={s.splashOnLaunch}
+                        onChange={(v) => patch({ splashOnLaunch: v })}
+                      />
+                    </Row>
+                    <Row
+                      label="composer flash"
+                      sub="ambient motion on the prompt box — calm is minimal, max adds a rotating rim + aurora"
+                    >
+                      <Segmented<FlashLevel>
+                        value={s.flashLevel}
+                        onChange={(v) => {
+                          patch({ flashLevel: v });
+                          applyFlashLevel(v);
+                        }}
+                        options={[
+                          { value: "calm", label: "calm" },
+                          { value: "lush", label: "lush" },
+                          { value: "max", label: "max" },
+                        ]}
+                      />
+                    </Row>
+                    <Row label="top bar" sub="show brand chrome, compact controls, or hide it">
+                      <Segmented<TopBarMode>
+                        value={s.topBarMode}
+                        onChange={(v) => patch({ topBarMode: v })}
+                        options={[
+                          { value: "full", label: "full" },
+                          { value: "compact", label: "compact" },
+                          { value: "hidden", label: "hidden" },
+                        ]}
+                      />
+                    </Row>
+                    <Row label="reduce motion" sub="cut animations + transitions">
+                      <Toggle
+                        checked={s.reduceMotion}
+                        onChange={(v) => {
+                          patch({ reduceMotion: v });
+                          applyReduceMotion(v);
+                        }}
+                      />
+                    </Row>
+                  </Card>
+                </>
               )}
 
               {section === "sidebar" && (
-                <div className="-mt-1">
-                  <p className="pb-3 pt-1 text-[12px] leading-snug text-[var(--color-muted)]">
+                <>
+                  <p className="mb-3 text-[12px] leading-snug text-[var(--color-muted)]">
                     show or hide rail items. drag to reorder them right in the
                     sidebar. pinned sites can be unpinned here or via their ⋯ menu.
                   </p>
-                  <div className="mb-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/25 p-3">
+                  <Card label="layout">
                     <Row label="rail style" sub="full labels or compact icons only">
                       <Segmented<SidebarMode>
                         value={s.sidebarMode}
@@ -1524,124 +2282,126 @@ export function Settings({
                         ]}
                       />
                     </Row>
-                  </div>
-                  {sidebar.items.map((it) => {
-                    const isLink = it.kind.type === "link";
-                    const app = it.kind.type === "app" ? SPAWN_BY_ID[it.kind.appId] : undefined;
-                    const Icon = app?.icon ?? PanelLeft;
-                    return (
-                      <div
-                        key={it.id}
-                        className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] py-2 last:border-0"
-                      >
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          {isLink && it.faviconUrl ? (
-                            <img src={it.faviconUrl} alt="" className="h-4 w-4 shrink-0 rounded-sm" />
-                          ) : (
-                            <Icon size={14} className="shrink-0 text-[var(--color-muted)]" />
-                          )}
-                          <span
-                            className="truncate text-[13px]"
-                            style={{
-                              color: it.hidden ? "var(--color-faint)" : "var(--color-text-2)",
-                            }}
-                          >
-                            {it.label}
-                          </span>
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
-                            {it.group}
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {isLink ? (
-                            <button
-                              onClick={() => removeItem(it.id)}
-                              title="unpin"
-                              className="grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+                  </Card>
+                  <Card label="rail items">
+                    {sidebar.items.map((it) => {
+                      const isLink = it.kind.type === "link";
+                      const app = it.kind.type === "app" ? SPAWN_BY_ID[it.kind.appId] : undefined;
+                      const Icon = app?.icon ?? PanelLeft;
+                      return (
+                        <div
+                          key={it.id}
+                          className="flex items-center justify-between gap-3 py-2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            {isLink && it.faviconUrl ? (
+                              <img src={it.faviconUrl} alt="" className="h-4 w-4 shrink-0 rounded-sm" />
+                            ) : (
+                              <Icon size={14} className="shrink-0 text-[var(--color-muted)]" />
+                            )}
+                            <span
+                              className="truncate text-[13px]"
+                              style={{
+                                color: it.hidden ? "var(--color-faint)" : "var(--color-text-2)",
+                              }}
                             >
-                              <Trash2 size={13} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => toggleHidden(it.id, !it.hidden)}
-                              title={it.hidden ? "show" : "hide"}
-                              className="grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-                            >
-                              {it.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                            </button>
-                          )}
+                              {it.label}
+                            </span>
+                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
+                              {it.group}
+                            </span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {isLink ? (
+                              <button
+                                onClick={() => removeItem(it.id)}
+                                title="unpin"
+                                className="grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-danger)]"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => toggleHidden(it.id, !it.hidden)}
+                                title={it.hidden ? "show" : "hide"}
+                                className="grid h-7 w-7 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+                              >
+                                {it.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  <div className="flex justify-end pt-3">
-                    <button
-                      onClick={() => resetSidebar()}
-                      className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-3 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-                    >
+                      );
+                    })}
+                  </Card>
+                  <div className="flex justify-end pt-1">
+                    <button onClick={() => resetSidebar()} className={`${GHOST_BTN} px-3 py-1.5`}>
                       <RotateCcw size={13} />
                       reset sidebar to default
                     </button>
                   </div>
-                </div>
+                </>
               )}
 
               {section === "notifications" && (
-                <div className="-mt-1">
-                  <p className="pb-3 pt-1 text-[12px] leading-snug text-[var(--color-muted)]">
-                    control how panes and background runs interrupt you. the shell notification center always keeps a local history.
-                  </p>
-                  <Row label="native alerts" sub="macos notifications outside the shell">
-                    <Segmented<NotificationNativeMode>
-                      value={s.notificationNativeMode}
-                      onChange={(v) => patch({ notificationNativeMode: v })}
-                      options={[
-                        { value: "important", label: "important" },
-                        { value: "all", label: "all" },
-                        { value: "off", label: "off" },
-                      ]}
-                    />
-                  </Row>
-                  <Row label="quiet mode" sub="keep events in the bell without interrupting">
-                    <Toggle
-                      checked={s.notificationQuietMode}
-                      onChange={(v) => patch({ notificationQuietMode: v })}
-                    />
-                  </Row>
-                  <Row label="soundscape" sub="whisper-quiet cues when a run finishes or fails (synthesized, off by default)">
-                    <Toggle checked={s.soundscape} onChange={(v) => patch({ soundscape: v })} />
-                  </Row>
-                  <Row label="playful effects" sub="click sparks, the pet's confetti on a long clean run, the liveness ripple — reduce-motion always wins">
-                    <Toggle checked={s.funFx} onChange={(v) => patch({ funFx: v })} />
-                  </Row>
-                  <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/25 p-3">
-                    <div className="text-[11px] font-medium text-[var(--color-text)]">next control layer</div>
-                    <p className="mt-1 text-[11px] leading-snug text-[var(--color-muted)]">
-                      per-pane mute, importance, quiet hours, and action buttons will plug into the same notification center.
-                    </p>
-                  </div>
-                </div>
-              )}
+                <>
+                  <Card label="alerts">
+                    <Row label="native alerts" sub="os notifications outside the cockpit window">
+                      <Segmented<NotificationNativeMode>
+                        value={s.notificationNativeMode}
+                        onChange={(v) => patch({ notificationNativeMode: v })}
+                        options={[
+                          { value: "important", label: "important" },
+                          { value: "all", label: "all" },
+                          { value: "off", label: "off" },
+                        ]}
+                      />
+                    </Row>
+                    <Row label="quiet mode" sub="hold events in the bell without interrupting">
+                      <Toggle
+                        checked={s.notificationQuietMode}
+                        onChange={(v) => patch({ notificationQuietMode: v })}
+                      />
+                    </Row>
+                  </Card>
 
-              {section === "projects" && <ProjectsSection />}
+                  <Card label="sound & motion">
+                    <Row
+                      label="soundscape"
+                      sub="a whisper-quiet cue when a run lands or fails — synthesized, off by default"
+                    >
+                      <Toggle checked={s.soundscape} onChange={(v) => patch({ soundscape: v })} />
+                    </Row>
+                    <Row
+                      label="playful effects"
+                      sub="click sparks, confetti on a long clean run, the liveness ripple — reduce-motion still wins"
+                    >
+                      <Toggle checked={s.funFx} onChange={(v) => patch({ funFx: v })} />
+                    </Row>
+                  </Card>
+                </>
+              )}
 
               {section === "diagnostics" && <DiagnosticsSection />}
 
               {section === "oracles" && (
-                <>
+                <Card label="agents">
                   <Row
                     label="default oracle name"
-                    sub="identity for the one-tap 'spawn an oracle' shortcut (aios-<id>); blank → your name, else 'agent'. Oracles share the terminal socket (see general settings)."
+                    sub="identity for the one-tap “spawn an oracle” shortcut (aios-<id>) — blank uses your name, else “agent”. shares the terminal socket set in general."
                   >
                     <input
                       value={s.primaryOracleId}
                       onChange={(e) => patch({ primaryOracleId: e.target.value })}
                       placeholder="agent"
                       spellCheck={false}
-                      className="w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                      className={`w-[160px] ${FIELD_MONO}`}
                     />
                   </Row>
-                  <Row label="auto-refresh interval">
+                  <Row
+                    label="auto-refresh interval"
+                    sub="how often the roster re-reads live sessions"
+                  >
                     <Stepper
                       value={s.autoRefreshSeconds}
                       min={5}
@@ -1660,37 +2420,17 @@ export function Settings({
                       onChange={(v) => patch({ showNonAiosSessions: v })}
                     />
                   </Row>
-                </>
-              )}
-
-              {section === "memory" && (
-                <>
-                  <Row label="vault path" sub="read-only — where memories live">
-                    <code className="block max-w-[260px] truncate rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-muted)]">
-                      {MEMORY_VAULT_PATH}
-                    </code>
-                  </Row>
-                  <Row
-                    label="graph physics strength"
-                    sub="how hard the memory graph pulls together"
-                  >
-                    <Slider
-                      value={s.graphPhysicsStrength}
-                      onChange={(v) => patch({ graphPhysicsStrength: v })}
-                    />
-                  </Row>
-                </>
+                </Card>
               )}
 
               {section === "shortcuts" && (
-                <div className="-mt-1">
+                <>
                   {shortcutGroups().map((g) => (
-                    <div key={g.title} className="mb-3 last:mb-0">
-                      <GroupLabel>{g.title}</GroupLabel>
+                    <Card key={g.title} label={g.title}>
                       {g.items.map((sc) => (
                         <div
                           key={sc.action}
-                          className="flex items-center justify-between border-b border-[var(--color-border)] py-2.5 last:border-0"
+                          className="flex items-center justify-between gap-3 py-2.5"
                         >
                           <span className="min-w-0">
                             <span className="block text-[13px] text-[var(--color-text-2)]">{sc.action}</span>
@@ -1705,17 +2445,17 @@ export function Settings({
                           </span>
                         </div>
                       ))}
-                    </div>
+                    </Card>
                   ))}
-                </div>
+                </>
               )}
 
               {section === "about" && (
-                <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
                   <img
                     src="/mascot.png"
                     alt="aios"
-                    className="h-20 w-20 rounded-2xl object-cover shadow-lg"
+                    className="h-20 w-20 rounded-2xl object-cover shadow-[var(--aios-glow-soft)]"
                   />
                   <div>
                     <div className="text-[16px] font-medium text-[var(--color-text)]">
@@ -1728,15 +2468,41 @@ export function Settings({
                   <p className="text-[12px] text-[var(--color-text-2)]">
                     your AI co-founder&apos;s command deck
                   </p>
-                  <div className="mt-1 flex gap-2">
-                    <button className="rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-3 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]">
-                      github
-                    </button>
-                    <button className="rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-3 py-1.5 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]">
-                      docs
-                    </button>
-                  </div>
+
                   <UpdateCard />
+
+                  {/* reset preferences — restores behavioral/appearance settings to
+                      defaults, but keeps identity, engine, and onboarding state. */}
+                  <div className="surface-card mt-1 w-full max-w-[360px] px-3.5 py-3 text-left">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[var(--color-text)]">reset preferences</div>
+                        <p className="mt-0.5 text-[11px] leading-snug text-[var(--color-muted)]">
+                          appearance, behavior, and notifications back to defaults — keeps your name, engine, and chats.
+                        </p>
+                      </div>
+                      {confirmReset ? (
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            onClick={doResetAll}
+                            className="press rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]"
+                          >
+                            confirm
+                          </button>
+                          <button
+                            onClick={() => setConfirmReset(false)}
+                            className="rounded-lg px-2 py-1.5 text-[12px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+                          >
+                            cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmReset(true)} className={`${GHOST_BTN} shrink-0`}>
+                          <RotateCcw size={13} /> reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

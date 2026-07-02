@@ -28,6 +28,7 @@
  */
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "./tauri";
+import { apiProvider, isApiProviderId, type ApiProviderId } from "./providers";
 
 /** Options for starting a chat session. All optional. */
 export interface ChatStartOpts {
@@ -161,6 +162,11 @@ export interface ChatEvent {
     }>;
     usage?: Record<string, unknown>;
   };
+  // Set on assistant/user events emitted by a sub-agent (Task tool): the tool_use
+  // id of the parent Task that spawned it. Lets the renderer nest a sub-agent's
+  // tool calls under the Agent row instead of dumping them flat. Top-level on the
+  // envelope (NOT on the content block). Absent on main-agent events.
+  parent_tool_use_id?: string;
   // stream_event (partial / token streaming)
   event?: {
     type: string; // "content_block_delta" | "content_block_start" | ...
@@ -215,12 +221,16 @@ export type ApprovalDecision = "allow" | "allow_always" | "deny";
 
 /** One selectable chat model in the composer's model picker. */
 export interface ChatModel {
-  /** Value passed to the engine (claude `--model`, codex/opencode `-m`). */
+  /** Value passed to the engine (claude `--model`, codex/opencode `-m`, or the
+   *  native model id for a BYO-key API provider). */
   id: string;
   /** Display label. */
   label: string;
-  /** Which backend runs it. Omitted = claude. */
-  engine?: "claude" | "codex" | "opencode";
+  /** Which backend runs it. Omitted = claude. A CLI engine (claude/codex/opencode)
+   *  OR a BYO-key API provider id (Tier 4) — `chat_start` maps the provider id to
+   *  the API engine. NOTE: API model ids can collide with a CLI id (both Anthropic
+   *  API and the claude CLI use `claude-opus-4-8`), so identity is (engine, id). */
+  engine?: "claude" | "codex" | "opencode" | ApiProviderId;
   /** If true, shown greyed and not selectable yet. */
   disabled?: boolean;
   /** Tooltip note (e.g. availability date) shown for disabled entries. */
@@ -234,6 +244,31 @@ export interface ChatModel {
  * when the ChatGPT sub hits its rate window). Settings adds the full live
  * opencode/openrouter catalog on top of these.
  */
+/** Resolve a `ChatModel` from a stored (modelId, engine) pair — handles BOTH the
+ *  CLI catalog (`CHAT_MODELS`) and the BYO-key API providers, so a RESUMED API
+ *  chat keeps its model instead of reverting to a CLI default (which would also
+ *  re-route the turn to the wrong backend). Returns undefined if unresolvable. */
+export function resolveChatModel(
+  modelId: string | null | undefined,
+  engine: string | null | undefined,
+): ChatModel | undefined {
+  if (modelId) {
+    const cli = CHAT_MODELS.find((m) => m.id === modelId);
+    if (cli) return cli;
+  }
+  if (isApiProviderId(engine)) {
+    const prov = apiProvider(engine);
+    const m = modelId ? prov?.models.find((x) => x.id === modelId) : undefined;
+    const id = modelId ?? prov?.models[0]?.id;
+    if (id) return { id, label: m?.label ?? id, engine };
+  }
+  if (engine) {
+    const byEngine = CHAT_MODELS.find((m) => (m.engine ?? "claude") === engine);
+    if (byEngine) return byEngine;
+  }
+  return undefined;
+}
+
 export const CHAT_MODELS: ChatModel[] = [
   // ChatGPT-subscription models via Codex — no API key, no per-token billing.
   // The whole gpt-5.x family Codex serves on the sub (verified each returns a
@@ -355,22 +390,32 @@ export async function chatSend(
   id: number,
   text: string,
   imagePaths?: string[],
+  /** API-tier branching (Tier 4): the active root→leaf conversation to send,
+   *  INCLUDING this new user turn. When present the backend sends exactly this
+   *  array (the frontend owns the tree) instead of its own accumulated history;
+   *  null/omitted = the engine's normal append behavior. CLI engines ignore it. */
+  messages?: Array<{ role: string; content: string }>,
 ): Promise<void> {
   return invoke("chat_send", {
     sessionId: id,
     text,
     imagePaths: imagePaths && imagePaths.length ? imagePaths : null,
+    messages: messages && messages.length ? messages : null,
   });
 }
 
 /**
  * Steers the in-flight turn — injects a follow-up message WITHOUT interrupting
- * the model (codex `turn/steer`; the model folds it into the running turn at its
- * next step). Only codex supports true mid-turn steering; for other engines this
- * REJECTS (caller should queue the message instead). Verified live vs codex 0.135.
+ * the model (codex `turn/steer`, verified live vs 0.135; claude via a stdin
+ * soft-inject that folds in at the next step or lands as the next turn). Other
+ * engines REJECT (caller should queue the message instead).
+ *
+ * `silent` marks plumbing injections (e.g. the AskUserQuestion "wait for the
+ * user" hold): the model sees them, but they stay out of the durable history +
+ * reattach replay so resumed transcripts don't grow ghost user bubbles.
  */
-export async function chatSteer(id: number, text: string): Promise<void> {
-  return invoke("chat_steer", { sessionId: id, text });
+export async function chatSteer(id: number, text: string, silent = false): Promise<void> {
+  return invoke("chat_steer", { sessionId: id, text, silent });
 }
 
 /** Kills a chat session and frees its claude process. */
@@ -395,6 +440,8 @@ export interface ChatReattachInfo {
   model: string | null;
   /** The engine's own session uuid (claude session_id / codex threadId). */
   claude_id: string | null;
+  /** Human label the session was running under (chat_set_title); "" if unset. */
+  title: string;
 }
 
 /** Reattaches a reopened pane to a live/backgrounded session; replays the

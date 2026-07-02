@@ -54,6 +54,7 @@ fn browser_new_pane(url: &Url, profile: &Option<String>, is_popup: bool) -> Brow
     }
 }
 
+#[cfg(target_os = "macos")]
 fn standard_adblock_content_rules_json() -> String {
     let cosmetic_selectors = [
         "[id*=\"ad-\"]",
@@ -1447,6 +1448,9 @@ mod tests {
         );
     }
 
+    // The adblock rules JSON is a macOS-only (WKContentRuleList) feature, so these
+    // tests can only compile/run where that helper exists.
+    #[cfg(target_os = "macos")]
     #[test]
     fn standard_adblock_rules_are_valid_webkit_content_rules() {
         let rules = standard_adblock_content_rules_json();
@@ -1471,6 +1475,7 @@ mod tests {
         }));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn standard_adblock_rules_block_watchseries_pop_ad_network() {
         let rules = standard_adblock_content_rules_json();

@@ -1,3 +1,5 @@
+import { ALT } from "./platform.ts";
+
 export interface QueuedMessage {
   id: string;
   text: string;
@@ -194,11 +196,13 @@ export function sendContract(input: ComposerSendContractInput): ComposerSendCont
     };
   }
   if (input.streaming) {
+    const canSteer = input.engine === "codex" || input.engine === "claude";
     if (!hasPayload) {
       return {
         mode: "waiting",
         label: "running",
-        title: "type a follow-up to queue or steer",
+        // honest per engine: only claude/codex can inject mid-turn.
+        title: canSteer ? "type a follow-up to steer or queue" : "type a follow-up to queue",
         disabled: true,
       };
     }
@@ -207,6 +211,17 @@ export function sendContract(input: ComposerSendContractInput): ComposerSendCont
         mode: "steer",
         label: "steer",
         title: "inject into the running codex turn",
+        disabled: false,
+      };
+    }
+    if (input.engine === "claude") {
+      // claude has no native mid-turn steer, but its stdin accepts a user line
+      // anytime — soft-inject now (folds in at the next step / next turn, no lost
+      // work). Alt+Enter interrupts the turn and redirects instead.
+      return {
+        mode: "steer",
+        label: "steer",
+        title: `steer the running turn · ⏎ inject · ${ALT}⏎ interrupt & redirect`,
         disabled: false,
       };
     }

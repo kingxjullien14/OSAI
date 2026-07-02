@@ -1,0 +1,129 @@
+<title>AIOS — Pulse (neon data-viz redesign)</title>
+<style>
+  :root{
+    --ground:#0A0713;--void:#06040D;--text:#ECE9F7;--text-2:#C4BEDA;--muted:#8A83A3;--faint:#5C5673;
+    --accent:#A86BFF;--accent-2:#3DE8FF;--hair:rgba(255,255,255,0.08);--glass:rgba(28,20,46,0.42);
+    --glow-v:rgba(168,107,255,0.45);--ok:#46e08a;--warn:#facc15;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;} html,body{min-height:100%;}
+  body{margin:0;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 600px at 8% -10%,rgba(168,107,255,0.16),transparent 56%),
+      radial-gradient(820px 600px at 112% 10%,rgba(61,232,255,0.10),transparent 54%),var(--ground);
+    background-attachment:fixed;}
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 30px 60px;}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:24px;}
+  .top h1{font-size:20px;font-weight:600;letter-spacing:-0.01em;margin:0;display:flex;align-items:center;gap:10px;}
+  .top h1 .g{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 14px -2px var(--glow-v);}
+  .top .spacer{flex:1;}
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:rgba(255,255,255,.03);}
+  .seg span{padding:6px 12px;font-size:11.5px;color:var(--text-2);border-right:1px solid var(--hair);}
+  .seg span:last-child{border-right:none;} .seg span.on{background:rgba(168,107,255,.16);color:var(--text);}
+
+  .card{border:1px solid var(--hair);border-radius:16px;background:var(--glass);
+    -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);padding:16px;}
+  .eb{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin-bottom:10px;}
+
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr) 200px;gap:14px;margin-bottom:14px;}
+  .kpi .big{font-size:30px;font-weight:600;letter-spacing:-0.02em;line-height:1;background:linear-gradient(120deg,var(--text),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums;}
+  .kpi .lab{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px;}
+  .kpi .delta{font-size:11px;margin-top:6px;color:var(--ok);} .kpi .delta.down{color:var(--warn);}
+  .gauge{display:flex;align-items:center;gap:14px;}
+  .gauge .num{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .gauge .num small{font-size:11px;color:var(--muted);display:block;font-weight:400;font-family:var(--mono);margin-top:3px;}
+
+  .charts{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px;}
+  .legend{display:flex;gap:14px;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px;}
+  .legend i{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px;}
+
+  .bars{display:flex;flex-direction:column;gap:11px;}
+  .barrow{display:grid;grid-template-columns:96px 1fr 56px;align-items:center;gap:10px;}
+  .barrow .nm{font-size:12px;color:var(--text-2);}
+  .track{height:7px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;}
+  .track>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 10px var(--glow-v);}
+  .barrow .v{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;}
+
+  .heat{display:grid;grid-template-columns:repeat(24,1fr);gap:4px;}
+  .cell{aspect-ratio:1;border-radius:3px;background:rgba(255,255,255,.05);}
+  .days{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:8px;}
+  svg{display:block;}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <h1><span class="g"></span>Pulse</h1>
+    <div class="spacer"></div>
+    <span class="seg"><span>24h</span><span class="on">7d</span><span>30d</span></span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpis">
+    <div class="card kpi"><div class="big">1.24M</div><div class="lab">TOKENS · 7D</div><div class="delta">▲ 18% vs last week</div></div>
+    <div class="card kpi"><div class="big">$4.30</div><div class="lab">EST. COST · 7D</div><div class="delta down">▲ 9% vs last week</div></div>
+    <div class="card kpi"><div class="big">312</div><div class="lab">TURNS · 7D</div><div class="delta">▲ 24 today</div></div>
+    <div class="card kpi">
+      <div class="eb">5h window</div>
+      <div class="gauge">
+        <svg width="76" height="76" viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="30" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="7"/>
+          <circle cx="38" cy="38" r="30" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round"
+            stroke-dasharray="188.5" stroke-dashoffset="173" transform="rotate(-90 38 38)" style="filter:drop-shadow(0 0 5px var(--glow-v))"/>
+          <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A86BFF"/><stop offset="1" stop-color="#3DE8FF"/></linearGradient></defs>
+        </svg>
+        <div class="num">8%<small>used · 92% left</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- charts -->
+  <div class="charts">
+    <div class="card">
+      <div class="eb">tokens / day</div>
+      <svg width="100%" height="150" viewBox="0 0 560 150" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A86BFF" stop-opacity="0.40"/><stop offset="1" stop-color="#A86BFF" stop-opacity="0"/></linearGradient>
+          <linearGradient id="ln" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A86BFF"/><stop offset="1" stop-color="#3DE8FF"/></linearGradient>
+        </defs>
+        <path d="M0,120 L80,96 L160,104 L240,64 L320,80 L400,40 L480,56 L560,28 L560,150 L0,150 Z" fill="url(#area)"/>
+        <path d="M0,120 L80,96 L160,104 L240,64 L320,80 L400,40 L480,56 L560,28" fill="none" stroke="url(#ln)" stroke-width="2.5" stroke-linejoin="round" style="filter:drop-shadow(0 0 6px var(--glow-v))"/>
+        <circle cx="560" cy="28" r="4" fill="#3DE8FF" style="filter:drop-shadow(0 0 6px #3DE8FF)"/>
+      </svg>
+      <div class="legend"><span><i style="background:linear-gradient(90deg,#A86BFF,#3DE8FF)"></i>tokens</span><span style="margin-left:auto">peak 248K · Thu</span></div>
+    </div>
+
+    <div class="card">
+      <div class="eb">by model · 7d</div>
+      <div class="bars">
+        <div class="barrow"><span class="nm">opus 4.8</span><span class="track"><i style="width:64%"></i></span><span class="v">792K</span></div>
+        <div class="barrow"><span class="nm">sonnet 4.6</span><span class="track"><i style="width:34%"></i></span><span class="v">418K</span></div>
+        <div class="barrow"><span class="nm">gpt-5.5 codex</span><span class="track"><i style="width:14%"></i></span><span class="v">172K</span></div>
+        <div class="barrow"><span class="nm">haiku 4.5</span><span class="track"><i style="width:6%"></i></span><span class="v">74K</span></div>
+      </div>
+      <div class="eb" style="margin-top:18px">cost · by model</div>
+      <div class="bars">
+        <div class="barrow"><span class="nm">opus 4.8</span><span class="track"><i style="width:78%"></i></span><span class="v">$3.10</span></div>
+        <div class="barrow"><span class="nm">sonnet 4.6</span><span class="track"><i style="width:24%"></i></span><span class="v">$0.92</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- activity heatmap -->
+  <div class="card">
+    <div class="eb">activity · last 24h (by hour)</div>
+    <div class="heat" id="heat"></div>
+    <div class="days"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>now</span></div>
+  </div>
+</div>
+
+<script>
+  // build the heat cells with varying accent intensity (deterministic-ish pattern)
+  var h=document.getElementById('heat');
+  var w=[2,1,0,0,0,1,3,5,7,8,6,9,7,4,6,8,9,7,5,8,6,4,3,2];
+  for(var i=0;i<24;i++){
+    var v=w[i]/9; var c=document.createElement('span'); c.className='cell';
+    if(v>0.05){c.style.background='color-mix(in srgb, var(--accent) '+Math.round(v*70+10)+'%, transparent)';
+      if(v>0.6)c.style.boxShadow='0 0 8px -1px var(--glow-v)';}
+    h.appendChild(c);
+  }
+</script>

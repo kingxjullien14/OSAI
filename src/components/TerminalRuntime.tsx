@@ -47,29 +47,34 @@ import { TerminalComposer } from "./TerminalComposer";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
 
-/** AIOS orange dark palette (Tomorrow Night base). */
+/** Neon Glass terminal palette — the app's deep-violet ground + a neon ANSI set
+ *  (violet/cyan accents). cursor + selection follow the runtime accent (see
+ *  liveXtermTheme). Hex is intentional here (xterm needs concrete colors) and
+ *  this file is exempt from the design-token ratchet for exactly that reason. */
 const THEME = {
-  background: "#0a0a0c",
-  foreground: "#c5c8c6",
-  cursor: "#f97316",
-  cursorAccent: "#0a0a0c",
-  selectionBackground: "rgba(249, 115, 22, 0.30)",
-  black: "#1d1f21",
-  red: "#cc6666",
-  green: "#b5bd68",
-  yellow: "#f0c674",
-  blue: "#81a2be",
-  magenta: "#b294bb",
-  cyan: "#8abeb7",
-  white: "#c5c8c6",
-  brightBlack: "#666666",
-  brightRed: "#d54e53",
-  brightGreen: "#b9ca4a",
-  brightYellow: "#e7c547",
-  brightBlue: "#7aa6da",
-  brightMagenta: "#c397d8",
-  brightCyan: "#70c0b1",
-  brightWhite: "#eaeaea",
+  // translucent deep-void: lets the aurora layer behind the host glow through
+  // (allowTransparency must be on). ~66% opaque keeps text crisp over blooms.
+  background: "rgba(8, 5, 15, 0.66)",
+  foreground: "#C4BEDA",
+  cursor: "#A86BFF",
+  cursorAccent: "#0A0713",
+  selectionBackground: "rgba(168, 107, 255, 0.28)",
+  black: "#1A1626",
+  red: "#FF6B8B",
+  green: "#46E08A",
+  yellow: "#F5B740",
+  blue: "#60A5FA",
+  magenta: "#A86BFF",
+  cyan: "#3DE8FF",
+  white: "#C4BEDA",
+  brightBlack: "#5C5673",
+  brightRed: "#FF8BA5",
+  brightGreen: "#6BF0A5",
+  brightYellow: "#FFD27A",
+  brightBlue: "#8AC0FF",
+  brightMagenta: "#C49CFF",
+  brightCyan: "#7FF0FF",
+  brightWhite: "#ECE9F7",
 };
 
 // Cross-platform monospace stack: macOS (SF Mono/Menlo/Monaco) → modern coding
@@ -222,10 +227,10 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       // Alacritty copies the moment you finish a selection.
       rightClickSelectsWord: true,
       macOptionIsMeta: true,
-      // Our theme background is fully opaque (#0a0a0c), so transparency buys
-      // nothing visually but forces the WebGL renderer to alpha-blend every cell
-      // — off = a free perf win (smoother scroll/redraw under heavy output).
-      allowTransparency: false,
+      // Translucent theme bg → the aurora behind the host glows through (the
+      // Neon Glass "frosted terminal"). Costs a per-cell alpha-blend on the WebGL
+      // renderer, but the glass look is the point now.
+      allowTransparency: true,
       // Keep dim/low-contrast ANSI text legible on the dark bg without flattening
       // colors (1 = off; a gentle floor, not a recolor).
       minimumContrastRatio: 1.1,
@@ -814,8 +819,58 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       }}
       onDrop={onDrop}
     >
+      {/* HUD readout strip — live shell readouts (Terminal HUD mockup): status
+          dot + kind + cwd as mono stat chips. */}
+      <div className="relative z-[11] flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-accent)_6%,transparent)] px-3 py-1 backdrop-blur-md">
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              exited
+                ? "bg-[var(--color-danger)] shadow-[0_0_7px_var(--color-danger)]"
+                : "bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]"
+            }`}
+          />
+          <span className="text-[var(--color-faint)]">shell</span>
+          <b className="font-normal text-[var(--color-text-2)]">
+            {kind.type === "oracle" ? kind.identity : kind.type === "tmux" ? "tmux" : "shell"}
+          </b>
+        </span>
+        {paneCwd && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
+            <span className="text-[var(--color-faint)]">cwd</span>
+            <b className="min-w-0 max-w-[180px] truncate font-normal text-[var(--color-text-2)]" title={paneCwd}>
+              {paneCwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || paneCwd}
+            </b>
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
+          <span className="text-[var(--color-faint)]">status</span>
+          <b className="font-normal text-[var(--color-text-2)]">{exited ? "exited" : "live"}</b>
+        </span>
+      </div>
       <div className="relative min-h-0 flex-1">
-        <div ref={hostRef} className="h-full min-h-0 w-full" />
+        {/* aurora ground behind the translucent xterm — accent blooms over the
+            void, so the frosted terminal glows like the mockup glass. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            background:
+              "radial-gradient(760px 480px at 14% -12%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 56%), radial-gradient(680px 480px at 112% 116%, color-mix(in srgb, var(--aios-accent-2) 12%, transparent), transparent 54%), var(--color-bg)",
+          }}
+        />
+        <div ref={hostRef} className="relative z-[1] h-full min-h-0 w-full" />
+        {/* Terminal HUD — corner brackets + a faint accent inset ring (the HUD
+            signature). pointer-events-none + below the interactive overlays
+            (z-10), so xterm + the floating buttons stay live. (No scanline veil:
+            it shimmered/moiréd over the real xterm canvas.) */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-10">
+          <div className="absolute inset-0 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_14%,transparent)]" />
+          <span className="absolute left-1.5 top-1.5 h-4 w-4 rounded-tl-[5px] border-l-2 border-t-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+          <span className="absolute right-1.5 top-1.5 h-4 w-4 rounded-tr-[5px] border-r-2 border-t-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+          <span className="absolute bottom-1.5 left-1.5 h-4 w-4 rounded-bl-[5px] border-b-2 border-l-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+          <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-br-[5px] border-b-2 border-r-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+        </div>
         {/* B3: process-exited overlay — the shell/CLI died, so writes would
             black-hole. Tell the user + offer ⏎ restart (respawn/reattach) and
             point at ⌘W to close. Replaces the silent corpse the old code left. */}

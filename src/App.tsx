@@ -12,6 +12,8 @@ import {
 } from "react";
 
 import {
+  ArrowLeft,
+  ArrowRight,
   Bell,
   Bot,
   Camera,
@@ -19,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Code2,
   Database,
   EllipsisVertical,
   FileText,
@@ -26,11 +29,12 @@ import {
   FolderPlus,
   Globe,
   GripVertical,
-  Home,
   Layers,
+  Link2,
   Mic,
   Maximize2,
   Minimize2,
+  RotateCw,
   MessageSquare,
   MessageCircle,
   MonitorUp,
@@ -53,7 +57,16 @@ import {
 } from "lucide-react";
 
 import { recallUrl, recallPaneUrl, forgetUrl } from "./lib/browser-mem";
-import { browserOpenDevtools, setWindowFullscreen } from "./lib/browser";
+import {
+  browserBack,
+  browserCurrentUrl,
+  browserForward,
+  browserNavigate,
+  browserOpenDevtools,
+  browserReload,
+  setWindowFullscreen,
+} from "./lib/browser";
+import { PaneMenu, type PaneMenuEntry } from "./components/PaneMenu";
 import { AccountMenu } from "./components/AccountMenu";
 import { ShortcutHud } from "./components/ShortcutHud";
 import { Onboarding } from "./components/Onboarding";
@@ -68,11 +81,11 @@ import { PaneErrorBoundary } from "./components/PaneErrorBoundary";
 import { ResizableGrid } from "./components/ResizableGrid";
 import { VoiceButton } from "./components/VoiceButton";
 import type { PaneKind } from "./components/TerminalPane";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { appshot, listOracles, reapTerminals, type OracleInfo } from "./lib/pty";
+import { appshot, deleteOracle, listOracles, reapTerminals, type OracleInfo } from "./lib/pty";
 import {
   listChatLive,
   listChatSessions,
@@ -122,6 +135,7 @@ import {
   paneKeyForChatSession,
   registerSpawnPane,
   onChatBusy,
+  setPaneOverlay,
   type SpawnPaneKind,
   type SpawnCtx,
   type PayloadKind,
@@ -138,12 +152,23 @@ import { HoverBorderGradient } from "./components/fx/HoverBorderGradient";
 import { spotlightMove } from "./components/fx/spotlightGlow";
 import { modalPop, overlayFade, paneExit, toastPop } from "./components/fx/motionTokens";
 import { trapTab } from "./components/ui";
-import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings } from "./lib/settings";
+import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings, DEFAULT_SETTINGS, type AppSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, fmtChord, isApple } from "./lib/platform";
 import { homeDir, startupOpenPane } from "./lib/fs";
-import { detectProject, listProjects, type ProjectInfo } from "./lib/run";
-import { loadProjectsStore, mergeProjects, subscribeProjects } from "./lib/projects";
+import { detectProject, scanWorkspaces, type ProjectInfo } from "./lib/run";
+import {
+  type ProjectWorkspace,
+  loadProjectWorkspacesStore,
+  mergeProjectWorkspaces,
+  flattenProjectWorkspaces,
+  getScanRoots,
+  subscribeProjectWorkspaces,
+  normRoot,
+  allComponents,
+  projectShapeLabel,
+} from "./lib/projectWorkspaces";
+import { WorkspaceLaunchPicker } from "./components/WorkspaceLaunchPicker";
 import { isHttpPaneTarget, resolvePaneFileTarget, targetLabel } from "./lib/paneRouting";
 import { buildAppCommands } from "./lib/appCommands";
 import type { AgentAction } from "./lib/agentActions";
@@ -168,14 +193,26 @@ import {
 } from "./lib/agentController";
 import type { AgentAuditEntry } from "./lib/agentActions";
 import { buildMirrorSnapshot, type MirrorSnapshot } from "./lib/mirror";
-import { gridTrackStorageKey, loadGridTracks, movePane, saveGridTracks } from "./lib/paneLayout";
+import { gridTrackStorageKey, loadGridTracks, saveGridTracks } from "./lib/paneLayout";
 import {
   deleteWorkspace,
+  getWorkspace,
   listWorkspaces,
   saveWorkspace,
   subscribeWorkspaces,
   type Workspace,
 } from "./lib/workspaces";
+import {
+  listWorkSessions,
+  createWorkSession,
+  touchWorkSession,
+  removeWorkSession,
+  setWorkSessionStatus,
+  subscribe as subscribeWorkSessions,
+  type WorkSession,
+  type WorkSessionPane,
+} from "./lib/workSessions";
+import { routeControl, type ControlEnvelope, type ControlResult } from "./lib/control";
 import {
   clearAllNotifications,
   clearNotification,
@@ -230,6 +267,12 @@ const FileViewerPane = lazy(() =>
 );
 const ScheduledAgentsPane = lazy(() =>
   import("./components/ScheduledAgentsPane").then((m) => ({ default: m.ScheduledAgentsPane })),
+);
+const HistoryPane = lazy(() =>
+  import("./components/HistoryPane").then((m) => ({ default: m.HistoryPane })),
+);
+const ProjectsPane = lazy(() =>
+  import("./components/ProjectsPane").then((m) => ({ default: m.ProjectsPane })),
 );
 const NotesPane = lazy(() => import("./components/NotesPane").then((m) => ({ default: m.NotesPane })));
 const PluginsPane = lazy(() => import("./components/PluginsPane").then((m) => ({ default: m.PluginsPane })));
@@ -335,7 +378,30 @@ function recordAgentAudit(entry: AgentAuditEntry) {
 
 /** Strip a pane kind down to its restorable shape (drop one-shot fields). */
 function persistableKind(kind: PaneContent): PaneContent | null {
-  if (kind.type === "chat") return { type: "chat", cwd: kind.cwd }; // fresh chat, no seed/resume/reattach
+  if (kind.type === "chat") {
+    // KEEP the conversation's durable identity — `resume` (stamped current by
+    // handleSessionRecorded as sessions record/fork) is what makes the next
+    // launch reopen this pane with its transcript and --resume continuity;
+    // stripping it was why restored chat panes came up blank until reopened
+    // from History. One-shot fields still drop: `seed` (would re-fire the
+    // launcher prompt), `reattach` (backend ids die with the process),
+    // `findText` (a one-time deep-link), `goal` (owned by live pane state).
+    return {
+      type: "chat",
+      cwd: kind.cwd,
+      modelId: kind.modelId,
+      agentId: kind.agentId,
+      agentLabel: kind.agentLabel,
+      resume: kind.resume
+        ? {
+            id: kind.resume.id,
+            title: kind.resume.title,
+            engine: kind.resume.engine,
+            model: kind.resume.model,
+          }
+        : undefined,
+    };
+  }
   // file/editor restore by path; everything else is self-describing.
   return kind;
 }
@@ -469,6 +535,20 @@ function App() {
     window.addEventListener("aios:replay-onboarding", replay);
     return () => window.removeEventListener("aios:replay-onboarding", replay);
   }, []);
+  // Kill the OS WebView right-click menu (Back/Reload/Save as/Print/Inspect) app-
+  // wide so our own pane menus own the gesture — EXCEPT over editable text, where
+  // the native copy/paste/spellcheck/undo menu is still the right tool. Panes open
+  // their custom menu in PaneCard.onContextMenu (which fires first, at the React
+  // root); this window-level net catches everywhere else (sidebar, top bar, idle).
+  useEffect(() => {
+    const onCtx = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest('input, textarea, [contenteditable="true"], [contenteditable=""]')) return;
+      e.preventDefault();
+    };
+    window.addEventListener("contextmenu", onCtx);
+    return () => window.removeEventListener("contextmenu", onCtx);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Settings is lazy: mount it on FIRST open and keep it mounted after, so its
   // internal AnimatePresence exit can play (the chunk still loads on demand).
@@ -543,14 +623,6 @@ function App() {
   const toggleHide = useCallback((key: string) => {
     setHiddenKeys((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
     setMaximizedKey((cur) => (cur === key ? null : cur));
-  }, []);
-  const movePaneByKey = useCallback((key: string, delta: -1 | 1) => {
-    setPanes((cur) => {
-      const index = cur.findIndex((p) => p.key === key);
-      const next = movePane(cur, index, delta);
-      setActiveKey(next.items[next.selected]?.key ?? key);
-      return next.items;
-    });
   }, []);
 
   // pointer-driven drag-to-move: swap two panes' grid positions. HTML5 draggable
@@ -763,7 +835,72 @@ function App() {
   // workspaces: saved named layouts + the save-dialog draft (null = closed).
   const [workspaces, setWorkspaces] = useState<Workspace[]>(listWorkspaces);
   useEffect(() => subscribeWorkspaces(() => setWorkspaces(listWorkspaces())), []);
+  // Work Sessions (Tier 1): the "Continue working" units — goal + chat thread +
+  // panes + project, bound into one resumable thing. See lib/workSessions.ts +
+  // misc/PLAN-work-sessions.md.
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>(listWorkSessions);
+  useEffect(() => subscribeWorkSessions(() => setWorkSessions(listWorkSessions())), []);
+  // chat pane key → its durable session id (reported by ChatPane once recorded) —
+  // lets "save work session" bind EVERY open chat, not just the most-recent.
+  const chatMetaByPaneKey = useRef<
+    Map<string, { id: string; cwd?: string; title: string; engine?: string; model?: string }>
+  >(new Map());
+  const handleSessionRecorded = useCallback(
+    (info: { paneKey?: string; sessionId: string; title: string; cwd?: string; engine?: string; model?: string }) => {
+      if (!info.paneKey) return;
+      // sessionId "" = the pane dropped its conversation (/clear, cwd switch):
+      // forget the binding so a restart doesn't resurrect the dropped thread.
+      if (!info.sessionId) {
+        chatMetaByPaneKey.current.delete(info.paneKey);
+        setPanes((ps) =>
+          ps.map((p) =>
+            p.key === info.paneKey && p.kind.type === "chat" && p.kind.resume
+              ? { ...p, kind: { ...p.kind, resume: undefined } }
+              : p,
+          ),
+        );
+        return;
+      }
+      chatMetaByPaneKey.current.set(info.paneKey, {
+        id: info.sessionId,
+        cwd: info.cwd,
+        title: info.title,
+        engine: info.engine,
+        model: info.model,
+      });
+      // Stamp the conversation identity onto the pane itself: layout persistence
+      // keeps `resume` (see persistableKind), so the next app launch reopens
+      // this exact thread — transcript repaint + --resume — instead of a blank
+      // pane. Inert for the live pane (ChatPane reads `resume` only at mount).
+      setPanes((ps) =>
+        ps.map((p) => {
+          if (p.key !== info.paneKey || p.kind.type !== "chat") return p;
+          const cur = p.kind.resume;
+          if (cur?.id === info.sessionId && (!info.title || cur?.title === info.title)) return p;
+          return {
+            ...p,
+            kind: {
+              ...p.kind,
+              resume: {
+                id: info.sessionId,
+                title: info.title || cur?.title || p.label,
+                engine: info.engine,
+                model: info.model,
+              },
+            },
+          };
+        }),
+      );
+    },
+    [],
+  );
   const [wsDraft, setWsDraft] = useState<string | null>(null);
+  // a workspace opened from the home / projects pane → the component·env launch
+  // picker (terminal vs chat). Declared up here so overlayOpen can include it —
+  // native webviews paint above html and would otherwise occlude the picker.
+  const [launchWs, setLaunchWs] = useState<ProjectWorkspace | null>(null);
+  // "save work session" modal draft (title + goal); null = closed.
+  const [sessionDraft, setSessionDraft] = useState<{ title: string; goal: string } | null>(null);
   // Native browser webviews paint ABOVE html, so any floating overlay (modals,
   // palette, finders, the busy-chat close prompt, splash, onboarding) must hide
   // them or it gets occluded.
@@ -776,6 +913,8 @@ function App() {
     fileFinderOpen ||
     globalSearchOpen ||
     closePrompt != null ||
+    launchWs != null ||
+    sessionDraft != null ||
     onboardingOpen ||
     splash;
 
@@ -1074,7 +1213,7 @@ function App() {
     if (!isTauriRuntime()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<{ kind: string; session_id: number; title?: string }>("aios-notify", ({ payload }) => {
+    void listen<{ kind: string; session_id: number; title?: string; claude_id?: string | null }>("aios-notify", ({ payload }) => {
       if (!payload || typeof payload.session_id !== "number") return;
       const title = payload.title || "chat";
       if (payload.kind === "chat.done") {
@@ -1085,7 +1224,9 @@ function App() {
           sourceLabel: "chat",
           title: "chat finished",
           body: `${title} — done. click to reopen.`,
-          target: { type: "chat", sessionId: payload.session_id, title },
+          // claudeId = the durable conversation uuid: keeps this notification
+          // clickable even after the backend session id dies with the process.
+          target: { type: "chat", sessionId: payload.session_id, title, claudeId: payload.claude_id ?? undefined },
         });
       }
     })
@@ -1336,10 +1477,18 @@ function App() {
     [closePane],
   );
   const resumeChat = useCallback(
-    (s: ChatSessionInfo) =>
+    // `findText` (a History-pane search query) makes the resumed pane open its
+    // find bar on that text — a deep-link straight to the matched message.
+    (s: ChatSessionInfo, findText?: string) =>
       spawn(
-        // carry engine+model so a resumed codex thread boots on codex, not claude
-        { type: "chat", resume: { id: s.id, title: s.title, engine: s.engine, model: s.model } },
+        // carry cwd so claude `--resume` runs in the SAME project dir the chat was
+        // recorded in — otherwise claude can't find the session ("No conversation
+        // found with session ID"). engine+model boot a resumed codex thread on codex.
+        {
+          type: "chat",
+          cwd: s.cwd || undefined,
+          resume: { id: s.id, title: s.title, engine: s.engine, model: s.model, findText },
+        },
         s.title || "chat",
       ),
     [spawn],
@@ -1352,12 +1501,28 @@ function App() {
   const [chats, setChats] = useState<ChatSessionInfo[]>([]);
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
   const [scheduledAgentSessionVersion, setScheduledAgentSessionVersion] = useState(0);
-  // every runnable project under ~/Repo (auto-scanned), merged with the user's
-  // project store (custom adds / hides / name+cmd overrides — CRUD from Settings).
-  const [scanned, setScanned] = useState<ProjectInfo[]>([]);
-  const [projStore, setProjStore] = useState(loadProjectsStore);
-  useEffect(() => subscribeProjects(() => setProjStore(loadProjectsStore())), []);
-  const projects = useMemo(() => mergeProjects(scanned, projStore), [scanned, projStore]);
+  // Structured workspaces (auto-scanned from the configured roots; see
+  // lib/projectWorkspaces.ts + PLAN-projects-workspaces.md) merged with the user's
+  // store (custom adds / hides / name overrides — CRUD from Settings). Flattened
+  // to the legacy `ProjectInfo[]` for the homescreen/palette consumers that still
+  // take it (the rich tree drives the Settings editor).
+  const [scannedWs, setScannedWs] = useState<ProjectWorkspace[]>([]);
+  const [projStore, setProjStore] = useState(loadProjectWorkspacesStore);
+  useEffect(() => subscribeProjectWorkspaces(() => setProjStore(loadProjectWorkspacesStore())), []);
+  const projectWorkspaces = useMemo(
+    () => mergeProjectWorkspaces(scannedWs, projStore),
+    [scannedWs, projStore],
+  );
+  const projects = useMemo(() => flattenProjectWorkspaces(projectWorkspaces), [projectWorkspaces]);
+  // root → shape label for structured workspaces — the homescreen shows it as a
+  // hint chip (and structured ones open the launch picker).
+  const shapeByRoot = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const ws of projectWorkspaces) {
+      if (allComponents(ws).length > 1) m[normRoot(ws.root)] = projectShapeLabel(ws);
+    }
+    return m;
+  }, [projectWorkspaces]);
   const [home, setHome] = useState<string>("");
   useEffect(() => {
     let alive = true;
@@ -1379,9 +1544,9 @@ function App() {
   // its own ⌘K "run <name>" entry. Cheap (bounded scan), so no polling — a stale
   // list just misses a brand-new repo until next launch.
   const loadProjects = useCallback((announce = false) => {
-    listProjects()
+    scanWorkspaces(getScanRoots())
       .then((next) => {
-        setScanned(next);
+        setScannedWs(next);
         if (announce) flash(`rescanned ${next.length} project${next.length === 1 ? "" : "s"}`);
       })
       .catch((e) => {
@@ -1420,6 +1585,23 @@ function App() {
       flash(`▶ ${c.cmd}`);
     },
     [spawn, flash],
+  );
+
+  // Open a project from the homescreen (or the Projects pane). ANY known workspace
+  // opens the launch picker so you choose WHERE to land (root or a component) and
+  // HOW (terminal or chat agent) — a fullstack one just shows its root row,
+  // structured ones add the component/env targets. A path with no backing
+  // workspace (rare) falls back to a plain terminal.
+  const openProject = useCallback(
+    (p: ProjectInfo) => {
+      const ws = projectWorkspaces.find((w) => normRoot(w.root) === normRoot(p.root));
+      if (ws) {
+        setLaunchWs(ws);
+        return;
+      }
+      spawn({ type: "shell", cwd: p.root }, p.name);
+    },
+    [projectWorkspaces, spawn],
   );
 
   const fireAppshot = useCallback(async () => {
@@ -2020,6 +2202,220 @@ function App() {
     [panes, compactWebLayout, flash],
   );
 
+  // ── Work Sessions (Tier 1) ──────────────────────────────────────────────────
+  // A Work Session = the NON-chat panes (terminals/files/browser/editor) as a
+  // layout + the chat you were most recently in (chats[0], bound by id) + a goal —
+  // so resume restores the tools, re-threads the conversation, AND re-seeds the
+  // goal into the chat's goal box. (Multi-chat binding is a later increment.)
+  // "save work session" opens a title+goal modal; the snapshot happens on confirm.
+  const saveCurrentSession = useCallback(() => {
+    if (panes.length === 0) {
+      flash("nothing open to save as a work session");
+      return;
+    }
+    setSessionDraft({ title: chats[0]?.title || "work session", goal: "" });
+  }, [panes.length, chats, flash]);
+
+  // confirm the modal → snapshot the live deck (read here, not at open-time).
+  const commitSession = useCallback(
+    (title: string, goal: string) => {
+      const sessionPanes: WorkSessionPane[] = [];
+      // bind EVERY open chat that has recorded a durable id (multi-chat); chats are
+      // bound by id, not captured as layout panes (resume re-threads them).
+      const chatIds: string[] = [];
+      let firstChatCwd: string | undefined;
+      for (const p of panes) {
+        if (p.kind.type === "chat") {
+          const meta = chatMetaByPaneKey.current.get(p.key);
+          if (meta?.id && !chatIds.includes(meta.id)) {
+            chatIds.push(meta.id);
+            if (!firstChatCwd) firstChatCwd = meta.cwd;
+          }
+          continue;
+        }
+        const kind = persistableKind(p.kind);
+        if (kind) sessionPanes.push({ key: p.key, label: p.label, kind });
+      }
+      // fall back to the most-recent global chat if no open chat reported an id yet.
+      const boundChats = chatIds.length ? chatIds : chats[0] ? [chats[0].id] : [];
+      const finalTitle = title.trim() || chats[0]?.title || sessionPanes[0]?.label || "work session";
+      createWorkSession({
+        title: finalTitle,
+        goal: goal.trim() || undefined,
+        projectRoot: firstChatCwd || chats[0]?.cwd || undefined,
+        chatSessionIds: boundChats,
+        panes: sessionPanes,
+        tracks: loadGridTracks(gridTrackStorageKey(GRID_TRACK_KEY, cols, rows), cols, rows),
+      });
+      flash(`saved work session “${finalTitle}”`);
+    },
+    [panes, chats, cols, rows, flash],
+  );
+
+  // Resume a Work Session from the home rail: restore its tool panes, re-thread its
+  // bound chat (seeding the saved goal into its goal box), bump recency.
+  const resumeWorkSession = useCallback(
+    (s: WorkSession) => {
+      if (s.panes.length > 0) {
+        applyWorkspace({
+          name: s.title,
+          savedAt: s.createdAt,
+          panes: s.panes.map((p) => ({ key: p.key ?? "", label: p.label, kind: p.kind })),
+          tracks: s.tracks ?? null,
+        });
+      }
+      // re-thread every bound chat (seeding the session goal into each).
+      for (const chatId of s.chatSessionIds) {
+        const c = chats.find((x) => x.id === chatId);
+        spawn(
+          {
+            type: "chat",
+            cwd: c?.cwd || s.projectRoot,
+            resume: c
+              ? { id: c.id, title: c.title, engine: c.engine, model: c.model }
+              : { id: chatId, title: s.title },
+            goal: s.goal,
+          },
+          c?.title || s.title,
+        );
+      }
+      touchWorkSession(s.id);
+    },
+    [applyWorkspace, chats, spawn],
+  );
+
+  // ── Control plane (Tier 2) ───────────────────────────────────────────────────
+  // ONE dispatcher mapping control commands → the SAME closures the UI calls, so an
+  // external agent (via the aios-control MCP → a localhost HTTP server in Rust →
+  // emit/listen, landing in the next batch) drives the app identically to a human.
+  // The command vocabulary + pure routing live in lib/control.ts; here we supply
+  // the handlers. The listener below is INERT until the Rust transport emits.
+  const dispatchControl = useCallback(
+    (env: ControlEnvelope): ControlResult =>
+      routeControl(env, {
+        paneOpen: (content, label) => {
+          const kind = content as PaneContent;
+          spawn(kind, label ?? kind.type);
+        },
+        paneOpenFile: (path) => openFile(path, pathBasename(path) || path),
+        paneClose: (key, force) => (force ? closePane(key) : requestClose(key)),
+        paneMaximize: (key, on) => setMaximizedKey(on ? key : null),
+        paneHide: (key, on) =>
+          setHiddenKeys((cur) =>
+            on ? (cur.includes(key) ? cur : [...cur, key]) : cur.filter((k) => k !== key),
+          ),
+        paneResumeChat: (chatId) => {
+          const c = chats.find((x) => x.id === chatId);
+          if (c) resumeChat(c);
+          else spawn({ type: "chat", resume: { id: chatId, title: "chat" } }, "chat");
+        },
+        sidebarToggle: (on) => setSidebarOpen((v) => on ?? !v),
+        terminalSend: (key, text) => {
+          const w = paneWriters.get(key);
+          if (!w) return false;
+          w(text);
+          return true;
+        },
+        browserOpen: (url, label) => spawn({ type: "browser", url }, label ?? "browser"),
+        // browser.* drive an EXISTING pane by key (= its webview label). Verify the
+        // pane is a live browser first, else the native call is a silent no-op.
+        browserNavigate: (key, url) => {
+          if (!panes.some((x) => x.key === key && x.kind.type === "browser")) return false;
+          void browserNavigate(key, url).catch((e) => reportDiag("browser.nav", e, { action: "navigate" }));
+          return true;
+        },
+        browserBack: (key) => {
+          if (!panes.some((x) => x.key === key && x.kind.type === "browser")) return false;
+          void browserBack(key).catch((e) => reportDiag("browser.nav", e, { action: "back" }));
+          return true;
+        },
+        browserForward: (key) => {
+          if (!panes.some((x) => x.key === key && x.kind.type === "browser")) return false;
+          void browserForward(key).catch((e) => reportDiag("browser.nav", e, { action: "forward" }));
+          return true;
+        },
+        browserReload: (key) => {
+          if (!panes.some((x) => x.key === key && x.kind.type === "browser")) return false;
+          void browserReload(key).catch((e) => reportDiag("browser.nav", e, { action: "reload" }));
+          return true;
+        },
+        layoutList: () =>
+          listWorkspaces().map((w) => ({ name: w.name, panes: w.panes.length, savedAt: w.savedAt })),
+        layoutSave: (name) => saveCurrentWorkspace(name),
+        layoutApply: (name) => {
+          const ws = getWorkspace(name);
+          if (!ws) return false;
+          applyWorkspace(ws);
+          return true;
+        },
+        settingsGet: (key) => {
+          const all = loadSettings();
+          return key ? (all as unknown as Record<string, unknown>)[key] : all;
+        },
+        settingsSet: (key, value) => {
+          const defs = DEFAULT_SETTINGS as unknown as Record<string, unknown>;
+          if (!(key in defs)) return { ok: false, error: `unknown setting "${key}"` };
+          const def = defs[key];
+          // enforce the primitive type when both sides are non-null; nullable
+          // settings (e.g. chatModel) accept a string or null.
+          if (def !== null && value !== null && typeof value !== typeof def)
+            return { ok: false, error: `setting "${key}" expects ${typeof def}` };
+          const next = saveSettings({ [key]: value } as Partial<AppSettings>);
+          return { ok: true, value: (next as unknown as Record<string, unknown>)[key] };
+        },
+        // Oracles — the cockpit's current roster (refreshed on an interval), open
+        // one as a pane, or kill its tmux session. Kill checks the live roster so
+        // a wrong id reports "no oracle" instead of silently doing nothing.
+        oracleList: () => oracles,
+        oracleSpawn: (id) => addOracle(id),
+        oracleKill: (id, force) => {
+          if (!oracles.some((o) => o.identity === id)) return false;
+          void deleteOracle(id, force, loadSettings().terminalSocket || "aios").catch((e) =>
+            reportDiag("oracle.delete", e, { action: "kill" }),
+          );
+          return true;
+        },
+        paneList: () =>
+          panes.map((p) => ({
+            key: p.key,
+            label: p.label,
+            kind: p.kind.type,
+            hidden: hiddenKeys.includes(p.key),
+            maximized: maximizedKey === p.key,
+          })),
+        stateGet: () => ({
+          panes: panes.map((p) => ({ key: p.key, label: p.label, kind: p.kind.type })),
+          hiddenKeys,
+          maximizedKey,
+          sidebarOpen,
+          counts: { panes: panes.length },
+        }),
+      }),
+    [spawn, openFile, closePane, requestClose, chats, resumeChat, panes, hiddenKeys, maximizedKey, sidebarOpen, saveCurrentWorkspace, applyWorkspace, oracles, addOracle],
+  );
+  // Keep a fresh ref so the listener can register ONCE yet always run the latest
+  // dispatchControl (which closes over changing pane/state) — no re-listen churn.
+  const dispatchControlRef = useRef(dispatchControl);
+  dispatchControlRef.current = dispatchControl;
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<ControlEnvelope>("aios://control", ({ payload }) => {
+      const res = dispatchControlRef.current(payload);
+      void emit("aios://control-reply", { id: payload?.id, ...res }).catch(() => {});
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch((e) => reportDiag("app.listen", e, { action: "control" }));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const removeWorkspace = useCallback(
     (name: string) => {
       deleteWorkspace(name);
@@ -2037,6 +2433,7 @@ function App() {
       chats,
       oracles,
       projects,
+      projectWorkspaces,
       spawn,
       resumeChat,
       addOracle,
@@ -2057,8 +2454,11 @@ function App() {
       openSaveWorkspace: () => setWsDraft(""),
       applyWorkspace,
       deleteWorkspace: removeWorkspace,
+      saveWorkSession: saveCurrentSession,
+      workSessions,
+      resumeWorkSession,
     });
-  }, [spawn, fireAppshot, chats, oracles, resumeChat, addOracle, runF5, loadProjects, projects, home, runProject, panes.length, activeKey, workspaces, applyWorkspace, removeWorkspace]);
+  }, [spawn, fireAppshot, chats, oracles, resumeChat, addOracle, runF5, loadProjects, projects, projectWorkspaces, home, runProject, panes.length, activeKey, workspaces, applyWorkspace, removeWorkspace, saveCurrentSession, workSessions, resumeWorkSession]);
   // keep the repeat-last chord's view of the registry fresh without re-binding
   // the global keydown listener on every rebuild.
   commandsRef.current = commands;
@@ -2298,11 +2698,22 @@ function App() {
       case "chat": {
         // The killer case. If a chat pane is still open + bound to this backend
         // session id, focus it. Else reattach the detached session — the backend
-        // replays its buffer and goes live, so the user lands back in the exact chat.
+        // replays its buffer and goes live, so the user lands back in the exact
+        // chat. `resume` rides along as the fallback: if the backend session is
+        // gone (app restarted since the notification fired), the pane degrades
+        // to reopening the conversation from history instead of dead-ending.
         const boundKey = paneKeyForChatSession(t.sessionId);
         const open = boundKey ? panes.find((p) => p.key === boundKey) : undefined;
         if (open) focusPane(open.key);
-        else spawn({ type: "chat", reattach: t.sessionId }, t.title ?? "chat");
+        else
+          spawn(
+            {
+              type: "chat",
+              reattach: t.sessionId,
+              resume: t.claudeId ? { id: t.claudeId, title: t.title ?? "chat" } : undefined,
+            },
+            t.title ?? "chat",
+          );
         break;
       }
       case "diagnostics":
@@ -2683,7 +3094,11 @@ function App() {
   // sidebar-toggle is dropped here (redundant inside the sidebar) and the
   // rarely-used desktop-mirror link moved into Settings → general.
   const sidebarActions = (
-    <div className={`flex items-center ${iconsOnly ? "flex-col gap-0.5" : "gap-0.5"}`}>
+    <div
+      className={`flex items-center gap-0.5 rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,white_3.5%,transparent)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md ${
+        iconsOnly ? "flex-col" : ""
+      }`}
+    >
       <IconBtn title={`Command palette (${chord("K")})`} onClick={() => setPaletteOpen(true)}>
         <Search size={15} />
       </IconBtn>
@@ -2724,7 +3139,7 @@ function App() {
   );
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
+    <div className="aios-stage relative flex h-screen w-screen flex-col overflow-hidden text-[var(--color-text)]">
       {splash && <Splash fading={splashFading} />}
       {!splash && onboardingOpen && (
         <Onboarding onClose={() => setOnboardingOpen(false)} />
@@ -2756,10 +3171,12 @@ function App() {
       <div className="flex min-h-0 flex-1">
         {sidebarOpen && !compactWebLayout && (
           <aside
-            className={`flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-panel)] transition-[width] ${
+            className={`relative flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_80%,transparent)] backdrop-blur-xl transition-[width] ${
               iconsOnly ? "w-16" : "w-60"
             }`}
           >
+            {/* lit gradient seam — the sidebar's signature accent edge (Neon Glass) */}
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-px bg-gradient-to-b from-transparent via-[color-mix(in_srgb,var(--color-accent)_50%,transparent)] to-transparent" />
             <div
               className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2 ${
                 topBarHidden ? "pt-8" : ""
@@ -2787,9 +3204,12 @@ function App() {
                     iconsOnly ? "aios-dock-icon justify-center" : "gap-2"
                   }`}
                 >
-                  <Home size={13} className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]" />
+                  {/* glowing brand diamond — also the way home (rest all panes) */}
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
+                    <span className="h-2 w-2 rotate-45 rounded-[2px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                  </span>
                   {!iconsOnly && (
-                    <span className="font-mono text-[11px] tracking-[0.14em] text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]">
+                    <span className="font-mono text-[11px] tracking-[0.16em] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
                       aios
                     </span>
                   )}
@@ -2900,7 +3320,8 @@ function App() {
                 onApplyWorkspace={applyWorkspace}
                 onSpawn={spawn}
                 onAttachOracle={addOracle}
-                onOpenProject={(p) => spawn({ type: "shell", cwd: p.root }, p.name)}
+                onOpenProject={openProject}
+                shapeByRoot={shapeByRoot}
                 onOpenSidebarItem={spawnSidebarItem}
                 onRevealSidebar={() => setSidebarOpen(true)}
                 onOpenScheduledAgents={() => spawn({ type: "scheduled-agents" }, "agents")}
@@ -2911,6 +3332,10 @@ function App() {
                 resumeLabel={chats[0]?.title}
                 resumeLayout={resumeLayoutInfo}
                 onResumeLayout={onResumeLayout}
+                workSessions={workSessions}
+                onResumeSession={resumeWorkSession}
+                onRemoveSession={removeWorkSession}
+                onDoneSession={(id) => setWorkSessionStatus(id, "done")}
                 notifications={notifications}
                 onTalkToJarvis={talkToJarvis}
                 onOpenNotificationTarget={openNotificationTarget}
@@ -2956,8 +3381,6 @@ function App() {
                   onClose={() => requestClose(pane.key)}
                   onToggleMax={() => toggleMax(pane.key)}
                   onToggleHide={() => toggleHide(pane.key)}
-                  onMoveLeft={() => movePaneByKey(pane.key, -1)}
-                  onMoveRight={() => movePaneByKey(pane.key, 1)}
                   reorderable={panes.length > 1}
                   isDragging={dragActiveKey === pane.key}
                   busy={busyChatKeys.has(pane.key)}
@@ -2988,6 +3411,9 @@ function App() {
                   onClearNotification={clearNotification}
                   onClearAllNotifications={clearAllNotifications}
                   onOpenScheduledAgentChat={openScheduledAgentChat}
+                  onResumeChat={resumeChat}
+                  onLaunchProject={setLaunchWs}
+                  onSessionRecorded={handleSessionRecorded}
                   onAttachApp={(app) =>
                     spawn(
                       { type: "app", name: app.name, bundleId: app.bundle_id },
@@ -3101,12 +3527,22 @@ function App() {
               }
               trapTab(e, e.currentTarget);
             }}
-            className="w-[400px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-4 shadow-[var(--aios-shadow-pop)]"
+            className="w-[400px] rounded-lg border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-4 shadow-[var(--aios-shadow-pop)] backdrop-blur-md"
           >
             <div className="text-[13px] font-medium text-[var(--color-text)]">this chat is still working</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
               keep it running in the background so it finishes the task, or stop it?
             </p>
+            {(() => {
+              // queued follow-ups live in the pane and die with it either way —
+              // losing typed work silently is worse than one extra line here.
+              const n = chatHandles.get(closePrompt)?.queued?.() ?? 0;
+              return n > 0 ? (
+                <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-danger)]">
+                  {n} queued follow-up{n === 1 ? "" : "s"} you typed will be discarded when this pane closes.
+                </p>
+              ) : null;
+            })()}
             <div className="mt-4 flex flex-col gap-2">
               <button
                 autoFocus
@@ -3168,6 +3604,30 @@ function App() {
           />
         </Suspense>
       )}
+      {launchWs && (
+        <WorkspaceLaunchPicker
+          ws={launchWs}
+          onClose={() => setLaunchWs(null)}
+          onOpen={(cwd, mode, label) => {
+            spawn(mode === "chat" ? { type: "chat", cwd } : { type: "shell", cwd }, label);
+            // auto-capture (Tier 1): launching a project AS A CHAT seeds a Work
+            // Session (dedup by workspace root) so it appears in "Continue working".
+            // Terminal launches don't, to keep the rail signal-not-noise.
+            if (mode === "chat" && launchWs) {
+              const root = launchWs.root;
+              const existing = listWorkSessions().find((s) => s.projectRoot === root);
+              if (existing) touchWorkSession(existing.id);
+              else
+                createWorkSession({
+                  title: label,
+                  projectRoot: root,
+                  panes: [{ label, kind: { type: "chat", cwd } }],
+                });
+            }
+            setLaunchWs(null);
+          }}
+        />
+      )}
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -3196,6 +3656,12 @@ function App() {
         onChange={setWsDraft}
         onSave={saveCurrentWorkspace}
         onClose={() => setWsDraft(null)}
+      />
+      <SaveSessionModal
+        draft={sessionDraft}
+        onChange={setSessionDraft}
+        onSave={commitSession}
+        onClose={() => setSessionDraft(null)}
       />
       <PaneOverview
         open={overviewOpen}
@@ -3348,10 +3814,10 @@ function NotificationCenter({
   const unread = notifications.filter((n) => !n.read).length;
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)] text-[12px] text-[var(--color-text)]">
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
+      <div className="relative flex items-center justify-between border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-3 py-2 backdrop-blur-md">
         <div>
           <div className="text-[12px] font-medium">notifications</div>
-          <div className="text-[10px] text-[var(--color-muted)]">
+          <div className={`font-mono text-[10px] ${unread > 0 ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
             {unread > 0 ? `${unread} unread` : "all caught up"}
           </div>
         </div>
@@ -3392,17 +3858,25 @@ function NotificationCenter({
               animate={{ opacity: item.read ? 0.65 : 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, x: 14, transition: { duration: 0.16 } }}
               transition={{ type: "spring", stiffness: 380, damping: 32 }}
-              className="group flex gap-2 rounded-md px-2 py-2 transition-colors hover:bg-[var(--color-panel-2)]"
+              className={`group relative flex gap-2.5 rounded-xl px-2.5 py-2 transition-colors hover:bg-[var(--color-panel-2)] ${
+                item.read ? "" : "bg-[color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
+              }`}
             >
+              {!item.read && (
+                <span
+                  aria-hidden
+                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                />
+              )}
               <span
                 className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
                   item.level === "error"
-                    ? "bg-[var(--color-danger)]"
+                    ? "bg-[var(--color-danger)] shadow-[0_0_7px_var(--color-danger)]"
                     : item.level === "warning"
-                      ? "bg-[var(--color-warning)]"
+                      ? "bg-[var(--color-warning)] shadow-[0_0_7px_var(--color-warning)]"
                       : item.level === "success"
-                        ? "bg-[var(--color-success)]"
-                        : "bg-[var(--color-accent)]"
+                        ? "bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]"
+                        : "bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
                 }`}
               />
               <button
@@ -3509,7 +3983,7 @@ function SpaceHeader({
     <div className={`group/sh relative flex items-center ${iconsOnly ? "justify-center px-0" : "pl-1.5 pr-1"}`}>
       <button
         onClick={() => toggleSpaceCollapsed(space.id)}
-        className={`flex min-w-0 items-center gap-1 py-1 text-[10px] font-medium uppercase tracking-wide text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)] ${
+        className={`flex min-w-0 items-center gap-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)] ${
           iconsOnly ? "justify-center" : "flex-1 text-left"
         }`}
         title={`${space.name} · ${space.collapsed ? "expand" : "collapse"}`}
@@ -3529,7 +4003,7 @@ function SpaceHeader({
           <EllipsisVertical size={12} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-lg">
+          <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md">
             <RowMenuItem
               icon={<Pencil size={13} />}
               label="rename"
@@ -3809,9 +4283,9 @@ function SidebarRow({
       }}
       onDragEnd={onDragEnd}
       title={item.label}
-      className={`group relative flex items-center rounded-md transition-colors ${
+      className={`group relative flex items-center rounded-md border transition-all ${
         dragging ? "opacity-40" : ""
-      } ${over ? "bg-[var(--color-accent-soft)] ring-1 ring-[var(--color-accent)]/40" : "hover:bg-[var(--color-panel-2)]"}`}
+      } ${over ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]" : "border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]"}`}
     >
       <span className={`grid shrink-0 cursor-grab place-items-center text-[var(--color-faint)] opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing ${iconsOnly ? "w-0" : "w-4"}`}>
         <GripVertical size={12} />
@@ -3848,7 +4322,7 @@ function SidebarRow({
           <EllipsisVertical size={13} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-lg">
+          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md">
             <RowMenuItem
               icon={<Pencil size={13} />}
               label="rename"
@@ -4079,6 +4553,102 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
 /** Inline modal naming the current layout as a workspace ("save workspace…"
  *  in the palette). Existing names render as one-click pills; reusing a name
  *  overwrites that workspace (the button says so). */
+/** Name + (optional) goal a Work Session at save time. The goal re-seeds the
+ *  chat's goal box when you resume the session, so the agent carries the standing
+ *  intent across the resume. */
+function SaveSessionModal({
+  draft,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  draft: { title: string; goal: string } | null;
+  onChange: (v: { title: string; goal: string }) => void;
+  onSave: (title: string, goal: string) => void;
+  onClose: () => void;
+}) {
+  const title = draft?.title ?? "";
+  const goal = draft?.goal ?? "";
+  const submit = () => {
+    onSave(title, goal);
+    onClose();
+  };
+  return (
+    <AnimatePresence>
+      {draft != null && (
+        <m.div
+          {...overlayFade()}
+          className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-sm"
+          onMouseDown={onClose}
+        >
+          <m.div
+            {...modalPop()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="save work session"
+            className="glass w-[420px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => trapTab(e, e.currentTarget)}
+          >
+            <div className="mb-3 flex items-center gap-2 text-[13px] font-medium text-[var(--color-text)]">
+              <Layers size={14} className="text-[var(--color-accent)]" />
+              save work session
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submit();
+              }}
+              className="flex flex-col gap-2"
+            >
+              <input
+                autoFocus
+                value={title}
+                onChange={(e) => onChange({ title: e.target.value, goal })}
+                onKeyDown={(e) => e.key === "Escape" && onClose()}
+                placeholder="name this session"
+                spellCheck={false}
+                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+              />
+              <textarea
+                value={goal}
+                onChange={(e) => onChange({ title, goal: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") onClose();
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={2}
+                placeholder="goal (optional) — re-seeded into the chat when you resume"
+                spellCheck={false}
+                className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-[12px] leading-relaxed text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+              />
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] text-[var(--color-faint)]">
+                  keeps panes + the current chat thread
+                </span>
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={onClose} className="pill press text-[11px]">
+                    cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="press rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-3 py-1 text-[11px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_28%,transparent)]"
+                  >
+                    save
+                  </button>
+                </div>
+              </div>
+            </form>
+          </m.div>
+        </m.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function SaveWorkspaceModal({
   draft,
   existing,
@@ -4323,14 +4893,14 @@ function PaneOverview({
                   onMouseMove={spotlightMove}
                   onMouseDown={(e) => { e.stopPropagation(); onPick(p.key); }}
                   style={{ width: cardW }}
-                  className={`aios-spotlight group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[var(--color-pane)] text-left shadow-[var(--aios-shadow-pop)] transition-all duration-150 hover:-translate-y-1 ${
+                  className={`aios-spotlight group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[color-mix(in_srgb,var(--color-pane)_62%,transparent)] text-left shadow-[var(--aios-shadow-pop)] backdrop-blur-md transition-all duration-150 hover:-translate-y-1 ${
                     isSel
-                      ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/60 scale-[1.02]"
+                      ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/60 scale-[1.02] shadow-[0_26px_60px_-22px_color-mix(in_srgb,var(--color-accent)_60%,transparent)]"
                       : "border-[var(--color-border-strong)] hover:border-[var(--color-accent)]/40"
                   } ${hidden ? "opacity-60" : ""}`}
                 >
                   {/* window chrome strip */}
-                  <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3">
+                  <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-3 backdrop-blur">
                     <span className={`status-dot shrink-0 ${hidden ? "status-dot--cold" : DOT[p.kind.type] ?? "status-dot--cold"}`} />
                     <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-text-2)]">{p.label}</span>
                     <span
@@ -4353,7 +4923,14 @@ function PaneOverview({
                   </div>
                   {/* body — big type glyph on a faint gradient "screen" */}
                   <div className="relative flex min-h-0 flex-1 items-center justify-center bg-gradient-to-br from-[var(--color-pane)] to-[var(--color-bg)]">
-                    <Glyph size={Math.round(cardW * 0.16)} className="text-[var(--color-faint)] opacity-50 transition-opacity group-hover:opacity-80" />
+                    <div className="flex flex-col items-center gap-2.5">
+                      <span className="grid h-14 w-14 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
+                        <Glyph size={26} />
+                      </span>
+                      <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
+                        {p.kind.type}
+                      </span>
+                    </div>
                     {hidden && (
                       <span className="absolute bottom-2 right-2 rounded bg-[var(--color-panel)]/80 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--color-faint)]">minimized</span>
                     )}
@@ -4397,27 +4974,6 @@ function PaneLoading() {
         loading pane
       </span>
     </div>
-  );
-}
-
-function PaneActionItem({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[var(--color-text-2)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-    >
-      <span className="text-[var(--color-muted)]">{icon}</span>
-      <span className="truncate">{label}</span>
-    </button>
   );
 }
 
@@ -4506,10 +5062,10 @@ function OpenPanesList({
         return (
           <div
             key={p.key}
-            className={`group relative flex items-center rounded-md transition-colors ${
+            className={`group relative flex items-center rounded-md border transition-all ${
               active
-                ? "bg-[var(--color-accent-soft)] ring-1 ring-[var(--color-accent)]/40"
-                : "hover:bg-[var(--color-panel-2)]"
+                ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+                : "border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]"
             }`}
           >
             <button
@@ -4574,8 +5130,6 @@ function PaneCard({
   onClose,
   onToggleMax,
   onToggleHide,
-  onMoveLeft,
-  onMoveRight,
   reorderable,
   isDragging,
   dimmed,
@@ -4598,6 +5152,9 @@ function PaneCard({
   onClearNotification,
   onClearAllNotifications,
   onOpenScheduledAgentChat,
+  onResumeChat,
+  onLaunchProject,
+  onSessionRecorded,
   onAttachApp,
   onProfileChange,
   onChangeCwd,
@@ -4618,8 +5175,6 @@ function PaneCard({
   onClose: () => void;
   onToggleMax?: () => void;
   onToggleHide?: () => void;
-  onMoveLeft?: () => void;
-  onMoveRight?: () => void;
   reorderable?: boolean;
   isDragging?: boolean;
   /** focus-spotlight: this pane is NOT the focused one — recede. */
@@ -4644,6 +5199,16 @@ function PaneCard({
   onClearNotification: (id: string) => void;
   onClearAllNotifications: () => void;
   onOpenScheduledAgentChat: (id: string, label: string) => void;
+  onResumeChat: (s: ChatSessionInfo, findText?: string) => void;
+  onLaunchProject: (ws: ProjectWorkspace) => void;
+  onSessionRecorded: (info: {
+    paneKey?: string;
+    sessionId: string;
+    title: string;
+    cwd?: string;
+    engine?: string;
+    model?: string;
+  }) => void;
   onAttachApp: (app: { name: string; bundle_id: string | null }) => void;
   onProfileChange: (profile: string) => void;
   onChangeCwd: (dir: string) => void;
@@ -4726,8 +5291,85 @@ function PaneCard({
         ? { socket: pane.kind.socket, session: pane.kind.session }
         : null;
   const [mon, setMon] = useState(false);
-  const [openAsOpen, setOpenAsOpen] = useState(false);
   const fileTarget = paneFileTarget(pane.kind);
+  // ── pane menu (⋯ overflow + right-click context menu, one and the same) ──────
+  // Replaces the old per-icon header cluster AND the OS WebView2 right-click menu
+  // with one Neon-Glass menu whose items vary by pane type. `anchor`/`align` let
+  // the ⋯ button hang the menu leftward under itself; right-click opens at cursor.
+  const [menu, setMenu] = useState<
+    { x: number; y: number; anchor?: HTMLElement | null; align?: "left" | "right" } | null
+  >(null);
+  const overflowBtnRef = useRef<HTMLButtonElement>(null);
+  // While the menu is open, tell native-webview panes (browser/appcast) to hide
+  // their always-on-top native layer so this HTML menu isn't painted behind it.
+  useEffect(() => {
+    setPaneOverlay(pane.key, menu != null);
+    return () => setPaneOverlay(pane.key, false);
+  }, [pane.key, menu]);
+  const openMenuFromButton = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (menu) {
+      setMenu(null);
+      return;
+    }
+    const r = overflowBtnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setMenu({ x: r.right, y: r.bottom + 6, anchor: overflowBtnRef.current, align: "right" });
+  };
+  const onPaneContextMenu = (e: React.MouseEvent) => {
+    // Don't hijack surfaces that own their right-click: editable text (native
+    // copy/paste/spellcheck), Monaco (its rich code menu), and xterm (right-click
+    // selects-word + copy). Those reach the pane menu via the ⋯ button instead.
+    const el = e.target as HTMLElement;
+    if (el.closest('input, textarea, [contenteditable="true"], [contenteditable=""], .monaco-editor, .xterm')) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, align: "left" });
+  };
+  const buildMenuItems = (): PaneMenuEntry[] => {
+    const items: PaneMenuEntry[] = [];
+    const k = pane.key;
+    if (pane.kind.type === "browser") {
+      items.push(
+        { key: "back", icon: <ArrowLeft size={14} />, label: "Back", onSelect: () => void browserBack(k).catch((e) => reportDiag("browser.nav", e, { action: "back" })) },
+        { key: "fwd", icon: <ArrowRight size={14} />, label: "Forward", onSelect: () => void browserForward(k).catch((e) => reportDiag("browser.nav", e, { action: "forward" })) },
+        { key: "reload", icon: <RotateCw size={14} />, label: "Reload", onSelect: () => void browserReload(k).catch((e) => reportDiag("browser.nav", e, { action: "reload" })) },
+        {
+          key: "copyurl",
+          icon: <Link2 size={14} />,
+          label: "Copy page URL",
+          onSelect: () =>
+            void browserCurrentUrl(k).then((u) => {
+              if (u) navigator.clipboard?.writeText(u).catch((e) => reportDiag("app.clipboard", e, { action: "copyUrl" }));
+            }),
+        },
+        { key: "devtools", icon: <Code2 size={14} />, label: "Open DevTools", onSelect: () => void browserOpenDevtools(k).catch((e) => reportDiag("browser.devtools", e, { action: "open" })) },
+        { key: "sep-browser", separator: true },
+      );
+    }
+    if (fileTarget) {
+      items.push(
+        { key: "edit", icon: <Pencil size={14} />, label: "Open in editor", onSelect: () => onOpenEditorFile(fileTarget.path, fileTarget.name) },
+        { key: "view", icon: <Eye size={14} />, label: "Open in viewer", onSelect: () => onOpenViewerFile(fileTarget.path, fileTarget.name) },
+        { key: "reveal", icon: <Folder size={14} />, label: "Reveal in files", onSelect: () => onRevealFile(fileTarget.path, fileTarget.name) },
+        { key: "sep-file", separator: true },
+      );
+    }
+    items.push({ key: "dup", icon: <Layers size={14} />, label: "Duplicate pane", onSelect: onDuplicate });
+    if (onToggleHide) items.push({ key: "hide", icon: <EyeOff size={14} />, label: "Hide pane", hint: "keeps running", onSelect: onToggleHide });
+    if (onToggleMax)
+      items.push({
+        key: "max",
+        icon: maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />,
+        label: maximized ? "Restore pane" : "Maximize pane",
+        hint: maximized ? "Esc" : undefined,
+        onSelect: onToggleMax,
+      });
+    items.push(
+      { key: "sep-close", separator: true },
+      { key: "close", icon: <X size={14} />, label: "Close pane", danger: true, onSelect: onClose },
+    );
+    return items;
+  };
   const toggleMon = () => {
     if (!monTarget) return;
     if (mon) monitorStop(monTarget.session).catch((e) => reportDiag("app.monitor", e, { action: "stop" }));
@@ -4746,6 +5388,7 @@ function PaneCard({
       }}
       data-pane-key={pane.key}
       onMouseDownCapture={onFocus}
+      onContextMenu={onPaneContextMenu}
       style={hidden ? { display: "none" } : style}
       className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--color-pane)] transition-[color,background-color,border-color,box-shadow,opacity] duration-200 ${
         dimmed ? "opacity-45" : ""
@@ -4788,7 +5431,7 @@ function PaneCard({
           accent ring (handled inside BorderBeam). Skipped while maximized (no
           rounded border to ride). */}
       {busy && !maximized && <BorderBeam className="z-30" duration={7} />}
-      <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2.5">
+      <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-2.5 backdrop-blur-md">
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
           onPointerDown={(e) => {
@@ -4799,127 +5442,69 @@ function PaneCard({
           <span className={`status-dot ${DOT[t] ?? "status-dot--cold"}`} />
           <span className="truncate font-mono text-[11px] text-[var(--color-muted)]">{label}</span>
         </div>
+        {/* chrome controls — drag-to-reorder replaced the old ◀▶ move arrows; the
+            ⋯ overflow opens the SAME menu as right-clicking the pane body, with
+            hide / duplicate / open-as / per-type actions folded inside. */}
         <div className="flex items-center gap-0.5">
           {monTarget && (
             <button
               type="button"
               onClick={toggleMon}
               title={mon ? "monitoring → WhatsApp · click to stop" : "monitor this pane → WhatsApp"}
-              className={`rounded p-0.5 transition-colors ${
+              className={`press grid h-6 w-6 place-items-center rounded-md transition-colors ${
                 mon
                   ? "text-[var(--color-accent)]"
                   : "text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
               }`}
             >
-              <Radio size={12} className={mon ? "animate-pulse" : ""} />
+              <Radio size={13} className={mon ? "animate-pulse" : ""} />
             </button>
           )}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenAsOpen((v) => !v);
-              }}
-              className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title="open as"
-            >
-              <EllipsisVertical size={12} />
-            </button>
-            {openAsOpen && (
-              <div
-                className="absolute right-0 top-6 z-30 w-36 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] py-1 text-[12px] shadow-2xl"
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                {fileTarget && (
-                  <>
-                    <PaneActionItem
-                      icon={<Pencil size={13} />}
-                      label="open editor"
-                      onClick={() => {
-                        onOpenEditorFile(fileTarget.path, fileTarget.name);
-                        setOpenAsOpen(false);
-                      }}
-                    />
-                    <PaneActionItem
-                      icon={<Eye size={13} />}
-                      label="open viewer"
-                      onClick={() => {
-                        onOpenViewerFile(fileTarget.path, fileTarget.name);
-                        setOpenAsOpen(false);
-                      }}
-                    />
-                    <PaneActionItem
-                      icon={<Folder size={13} />}
-                      label="reveal files"
-                      onClick={() => {
-                        onRevealFile(fileTarget.path, fileTarget.name);
-                        setOpenAsOpen(false);
-                      }}
-                    />
-                  </>
-                )}
-                <PaneActionItem
-                  icon={<Layers size={13} />}
-                  label="duplicate pane"
-                  onClick={() => {
-                    onDuplicate();
-                    setOpenAsOpen(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-          {onToggleHide && (
-            <button
-              type="button"
-              onClick={(e) => (e.stopPropagation(), onToggleHide())}
-              className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title="Hide pane (keeps running)"
-            >
-              <EyeOff size={12} />
-            </button>
-          )}
-          {onMoveLeft && (
-            <button
-              type="button"
-              onClick={(e) => (e.stopPropagation(), onMoveLeft())}
-              className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title="Move pane left"
-            >
-              <MoveRight size={12} className="rotate-180" />
-            </button>
-          )}
-          {onMoveRight && (
-            <button
-              type="button"
-              onClick={(e) => (e.stopPropagation(), onMoveRight())}
-              className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-              title="Move pane right"
-            >
-              <MoveRight size={12} />
-            </button>
-          )}
+          <button
+            ref={overflowBtnRef}
+            type="button"
+            onClick={openMenuFromButton}
+            title="Pane menu — or right-click the pane"
+            aria-haspopup="menu"
+            aria-expanded={menu != null}
+            className={`press grid h-6 w-6 place-items-center rounded-md transition-colors ${
+              menu != null
+                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                : "text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            }`}
+          >
+            <EllipsisVertical size={13} />
+          </button>
           {onToggleMax && (
             <button
               type="button"
               onClick={(e) => (e.stopPropagation(), onToggleMax())}
-              className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+              className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
               title={maximized ? "Restore pane (Esc)" : "Maximize pane"}
             >
-              {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
           )}
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] hover:text-[var(--color-danger)]"
             title="Close pane"
           >
-            <X size={12} />
+            <X size={13} />
           </button>
         </div>
       </div>
+      {menu && (
+        <PaneMenu
+          x={menu.x}
+          y={menu.y}
+          align={menu.align}
+          anchorEl={menu.anchor}
+          items={buildMenuItems()}
+          onClose={() => setMenu(null)}
+        />
+      )}
       <div className="min-h-0 flex-1">
         <PaneErrorBoundary
           label={pane.label || pane.kind.type}
@@ -4972,6 +5557,10 @@ function PaneCard({
               onClear={onClearNotification}
               onClearAll={onClearAllNotifications}
             />
+          ) : pane.kind.type === "history" ? (
+            <HistoryPane onOpenChat={onResumeChat} />
+          ) : pane.kind.type === "projects" ? (
+            <ProjectsPane onLaunch={onLaunchProject} />
           ) : pane.kind.type === "scheduled-agents" ? (
             <ScheduledAgentsPane onOpenAgentChat={onOpenScheduledAgentChat} />
           ) : pane.kind.type === "apps" ? (
@@ -5000,10 +5589,12 @@ function PaneCard({
               modelId={pane.kind.type === "chat" ? pane.kind.modelId : undefined}
               agentId={pane.kind.type === "chat" ? pane.kind.agentId : undefined}
               agentLabel={pane.kind.type === "chat" ? pane.kind.agentLabel : undefined}
+              initialGoal={pane.kind.type === "chat" ? pane.kind.goal : undefined}
               resume={pane.kind.type === "chat" ? pane.kind.resume : undefined}
               reattach={pane.kind.type === "chat" ? pane.kind.reattach : undefined}
               onOpenUrl={onOpenUrl}
               onChangeCwd={onChangeCwd}
+              onSessionRecorded={onSessionRecorded}
             />
           )}
           </Suspense>

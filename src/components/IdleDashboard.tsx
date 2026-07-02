@@ -30,6 +30,7 @@ import {
 } from "../lib/dashboard";
 import type { AiosNotification } from "../lib/notifications";
 import type { Workspace } from "../lib/workspaces";
+import type { WorkSession } from "../lib/workSessions";
 import { IdleControlCenter } from "./IdleControlCenter";
 import { reportDiag } from "../lib/diag";
 
@@ -37,6 +38,8 @@ interface IdleDashboardProps {
   apps: AppDef[];
   oracles: OracleInfo[];
   projects: ProjectInfo[];
+  /** root → shape label for structured workspaces (passed through to the home). */
+  shapeByRoot?: Record<string, string>;
   sidebar: SidebarState;
   onSpawn: (kind: AppDef["kind"], label: string) => void;
   onAttachOracle: (identity: string) => void;
@@ -59,10 +62,17 @@ interface IdleDashboardProps {
   onClearNotification: (id: string) => void;
   /** restore a saved workspace (named pane layout) from its launch-row chip. */
   onApplyWorkspace?: (ws: Workspace) => void;
+  /** Work Sessions for the "Continue working" rail + a one-click resume (Tier 1). */
+  workSessions?: WorkSession[];
+  onResumeSession?: (s: WorkSession) => void;
+  /** rail lifecycle: remove a session / mark it done (drops it from the rail). */
+  onRemoveSession?: (id: string) => void;
+  onDoneSession?: (id: string) => void;
 }
 
 export function IdleDashboard({
   projects,
+  shapeByRoot,
   sidebar,
   onSpawn,
   onOpenProject,
@@ -78,6 +88,10 @@ export function IdleDashboard({
   notifications,
   onTalkToJarvis,
   onApplyWorkspace,
+  workSessions,
+  onResumeSession,
+  onRemoveSession,
+  onDoneSession,
 }: IdleDashboardProps) {
   const [extras, setExtras] = useState<UsageExtras | null>(null);
   const [rate, setRate] = useState<IdleRate | null>(null);
@@ -126,6 +140,7 @@ export function IdleDashboard({
   return (
     <IdleControlCenter
       projects={projects}
+      shapeByRoot={shapeByRoot}
       sidebar={sidebar}
       extras={extras}
       rate={rate}
@@ -146,6 +161,10 @@ export function IdleDashboard({
       onResumeLayout={onResumeLayout}
       onTalkToJarvis={onTalkToJarvis}
       onApplyWorkspace={onApplyWorkspace}
+      workSessions={workSessions}
+      onResumeSession={onResumeSession}
+      onRemoveSession={onRemoveSession}
+      onDoneSession={onDoneSession}
     />
   );
 }
@@ -194,7 +213,10 @@ function Ring({
             strokeDasharray={c}
             strokeDashoffset={c * (1 - filled)}
             className="aios-ring"
-            style={{ transition: "stroke-dashoffset 0.9s cubic-bezier(0.16,1,0.3,1)" }}
+            style={{
+              transition: "stroke-dashoffset 0.9s cubic-bezier(0.16,1,0.3,1)",
+              filter: `drop-shadow(0 0 4px ${ringColor(pct)})`,
+            }}
           />
         </svg>
         <span

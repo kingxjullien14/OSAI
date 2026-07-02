@@ -28,8 +28,11 @@
      steps were tightened (was 0.030/0.030 L apart, now ~0.022 each)
      so elevation feels soft rather than stacked/heavy. */
   --color-bg: oklch(0.155 0.006 240);        /* app ground — calm near-black */
-  --color-panel: oklch(0.183 0.005 240);     /* rails / sticky header / chrome */
-  --color-panel-2: oklch(0.205 0.005 240);   /* the standard card / composer surface */
+  /* Surfaces are tinted toward the chosen accent (Settings) so cards read as a
+     dark blackish-accent glass, not flat grey — app-wide + themeable (mix from
+     --color-accent, never hardcoded). Owner-requested 2026-06-21. */
+  --color-panel: color-mix(in srgb, oklch(0.158 0.005 240), var(--color-accent) 9%);     /* rails / sticky header / chrome */
+  --color-panel-2: color-mix(in srgb, oklch(0.172 0.005 240), var(--color-accent) 11%);  /* the standard card / composer surface */
   --color-pane: oklch(0.132 0.006 240);      /* terminal interior — deepest layer */
   --color-border: oklch(1 0 0 / 7%);         /* hairline — the default divider */
   --color-border-strong: oklch(1 0 0 / 12%); /* emphasis edge — cards, composer, menus */
@@ -118,6 +121,28 @@
   /* the chat's signature soft elevation for floating surfaces */
   --aios-shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
 
+  /* ── NEON GLASS — the house material (frosted surfaces + accent glow).
+     Additive --aios-* tokens; see DESIGN.md §2. The glow tokens reference
+     var(--color-accent) so they RE-TINT with the runtime theme (the owner
+     runs a violet/purple accent) — never hardcode a hue. ── */
+  --aios-glass-blur: 16px;
+  --aios-glass-bg: color-mix(in srgb, var(--color-panel-2) 70%, transparent);
+  --aios-glass-bg-strong: color-mix(in srgb, var(--color-panel-2) 86%, transparent);
+  /* the neon accent OUTLINE for cards/menus — the bright edge the owner asked
+     for; mixes from --color-accent so it tracks the Settings theme. */
+  --aios-surface-edge: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  --aios-surface-edge-strong: color-mix(in srgb, var(--color-accent) 42%, transparent);
+  --aios-glass-edge: color-mix(in srgb, white 9%, transparent);  /* the glass lip */
+  /* the cyan companion to the runtime accent — the cold end of the Neon Glass
+     dual gradient (composer lip, send CTA, signature edges). Intentionally a
+     fixed neon cyan (not derived from --color-accent), so violet→cyan reads as
+     the brand's two-tone regardless of the chosen accent. */
+  --aios-accent-2: #3DE8FF;
+  --aios-glow-accent:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent),
+    0 10px 30px -10px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --aios-glow-soft: 0 8px 26px -10px color-mix(in srgb, var(--color-accent) 38%, transparent);
+
   /* ── MOTION: the app's timing language (PLAN-superapp-uiux.md §2) ──────
      Durations: most user-triggered motion is fast/base; slow/slower are for
      entrances + larger surface moves only. */
@@ -148,10 +173,10 @@
    ============================================================ */
 
 html[data-theme="dark"] {
-  /* ground & surfaces — calm layered near-blacks (mirrors @theme) */
+  /* ground & surfaces — calm layered near-blacks, surfaces accent-tinted */
   --color-bg: oklch(0.155 0.006 240);
-  --color-panel: oklch(0.183 0.005 240);
-  --color-panel-2: oklch(0.205 0.005 240);
+  --color-panel: color-mix(in srgb, oklch(0.158 0.005 240), var(--color-accent) 9%);
+  --color-panel-2: color-mix(in srgb, oklch(0.172 0.005 240), var(--color-accent) 11%);
   --color-pane: oklch(0.132 0.006 240);
   --color-border: oklch(1 0 0 / 7%);
   --color-border-strong: oklch(1 0 0 / 12%);
@@ -224,6 +249,39 @@ html, body, #root {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── NEON GLASS ambient ground (DESIGN.md §1) ───────────────────────
+   Subtle accent blooms behind the app shell — the atmosphere the frosted
+   glass surfaces (sidebar, header, composer, menus) refract so the glass
+   actually reads as glass. Themeable: the blooms are mixed from
+   var(--color-accent), so they re-tint with the chosen accent. Opaque
+   panes sit on top; the glow shows through translucent chrome + gutters. */
+.aios-stage {
+  position: relative;
+  isolation: isolate;
+  background: var(--color-bg);
+}
+/* the blooms live on a pseudo-layer (z-index below content) so they can drift
+   slowly — a calm aurora — without moving any content. */
+.aios-stage::before {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 720px at 6% -12%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 56%),
+    radial-gradient(960px 700px at 114% 116%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 54%),
+    radial-gradient(1400px 900px at 70% 30%, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent 70%);
+  animation: aios-aurora 24s ease-in-out infinite;
+}
+@keyframes aios-aurora {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(1.6%, 1.1%, 0) scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aios-stage::before { animation: none; }
 }
 
 /* density — "compact" tightens the shared scales everywhere they're consumed
@@ -346,6 +404,17 @@ select:focus-visible,
 .disclose[data-open="true"] { grid-template-rows: 1fr; }
 .disclose > * { overflow: hidden; min-height: 0; }
 
+/* .chat-block — native windowing for the transcript (P3). The browser skips
+   layout + paint for off-screen turns while keeping the full DOM intact, so
+   find-in-chat, the minimap, day rules and autoscroll all still work (unlike JS
+   virtualization, which would have to re-implement them). contain-intrinsic-size
+   `auto` remembers each block's real height after first render, so the scrollbar
+   stays stable and jump-free. */
+.chat-block {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 100px;
+}
+
 /* .skeleton — loading blocks in the brand's shimmer language. */
 .skeleton {
   position: relative;
@@ -453,9 +522,19 @@ select:focus-visible,
   }
 }
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: oklch(0.55 0.005 255 / 25%); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.005 255 / 45%); }
+/* glassy scrollbar — a slim inset thumb (padding-box trick) that lights up to
+   the accent on hover, tying it into the Neon Glass theme. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text) 15%, transparent);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  background-clip: padding-box;
+}
 ::-webkit-scrollbar-track { background: transparent; }
 
 .xterm-viewport { background: transparent !important; }
@@ -715,8 +794,8 @@ select:focus-visible,
 .status-dot--dormant { background: var(--color-info); opacity: 0.6; }
 .status-dot--cold { background: var(--color-cold); opacity: 0.4; }
 
-/* glass surfaces */
-.glass { backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
+/* `.glass` (the full Neon Glass surface: translucent fill + blur + lip) is
+   defined once in the utility section below — see DESIGN.md §2. */
 
 /* studio canvas — a subtle dot grid so pan/zoom has spatial reference */
 .aios-canvas-grid {
@@ -765,6 +844,10 @@ select:focus-visible,
   flex-shrink: 0;
   padding-inline: var(--aios-space-3);       /* 12px */
   border-bottom: 1px solid var(--color-border);
+  /* Neon Glass: a frosted toolbar so the ambient ground reads through it. */
+  background: color-mix(in srgb, var(--color-panel) 45%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 /* the label inside a pane header — mono, muted, quiet (chat footer voice) */
 .pane-header__title {
@@ -784,18 +867,25 @@ select:focus-visible,
   border: 1px solid var(--color-border);
 }
 .surface-card {
-  background: var(--color-panel-2);
-  border: 1px solid var(--color-border);
+  /* Neon Glass: lightly translucent + a 1px top edge-highlight (the "glass
+     lip"). No backdrop-blur here — lists can stack many cards (blur is GPU
+     cost); the lip + translucency carry the look. */
+  background: color-mix(in srgb, var(--color-panel-2) 88%, transparent);
+  border: 1px solid var(--aios-surface-edge);
   border-radius: var(--aios-radius-lg);      /* 12px — chat tool card */
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
   overflow: hidden;
 }
-/* the chat's composer/menu elevation: stronger edge + soft pop shadow.
-   Use for floating things (popovers, the hero composer, dropdowns). */
+/* the chat's composer/menu elevation, now full Neon Glass: frosted translucent
+   fill + blur + the glass lip + a soft drop shadow. Floating things only
+   (popovers, dropdowns, menus, the /+@ overlays) — few on screen at once. */
 .surface-pop {
-  background: var(--color-panel-2);
-  border: 1px solid var(--color-border-strong);
+  background: var(--aios-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
+  border: 1px solid var(--aios-surface-edge-strong);
   border-radius: var(--aios-radius-xl);      /* 16px — composer signature */
-  box-shadow: var(--aios-shadow-pop);
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-shadow-pop);
 }
 
 /* --- .pill -------------------------------------------------------
@@ -855,6 +945,60 @@ select:focus-visible,
    surfaces so focus is the accent's job — consistent everywhere. */
 .focus-accent:focus-within {
   border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+
+/* ── NEON GLASS utilities (the house material; see DESIGN.md §2) ─────
+   Frosted translucent fill + blur + the 1px top edge-highlight ("glass
+   lip"). Use .glass for discrete cards, .glass-strong for the composer /
+   menus / modals. Glow utilities layer the accent halo on top. */
+.glass {
+  background: var(--aios-glass-bg);
+  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.3);
+  border: 1px solid var(--aios-surface-edge);
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
+}
+.glass-strong {
+  background: var(--aios-glass-bg-strong);
+  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
+  border: 1px solid var(--aios-surface-edge-strong);
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
+}
+/* the signature accent halo — active / selected / primary surfaces */
+.glow-accent {
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-glow-accent);
+}
+/* focus treatment for text-entry surfaces (the composer) — accent edge + halo,
+   keeping the glass lip. Replaces .focus-accent on glass surfaces. */
+.glow-focus {
+  transition: box-shadow var(--aios-dur-base) ease, border-color var(--aios-dur-base) ease;
+}
+.glow-focus:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-glow-accent);
+}
+/* breathing accent glow for LIVE / streaming surfaces */
+.glow-live {
+  animation: aios-glow-breathe 2.4s ease-in-out infinite;
+}
+@keyframes aios-glow-breathe {
+  0%, 100% { box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), 0 0 16px -10px color-mix(in srgb, var(--color-accent) 42%, transparent); }
+  50%      { box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), 0 0 28px -6px color-mix(in srgb, var(--color-accent) 62%, transparent); }
+}
+/* a signature lit hairline — accent fading to transparent (use on an edge) */
+.edge-grad {
+  border-image: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 45%, transparent), transparent 72%) 1;
+}
+
+/* Blur is GPU-cost; degrade gracefully where backdrop-filter is unsupported. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: color-mix(in srgb, var(--color-panel-2) 94%, transparent); }
+  .glass-strong { background: var(--color-panel-2); }
+}
+/* Reduced motion: no breathing glow (it settles to a quiet static halo). */
+@media (prefers-reduced-motion: reduce) {
+  .glow-live { animation: none; box-shadow: var(--aios-glow-soft); }
 }
 
 /* --- composer flash levels ---------------------------------------

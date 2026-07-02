@@ -25,8 +25,11 @@ export type NotificationTarget =
   | { type: "pane"; key: string }
   // reattach (or focus, if still open) a chat by its BACKEND numeric session id.
   // THE killer case: dispatch finds an open pane bound to this id → focusPane;
-  // else spawn({ type: "chat", reattach: sessionId }).
-  | { type: "chat"; sessionId: number; title?: string }
+  // else spawn({ type: "chat", reattach: sessionId }). `claudeId` (the durable
+  // conversation uuid) rides along so a click after the backend session died
+  // (e.g. an app restart) can still reopen the conversation from history
+  // instead of dead-ending on the stale numeric id.
+  | { type: "chat"; sessionId: number; title?: string; claudeId?: string }
   // open Settings → Diagnostics (optionally pre-filtered to a source tag)
   | { type: "diagnostics"; filterSource?: string }
   // open a file in-app: "editor" (editable) | "viewer" (preview) | "reveal" (Finder)
@@ -247,6 +250,23 @@ export function emitPaneNotification(
 
 export function markNotificationRead(id: string): void {
   persist(listNotifications().map((item) => (item.id === id ? { ...item, read: true } : item)));
+}
+
+/** Drop the live `chat.needs_input` alert for a session once its prompt was
+ *  answered IN the pane (approval allowed/denied, question answered, plan
+ *  decided). Without this the bell kept counting an already-resolved ask, and
+ *  clicking it later just focused an idle pane with nothing left to answer. */
+export function resolveNeedsInputNotification(sessionId: number): void {
+  const prior = listNotifications();
+  const next = prior.filter(
+    (n) =>
+      !(
+        n.kind === "chat.needs_input" &&
+        n.target?.type === "chat" &&
+        n.target.sessionId === sessionId
+      ),
+  );
+  if (next.length !== prior.length) persist(next);
 }
 
 export function markAllNotificationsRead(): void {

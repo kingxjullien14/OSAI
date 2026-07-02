@@ -79,6 +79,7 @@ struct Instance {
 /// Resolves a usable `tmux` binary on unix. GUI apps inherit a minimal PATH, so
 /// prefer known Homebrew/system locations before falling back to bare `tmux`.
 /// (Windows goes through `pty::resolve_mux` → psmux instead.)
+#[cfg(not(windows))]
 pub fn tmux_bin() -> String {
     #[cfg(unix)]
     {

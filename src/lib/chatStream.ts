@@ -1,7 +1,17 @@
 import type { ChatEvent } from "./chat.ts";
 
 export type ChatTurn =
-  | { kind: "user"; id: string; text: string; steered?: boolean; createdAt?: number }
+  | {
+      kind: "user";
+      id: string;
+      text: string;
+      steered?: boolean;
+      createdAt?: number;
+      /** disk paths of images attached to THIS turn (rendered as bubble thumbnails). */
+      images?: string[];
+      /** selection snippets attached to THIS turn (rendered as expandable chips). */
+      snippets?: { id: string; text: string }[];
+    }
   | { kind: "assistant"; id: string; text: string; streaming: boolean; createdAt?: number }
   | {
       kind: "thinking";
@@ -18,6 +28,11 @@ export type ChatTurn =
       input: Record<string, unknown>;
       result?: string;
       isError?: boolean;
+      /** tool_use id of the parent Task when this call was made BY a sub-agent
+       *  (from the event's top-level `parent_tool_use_id`). Drives transcript
+       *  nesting — children render under their Agent row, not flat. Undefined for
+       *  main-agent tool calls. */
+      parentId?: string;
     }
   | {
       kind: "approval";
@@ -147,6 +162,9 @@ function reduceAssistantEvent(
 ): ChatStreamState {
   let next = settleThinking(state, options.now);
   const turns = [...next.turns];
+  // sub-agent (Task) events carry the parent Task's tool_use id here → nest.
+  const parentId =
+    typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
   for (const block of ev.message?.content ?? []) {
     if (block.type === "text") {
       const full = (block.text ?? "").trim();
@@ -182,7 +200,10 @@ function reduceAssistantEvent(
         }
       }
     }
-    if (block.type === "tool_use") {
+    // `server_tool_use` = claude's SERVER-side tools (built-in web_search etc.).
+    // Same card treatment as client tools — skipping them made a server search
+    // an invisible step (thinking… then sourced prose out of nowhere).
+    if (block.type === "tool_use" || block.type === "server_tool_use") {
       const toolId = block.id ?? options.uid();
       if (!turns.some((turn) => turn.kind === "tool" && turn.id === toolId)) {
         turns.push({
@@ -190,7 +211,33 @@ function reduceAssistantEvent(
           id: toolId,
           name: block.name ?? "tool",
           input: (block.input as Record<string, unknown>) ?? {},
+          // only attach when it's a real sub-agent child — keeps main-agent tool
+          // turns shape-identical (no `parentId: undefined` key) so existing
+          // deepStrictEqual tests + serialized history stay byte-stable.
+          ...(parentId ? { parentId } : {}),
         });
+      }
+    }
+    // a server tool's result rides in the SAME assistant message (not a user
+    // tool_result event) — attach it to its card as "title — url" lines.
+    if (block.type === "web_search_tool_result") {
+      const ref = (block as { tool_use_id?: string }).tool_use_id;
+      const content = (block as { content?: unknown }).content;
+      const text = Array.isArray(content)
+        ? content
+            .map((r) => {
+              const row = r as { title?: string; url?: string };
+              return [row.title, row.url].filter(Boolean).join(" — ");
+            })
+            .filter(Boolean)
+            .join("\n")
+        : resultToText(content);
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        if (t.kind === "tool" && t.id === ref) {
+          turns[i] = { ...t, result: text || "(no results)" };
+          break;
+        }
       }
     }
   }
@@ -241,6 +288,21 @@ export function reduceChatStreamEvent(
 ): ChatStreamReduceResult {
   if (ev.type === "stream_event") {
     const event = ev.event;
+    // A new content block begins → the prior thinking phase is over. claude
+    // streams a whole server-tool turn (think → web_search → think → …) as ONE
+    // message, so the full `assistant` event that normally settles thinking only
+    // lands at the very END — leaving every earlier "thought" stuck showing
+    // "thinking". Settling on the next block's start flips each one to "thought
+    // for Xs" the moment it's actually done.
+    if (event?.type === "content_block_start") {
+      if (state.thinkingTurnId) {
+        return {
+          handled: true,
+          state: { ...settleThinking(state, options.now), thinkingTurnId: null },
+        };
+      }
+      return { handled: false, state };
+    }
     if (!event || event.type !== "content_block_delta") {
       return { handled: false, state };
     }
@@ -262,7 +324,50 @@ export function reduceChatStreamEvent(
     return { handled: true, state: reduceAssistantEvent(state, ev, options) };
   }
   if (ev.type === "user") {
-    return { handled: true, state: reduceToolResultEvent(state, ev) };
+    // tool_result-bearing user events fill their tool turn's output slot.
+    const content = ev.message?.content as unknown;
+    const blocks = Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
+    if (blocks.some((b) => b?.type === "tool_result")) {
+      return { handled: true, state: reduceToolResultEvent(state, ev) };
+    }
+    // A text-bearing user event: claude never echoes typed turns live, so this
+    // only arrives on a reattach replay (the backend buffers the user's own
+    // lines for exactly this). Render it as a user bubble — without it a
+    // replayed transcript is answers-only and the variant segmentation
+    // collapses every run into phantom ‹N/M› alternates of one rootless prompt.
+    const text = Array.isArray(content)
+      ? blocks
+          .filter((b) => b?.type === "text")
+          .map((b) => String((b as { text?: unknown }).text ?? ""))
+          .join("")
+          .trim()
+      : typeof content === "string"
+        ? content.trim()
+        : "";
+    // image PATH refs recorded alongside the turn (chat.rs user_record_line).
+    const images = blocks
+      .filter((b) => b?.type === "aios_image_ref")
+      .map((b) => String((b as { path?: unknown }).path ?? ""))
+      .filter(Boolean);
+    if (text || images.length) {
+      return {
+        handled: true,
+        state: {
+          ...state,
+          turns: [
+            ...state.turns,
+            {
+              kind: "user",
+              id: options.uid(),
+              text: text || `[${images.length} image${images.length > 1 ? "s" : ""}]`,
+              images: images.length ? images : undefined,
+              createdAt: options.now,
+            },
+          ],
+        },
+      };
+    }
+    return { handled: true, state };
   }
   return { handled: false, state };
 }
@@ -333,9 +438,9 @@ function cleanCompactionSummary(raw: string): string {
  * diffs and compaction boundaries, not just text (the old `transcriptToTurns` was
  * text-only). Partial/unknown lines and synthetic plumbing are skipped.
  *
- * Pure + deterministic (caller supplies `uid`) so it's unit-testable. Timestamps
- * aren't reconstructed: the stored rows carry no per-event stamp yet (that lands
- * with the P6 scrubber), so resumed turns simply have no hover time.
+ * Pure + deterministic (caller supplies `uid`) so it's unit-testable. Each row's
+ * `_ts` (the store's write-time ms) becomes the turn's `createdAt`, so resumed
+ * turns carry hover times + day separators; rows recorded before stamping get none.
  */
 export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTurn[] {
   let state: ChatStreamState = {
@@ -364,9 +469,15 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
     } catch {
       continue;
     }
+    // `_ts` is the write-time ms the store stamped (chat_history.rs); 0 for older
+    // rows recorded before stamping → no time (graceful).
+    const ts =
+      typeof (ev as { _ts?: number })._ts === "number"
+        ? (ev as { _ts?: number })._ts!
+        : 0;
     const comp = detectCompaction(ev);
     if (comp) {
-      push({ kind: "compaction", id: uid(), ...comp });
+      push({ kind: "compaction", id: uid(), createdAt: ts || undefined, ...comp });
       continue;
     }
     if (ev.type === "user") {
@@ -397,7 +508,22 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
           : typeof content === "string"
             ? content.trim()
             : "";
-        if (text) push({ kind: "user", id: uid(), text });
+        // image PATH refs recorded alongside the turn (chat.rs user_record_line)
+        // — restore the bubble's thumbnails instead of silently dropping the
+        // picture the model was shown.
+        const images = blocks
+          .filter((b) => (b as { type?: string }).type === "aios_image_ref")
+          .map((b) => String((b as { path?: unknown }).path ?? ""))
+          .filter(Boolean);
+        if (text || images.length) {
+          push({
+            kind: "user",
+            id: uid(),
+            text: text || `[${images.length} image${images.length > 1 ? "s" : ""}]`,
+            images: images.length ? images : undefined,
+            createdAt: ts || undefined,
+          });
+        }
         continue;
       }
       // a tool_result-bearing user event → let the reducer fill its tool turn
@@ -419,7 +545,20 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
       }
       continue;
     }
-    state = reduceChatStreamEvent(state, ev, { now: 0, uid }).state;
+    const before = state.turns.length;
+    state = reduceChatStreamEvent(state, ev, { now: ts || 0, uid }).state;
+    // stamp the assistant turns this event created so resumed bubbles carry a
+    // hover time (the reducer sets thinking.startedAt via `now` but not createdAt).
+    if (ts && state.turns.length > before) {
+      state = {
+        ...state,
+        turns: state.turns.map((t, i) =>
+          i >= before && t.kind === "assistant" && t.createdAt == null
+            ? { ...t, createdAt: ts }
+            : t,
+        ),
+      };
+    }
   }
   return finalizeStreamingTurns(state, 0).turns;
 }

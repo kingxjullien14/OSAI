@@ -364,7 +364,7 @@ test("scheduled agents open as chatpane-backed agents", () => {
   assert.match(agents, /createScheduledAgent/);
 });
 
-test("idle dashboard is a minimal home: clock + command line + usage glance, not lanes", () => {
+test("idle dashboard is Mission Control: hero + composer + quick-launch tiles + agents/recent/usage, not lanes", () => {
   const app = read("src/App.tsx");
   const idle = read("src/components/IdleDashboard.tsx");
   const controlCenter = read("src/components/IdleControlCenter.tsx");
@@ -375,9 +375,14 @@ test("idle dashboard is a minimal home: clock + command line + usage glance, not
   assert.match(idle, /<IdleControlCenter/);
   assert.match(idle, /notifications=\{notifications\}/);
 
-  // The home is the Option-B layout: hero clock, the seed-a-chat command line,
-  // claude+codex usage via the shared ProviderBlock, recent/quick launch row.
-  assert.match(controlCenter, /HeroClock/);
+  // The home is the Mission Control dashboard: a top strip + greeting/composer
+  // hero, glass quick-launch tiles, two-column active-agents + recent cards, and
+  // claude+codex usage via the shared ProviderBlock. (The old hero clock was
+  // dropped to match the approved Mission Control mockup.)
+  assert.match(controlCenter, /Mission Control/);
+  assert.match(controlCenter, /Eyebrow/);
+  assert.match(controlCenter, /quick launch/);
+  assert.match(controlCenter, /MiniHistory/);
   assert.match(controlCenter, /CommandLine/);
   assert.match(controlCenter, /ProviderBlock/);
   assert.match(controlCenter, /useUsageRates/);
@@ -447,11 +452,13 @@ test("command palette promotes chatpane intelligence for freeform search", () =>
 
 test("codex usage surfaces pace-risk warnings", () => {
   const chatPane = read("src/components/ChatPane.tsx");
-  // pace-risk rendering lives in the shared UsageGlance (sidebar + idle home).
+  // pace-risk rendering lives ONLY in the shared UsageGlance (sidebar + idle
+  // home) now — the composer dropped its own usage strip (the sidebar reading is
+  // canonical), so ChatPane no longer references usagePaceRisk.
   const usageGlance = read("src/components/dashboard/UsageGlance.tsx");
   const usagePace = read("src/lib/usagePace.ts");
 
-  assert.match(chatPane, /usagePaceRisk/);
+  assert.doesNotMatch(chatPane, /usagePaceRisk/);
   assert.match(chatPane, /contextLedger/);
   assert.match(chatPane, /est tok/);
   assert.match(usageGlance, /PaceWarning/);
@@ -501,9 +508,10 @@ test("spark model labeling is explicitly gpt-5.3, never 5.5", () => {
   const source = [chatPane, sidebarUsage, chat].join("\n");
 
   assert.match(chat, /id: "gpt-5\.3-codex-spark"/);
-  // SidebarUsage no longer labels spark (its block became the claude meter);
-  // the spark model labeling now lives only in the chat model picker.
-  assert.match(chatPane, /return "gpt-5\.3 spark"/);
+  // The spark model's human label lives in the CHAT_MODELS registry (chat.ts) —
+  // explicitly "gpt-5.3", never 5.5. (The composer's old usageProviderLabel that
+  // also said "gpt-5.3 spark" was removed with the usage strip.)
+  assert.match(chat, /label: "gpt-5\.3 codex spark"/);
   assert.match(chatPane, /\^gpt-5\\\.3-codex-spark\$/);
   assert.doesNotMatch(source, /5\.5[^"\n]*spark|spark[^"\n]*5\.5/i);
   assert.doesNotMatch(chatPane, /return "spark"/);

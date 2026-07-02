@@ -619,6 +619,747 @@ fn node_scripts(dir: &std::path::Path) -> Vec<RunCommand> {
     out
 }
 
+// ── workspaces (structured projects; see misc/PLAN-projects-workspaces.md §4/§8) ──
+//
+// The detection backend for the `ProjectWorkspace` model in
+// src/lib/projectWorkspaces.ts. Scans configurable roots (e.g. C:\FHE-Work) and
+// infers each child folder's shape — fullstack | split (front/back) | environments
+// (Beta/Staging, N components each) — with per-component stack/role/status. The
+// JSON shape mirrors the TS types exactly (serde camelCase + a "kind"-tagged
+// structure enum). Detection is advisory; the frontend can override anything.
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectComponentInfo {
+    id: String,
+    name: String,
+    path: String,
+    role: String,
+    stack: String,
+    run_commands: Vec<RunCommand>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supersedes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProjectEnvironmentInfo {
+    id: String,
+    name: String,
+    path: String,
+    components: Vec<ProjectComponentInfo>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ProjectStructureInfo {
+    Fullstack {
+        component: ProjectComponentInfo,
+    },
+    Split {
+        components: Vec<ProjectComponentInfo>,
+    },
+    Environments {
+        #[serde(rename = "defaultEnv", skip_serializing_if = "Option::is_none")]
+        default_env: Option<String>,
+        environments: Vec<ProjectEnvironmentInfo>,
+    },
+    Unconfigured,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWorkspaceInfo {
+    id: String,
+    name: String,
+    root: String,
+    structure: ProjectStructureInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hidden: Option<bool>,
+    source: String,
+    mtime: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manifest_path: Option<String>,
+    schema_version: u32,
+}
+
+/// Folder names treated as environment groupings (owner decision §10.1). Editable
+/// in Settings later; the defaults are the names the owner actually uses.
+fn is_env_name(name: &str) -> bool {
+    const ENVS: &[&str] = &["beta", "staging", "prod", "production", "dev", "current", "fresh"];
+    ENVS.contains(&name.to_lowercase().as_str())
+}
+
+/// Best-effort component role from a folder name (backend signals win over
+/// frontend so "web-api" reads as backend). Mirrors `inferRole` in TS.
+fn role_for(name: &str) -> &'static str {
+    let segs: Vec<String> = name
+        .to_lowercase()
+        .split(|c| c == '-' || c == '_' || c == '.')
+        .map(|s| s.to_string())
+        .collect();
+    let has = |opts: &[&str]| segs.iter().any(|s| opts.contains(&s.as_str()));
+    if has(&["back", "backend", "api", "server", "svc", "service", "nitro", "gateway", "worker"]) {
+        return "backend";
+    }
+    if has(&["front", "frontend", "web", "client", "ui", "admin", "portal", "app", "site", "dashboard", "console"]) {
+        return "frontend";
+    }
+    if has(&["mobile", "ios", "android", "flutter", "expo", "native"]) {
+        return "mobile";
+    }
+    if has(&["infra", "deploy", "terraform", "docker", "ops", "k8s", "helm"]) {
+        return "infra";
+    }
+    if has(&["docs", "doc", "documentation"]) {
+        return "docs";
+    }
+    "other"
+}
+
+/// A `<base>-next` / `<base>-nitro` / `<base>-v2` / `<base>-new` / `<base>2`
+/// successor → the base name it supersedes (else None). Mirrors `supersedesBase`.
+fn supersedes_base(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    // longest/most-specific suffix first so "v2" wins over the bare "2".
+    for suf in ["nitro", "next", "new", "v2", "2"] {
+        if let Some(stripped) = lower.strip_suffix(suf) {
+            // char-based slice of the original name (panic-safe on multibyte).
+            let keep = stripped.chars().count();
+            let base = name
+                .chars()
+                .take(keep)
+                .collect::<String>()
+                .trim_end_matches(['-', '_'])
+                .to_string();
+            if !base.is_empty() && base.to_lowercase() != lower {
+                return Some(base);
+            }
+        }
+    }
+    None
+}
+
+/// Stable id from a root — djb2 → base36, "ws_"-prefixed. Mirrors TS `hashRoot`
+/// (case- + trailing-separator-insensitive) for ASCII paths.
+fn hash_root(root: &str) -> String {
+    let s = root.trim().trim_end_matches(['/', '\\']).to_lowercase();
+    let mut h: i32 = 5381;
+    for c in s.chars() {
+        h = h.wrapping_shl(5).wrapping_add(h).wrapping_add(c as i32);
+    }
+    let mut n = h as u32;
+    if n == 0 {
+        return "ws_0".into();
+    }
+    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut buf = Vec::new();
+    while n > 0 {
+        buf.push(DIGITS[(n % 36) as usize]);
+        n /= 36;
+    }
+    buf.reverse();
+    format!("ws_{}", String::from_utf8(buf).unwrap())
+}
+
+fn file_name_string(p: &std::path::Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| p.to_string_lossy().to_string())
+}
+
+/// Immediate child directories (dotfiles + heavy dirs pruned), sorted.
+fn child_dirs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || is_pruned_dir(&name) {
+                continue;
+            }
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or_else(|_| e.path().is_dir());
+            if is_dir {
+                out.push(e.path());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Richer stack detection than `project_at`: refines the node family to
+/// next/nitro/nuxt/vite/angular and adds php/dotnet. Returns (stack tag, commands).
+fn detect_stack(dir: &std::path::Path) -> Option<(String, Vec<RunCommand>)> {
+    if let Some((kind, commands)) = project_at(dir) {
+        let stack = if kind == "node" { refine_node_stack(dir) } else { kind };
+        return Some((stack, commands));
+    }
+    if dir.join("artisan").is_file() || dir.join("composer.json").is_file() {
+        let cmd = if dir.join("artisan").is_file() { "php artisan serve" } else { "composer install" };
+        return Some(("php".into(), vec![RunCommand { label: cmd.into(), cmd: cmd.into() }]));
+    }
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().to_lowercase();
+            if n.ends_with(".csproj") || n.ends_with(".sln") {
+                return Some(("dotnet".into(), vec![RunCommand { label: "dotnet run".into(), cmd: "dotnet run".into() }]));
+            }
+        }
+    }
+    None
+}
+
+/// Refine a `node` marker into a specific framework tag via config files, then a
+/// light package.json dependency check.
+fn refine_node_stack(dir: &std::path::Path) -> String {
+    let any = |fs: &[&str]| fs.iter().any(|f| dir.join(f).is_file());
+    if any(&["next.config.js", "next.config.ts", "next.config.mjs", "next.config.cjs"]) {
+        return "next".into();
+    }
+    if any(&["nuxt.config.js", "nuxt.config.ts", "nuxt.config.mjs"]) {
+        return "nuxt".into();
+    }
+    if any(&["nitro.config.ts", "nitro.config.js"]) {
+        return "nitro".into();
+    }
+    if any(&["vite.config.js", "vite.config.ts", "vite.config.mjs"]) {
+        return "vite".into();
+    }
+    if dir.join("angular.json").is_file() {
+        return "angular".into();
+    }
+    if let Ok(text) = std::fs::read_to_string(dir.join("package.json")) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+            let dep = |k: &str| {
+                json.get("dependencies").and_then(|d| d.get(k)).is_some()
+                    || json.get("devDependencies").and_then(|d| d.get(k)).is_some()
+            };
+            if dep("next") {
+                return "next".into();
+            }
+            if dep("nitropack") {
+                return "nitro".into();
+            }
+            if dep("nuxt") {
+                return "nuxt".into();
+            }
+            if dep("vite") {
+                return "vite".into();
+            }
+            if dep("@angular/core") {
+                return "angular".into();
+            }
+        }
+    }
+    "node".into()
+}
+
+/// Build a component descriptor for a directory. `id_prefix` namespaces the id
+/// (workspace id, or "<wsid>/<env>"); `rel_prefix` is the env folder (or "" at
+/// the workspace root) so `path` stays relative to the workspace root.
+fn build_component(id_prefix: &str, comp_dir: &std::path::Path, rel_prefix: &str) -> ProjectComponentInfo {
+    let name = file_name_string(comp_dir);
+    let (stack, run_commands) = detect_stack(comp_dir).unwrap_or_else(|| (String::new(), Vec::new()));
+    let path = if rel_prefix.is_empty() { name.clone() } else { format!("{rel_prefix}/{name}") };
+    ProjectComponentInfo {
+        id: format!("{id_prefix}/{name}"),
+        name: name.clone(),
+        path,
+        role: role_for(&name).to_string(),
+        stack,
+        run_commands,
+        port: None,
+        status: Some("current".to_string()),
+        supersedes: None,
+        notes: None,
+    }
+}
+
+/// Within one component list (a split level or a single env), wire up the
+/// legacy/wip + supersedes relationship from the `-next`/`-nitro`/`v2` heuristic.
+fn apply_supersedes(components: &mut [ProjectComponentInfo]) {
+    let by_name: std::collections::HashMap<String, usize> = components
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.name.to_lowercase(), i))
+        .collect();
+    let mut links: Vec<(usize, usize, String)> = Vec::new();
+    for (i, c) in components.iter().enumerate() {
+        if let Some(base) = supersedes_base(&c.name) {
+            if let Some(&bi) = by_name.get(&base.to_lowercase()) {
+                links.push((i, bi, components[bi].id.clone()));
+            }
+        }
+    }
+    for (wi, bi, base_id) in links {
+        components[wi].status = Some("wip".to_string());
+        components[wi].supersedes = Some(base_id);
+        components[bi].status = Some("legacy".to_string());
+    }
+}
+
+/// True if `env_dir` reads as an environment: it holds runnable component(s), or
+/// is itself a single runnable app (the `current/`+`fresh/` variants case).
+fn env_has_components(env_dir: &std::path::Path) -> bool {
+    detect_stack(env_dir).is_some() || child_dirs(env_dir).iter().any(|c| detect_stack(c).is_some())
+}
+
+/// Pick a sensible default environment id by priority, else the first.
+fn pick_default_env(envs: &[ProjectEnvironmentInfo]) -> Option<String> {
+    const PRIO: &[&str] = &["current", "beta", "dev", "staging", "prod", "production", "fresh"];
+    for p in PRIO {
+        if let Some(e) = envs.iter().find(|e| e.name.to_lowercase() == *p) {
+            return Some(e.id.clone());
+        }
+    }
+    envs.first().map(|e| e.id.clone())
+}
+
+/// Infer a single workspace's structure from its folder layout.
+fn detect_workspace_impl(dir: &std::path::Path) -> ProjectWorkspaceInfo {
+    let root = dir.to_string_lossy().to_string();
+    let name = file_name_string(dir);
+    let id = hash_root(&root);
+    let mtime = std::fs::metadata(dir)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let kids = child_dirs(dir);
+
+    // 1. environments — ≥2 env-named children that each hold components.
+    let env_dirs: Vec<&std::path::PathBuf> = kids
+        .iter()
+        .filter(|k| is_env_name(&file_name_string(k)) && env_has_components(k))
+        .collect();
+
+    let structure = if env_dirs.len() >= 2 {
+        let mut environments = Vec::new();
+        for ed in &env_dirs {
+            let env_name = file_name_string(ed);
+            let env_id = format!("{id}/{}", env_name.to_lowercase());
+            let mut comps: Vec<ProjectComponentInfo> = child_dirs(ed)
+                .iter()
+                .filter(|c| detect_stack(c).is_some())
+                .map(|c| build_component(&env_id, c, &env_name))
+                .collect();
+            // env folder is itself a single app (no sub-components) → represent it.
+            if comps.is_empty() {
+                if let Some((stack, run_commands)) = detect_stack(ed) {
+                    comps.push(ProjectComponentInfo {
+                        id: format!("{env_id}/."),
+                        name: env_name.clone(),
+                        path: env_name.clone(),
+                        role: "fullstack".to_string(),
+                        stack,
+                        run_commands,
+                        port: None,
+                        status: Some("current".to_string()),
+                        supersedes: None,
+                        notes: None,
+                    });
+                }
+            }
+            apply_supersedes(&mut comps);
+            environments.push(ProjectEnvironmentInfo {
+                id: env_id,
+                name: env_name.clone(),
+                path: env_name,
+                components: comps,
+            });
+        }
+        let default_env = pick_default_env(&environments);
+        ProjectStructureInfo::Environments { default_env, environments }
+    } else {
+        // 2. split — ≥2 children that each have their own project marker.
+        let comp_dirs: Vec<&std::path::PathBuf> =
+            kids.iter().filter(|k| detect_stack(k).is_some()).collect();
+        if comp_dirs.len() >= 2 {
+            let mut comps: Vec<ProjectComponentInfo> =
+                comp_dirs.iter().map(|c| build_component(&id, c, "")).collect();
+            apply_supersedes(&mut comps);
+            ProjectStructureInfo::Split { components: comps }
+        } else if let Some((stack, run_commands)) = detect_stack(dir) {
+            // 3. fullstack — a marker at the root.
+            ProjectStructureInfo::Fullstack {
+                component: ProjectComponentInfo {
+                    id: format!("{id}/."),
+                    name: name.clone(),
+                    path: ".".to_string(),
+                    role: "fullstack".to_string(),
+                    stack,
+                    run_commands,
+                    port: None,
+                    status: Some("current".to_string()),
+                    supersedes: None,
+                    notes: None,
+                },
+            }
+        } else {
+            // 4. discovered but unshaped — the user picks/auto-detects later.
+            ProjectStructureInfo::Unconfigured
+        }
+    };
+
+    ProjectWorkspaceInfo {
+        id,
+        name,
+        root,
+        structure,
+        tags: None,
+        hidden: None,
+        source: "scanned".to_string(),
+        mtime,
+        manifest_path: if dir.join("aios.workspace.json").is_file() {
+            Some("aios.workspace.json".to_string())
+        } else {
+            None
+        },
+        schema_version: 1,
+    }
+}
+
+/// Best-effort default scan roots: the parent of the launch dir (e.g. C:\FHE-Work
+/// when run from C:\FHE-Work\AIOS-Superapp) + common code dirs under home. Only
+/// existing dirs, deduped.
+/// True for non-project SYSTEM locations that must NEVER be scanned as workspace
+/// roots — the Windows dir, install dirs, ProgramData, and any bare drive/fs root.
+/// An installed GUI app on Windows often launches with cwd = C:\Windows\System32,
+/// so without this guard `cwd.parent()` (a scan-root heuristic below) would scan
+/// all of C:\Windows — every subfolder became a bogus "workspace" (reported bug).
+fn is_system_dir(path: &std::path::Path) -> bool {
+    let norm = |p: &std::path::Path| {
+        p.to_string_lossy()
+            .to_lowercase()
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_string()
+    };
+    let p = norm(path);
+    // a bare drive root ("c:") / filesystem root ("") is far too broad to scan.
+    if p.len() <= 2 {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        for var in [
+            "WINDIR",
+            "SystemRoot",
+            "ProgramFiles",
+            "ProgramFiles(x86)",
+            "ProgramW6432",
+            "ProgramData",
+        ] {
+            if let Ok(v) = std::env::var(var) {
+                let v = norm(std::path::Path::new(&v));
+                if !v.is_empty() && (p == v || p.starts_with(&format!("{v}\\"))) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn default_scan_roots() -> Vec<String> {
+    let mut cand: Vec<String> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(parent) = cwd.parent() {
+            cand.push(parent.to_string_lossy().to_string());
+        }
+    }
+    let home = home_dir();
+    for c in ["Repo", "repos", "Projects", "projects", "code", "Code", "dev", "src", "work"] {
+        cand.push(std::path::Path::new(&home).join(c).to_string_lossy().to_string());
+    }
+    let mut seen = std::collections::HashSet::new();
+    cand.into_iter()
+        .filter(|r| {
+            let p = std::path::Path::new(r);
+            p.is_dir() && !is_system_dir(p) && seen.insert(r.to_lowercase())
+        })
+        .collect()
+}
+
+/// Suggested scan roots for the Settings UI to offer (P3).
+#[tauri::command]
+pub fn suggested_scan_roots() -> Vec<String> {
+    default_scan_roots()
+}
+
+/// Detect a single workspace's structure at `root`.
+#[tauri::command]
+pub fn detect_workspace(root: String) -> ProjectWorkspaceInfo {
+    detect_workspace_impl(std::path::Path::new(&root))
+}
+
+/// Scan the given roots (each child dir = a candidate workspace) and return their
+/// inferred structures, sorted by name. Empty `roots` → best-effort defaults.
+#[tauri::command]
+pub fn scan_workspaces(roots: Vec<String>) -> Vec<ProjectWorkspaceInfo> {
+    const CAP: usize = 300;
+    let roots = if roots.is_empty() { default_scan_roots() } else { roots };
+    let mut out: Vec<ProjectWorkspaceInfo> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    'outer: for root in roots {
+        // never scan a system location (defense in depth — a stale/explicit root
+        // could still point at C:\Windows etc.).
+        if is_system_dir(std::path::Path::new(&root)) {
+            continue;
+        }
+        for child in child_dirs(std::path::Path::new(&root)) {
+            if !seen.insert(child.to_string_lossy().to_lowercase()) {
+                continue;
+            }
+            out.push(detect_workspace_impl(&child));
+            if out.len() >= CAP {
+                break 'outer;
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out
+}
+
+// ── agent context generation (PLAN §6; owner decision §10.3) ──────────────
+//
+// Render a workspace's structure into a managed, delimited block written into the
+// repo's native context files (CLAUDE.md + AGENTS.md) so any agent launched in the
+// workspace inherits a true map of it — no per-turn preamble. The block is the only
+// region we touch; everything outside the BEGIN/END markers is the owner's.
+
+const CTX_BEGIN: &str = "<!-- AIOS:workspace BEGIN";
+const CTX_END: &str = "<!-- AIOS:workspace END -->";
+
+/// One markdown line for a component: name, role · stack · status, run cmd, path,
+/// and the supersedes link (resolved to the superseded component's name).
+fn ctx_component_line(c: &ProjectComponentInfo, name_by_id: &std::collections::HashMap<&str, &str>) -> String {
+    let mut meta = vec![c.role.clone()];
+    if !c.stack.is_empty() {
+        meta.push(c.stack.clone());
+    }
+    if let Some(st) = &c.status {
+        if st != "current" {
+            meta.push(st.clone());
+        }
+    }
+    let mut line = format!("- **{}** — {}", c.name, meta.join(" · "));
+    if let Some(r) = c.run_commands.first() {
+        line.push_str(&format!(" · run `{}`", r.cmd));
+    }
+    line.push_str(&format!(" · `{}`", c.path));
+    if let Some(sup) = &c.supersedes {
+        if let Some(n) = name_by_id.get(sup.as_str()) {
+            line.push_str(&format!(" · supersedes `{n}`"));
+        }
+    }
+    line.push('\n');
+    line
+}
+
+fn ctx_render_components(out: &mut String, comps: &[ProjectComponentInfo]) {
+    let name_by_id: std::collections::HashMap<&str, &str> =
+        comps.iter().map(|c| (c.id.as_str(), c.name.as_str())).collect();
+    for c in comps {
+        out.push_str(&ctx_component_line(c, &name_by_id));
+    }
+}
+
+fn ctx_has_supersedes(ws: &ProjectWorkspaceInfo) -> bool {
+    let any = |cs: &[ProjectComponentInfo]| cs.iter().any(|c| c.supersedes.is_some());
+    match &ws.structure {
+        ProjectStructureInfo::Split { components } => any(components),
+        ProjectStructureInfo::Environments { environments, .. } => {
+            environments.iter().any(|e| any(&e.components))
+        }
+        _ => false,
+    }
+}
+
+/// Render the full managed block (delimiters included) for a workspace.
+fn render_workspace_context(ws: &ProjectWorkspaceInfo) -> String {
+    let mut s = String::new();
+    s.push_str(CTX_BEGIN);
+    s.push_str(" — generated by AIOS; edit outside this block -->\n");
+    s.push_str(&format!("## Workspace: {}\n", ws.name));
+    match &ws.structure {
+        ProjectStructureInfo::Fullstack { component } => {
+            s.push_str("Layout: **fullstack** — a single app at the root.\n\n");
+            let map = std::collections::HashMap::new();
+            s.push_str(&ctx_component_line(component, &map));
+        }
+        ProjectStructureInfo::Split { components } => {
+            s.push_str("Layout: **split** — one repo, multiple components.\n\n");
+            ctx_render_components(&mut s, components);
+        }
+        ProjectStructureInfo::Environments { default_env, environments } => {
+            let names: Vec<&str> = environments.iter().map(|e| e.name.as_str()).collect();
+            s.push_str(&format!("Layout: **environments** — {}.\n", names.join(", ")));
+            if let Some(de) = default_env {
+                if let Some(env) = environments.iter().find(|e| &e.id == de) {
+                    s.push_str(&format!("Default environment: **{}**.\n", env.name));
+                }
+            }
+            for env in environments {
+                s.push_str(&format!("\n### {}\n", env.name));
+                ctx_render_components(&mut s, &env.components);
+            }
+        }
+        ProjectStructureInfo::Unconfigured => {
+            s.push_str("Layout: not yet recognized — no project marker found at the root.\n");
+        }
+    }
+    if ctx_has_supersedes(ws) {
+        s.push_str(
+            "\nWhen working here: components marked `wip` (the `*-next` / `*-nitro` rewrites) supersede the `legacy` ones — default new work to the wip components unless told otherwise.\n",
+        );
+    }
+    s.push_str("\n_Structure auto-detected by AIOS; full machine-readable form in `aios.workspace.json`._\n");
+    s.push_str(CTX_END);
+    s
+}
+
+/// Replace the managed block in `existing` with `block`, or append it if absent.
+/// Only ever touches the text between (and including) the BEGIN/END markers. Pure.
+fn upsert_managed_block(existing: &str, block: &str) -> String {
+    if let Some(bi) = existing.find(CTX_BEGIN) {
+        if let Some(rel) = existing[bi..].find(CTX_END) {
+            let ei = bi + rel + CTX_END.len();
+            let mut out = String::with_capacity(existing.len());
+            out.push_str(&existing[..bi]);
+            out.push_str(block);
+            out.push_str(&existing[ei..]);
+            return out;
+        }
+    }
+    let mut out = existing.trim_end().to_string();
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str(block);
+    out.push('\n');
+    out
+}
+
+/// Ensure `line` is present in the dir's `.gitignore` (created if missing) — so the
+/// regenerable `aios.workspace.json` stays out of git by default (owner §10.2).
+fn ensure_gitignored(dir: &std::path::Path, line: &str) {
+    let path = dir.join(".gitignore");
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    if existing.lines().any(|l| l.trim() == line) {
+        return;
+    }
+    let mut next = existing;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(line);
+    next.push('\n');
+    let _ = std::fs::write(&path, next);
+}
+
+/// Preview the context block that `generate_workspace_context` would write — does
+/// NOT touch the filesystem. Powers the consent-first preview in Settings.
+#[tauri::command]
+pub fn preview_workspace_context(root: String) -> String {
+    render_workspace_context(&detect_workspace_impl(std::path::Path::new(&root)))
+}
+
+/// Write `aios.workspace.json` + upsert the managed block into CLAUDE.md + AGENTS.md
+/// at the workspace root. Returns the files written. The CLI agents (Claude/Codex)
+/// then pick the context up natively from their cwd.
+#[tauri::command]
+pub fn generate_workspace_context(root: String) -> Result<Vec<String>, String> {
+    let dir = std::path::Path::new(&root);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    let ws = detect_workspace_impl(dir);
+    let mut written: Vec<String> = Vec::new();
+
+    let json = serde_json::to_string_pretty(&ws).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("aios.workspace.json"), json + "\n").map_err(|e| e.to_string())?;
+    ensure_gitignored(dir, "aios.workspace.json");
+    written.push("aios.workspace.json".to_string());
+
+    let block = render_workspace_context(&ws);
+    for fname in ["CLAUDE.md", "AGENTS.md"] {
+        let path = dir.join(fname);
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        std::fs::write(&path, upsert_managed_block(&existing, &block)).map_err(|e| e.to_string())?;
+        written.push(fname.to_string());
+    }
+    Ok(written)
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::{hash_root, is_env_name, role_for, supersedes_base, upsert_managed_block};
+
+    #[test]
+    fn role_inference_backend_wins() {
+        assert_eq!(role_for("admin-web"), "frontend");
+        assert_eq!(role_for("admin-web-next"), "frontend");
+        assert_eq!(role_for("api"), "backend");
+        assert_eq!(role_for("api-nitro"), "backend");
+        assert_eq!(role_for("web-api"), "backend");
+        assert_eq!(role_for("front"), "frontend");
+        assert_eq!(role_for("back"), "backend");
+        assert_eq!(role_for("weird-thing"), "other");
+    }
+
+    #[test]
+    fn env_name_matching() {
+        assert!(is_env_name("Beta"));
+        assert!(is_env_name("staging"));
+        assert!(is_env_name("current"));
+        assert!(!is_env_name("admin-web"));
+        assert!(!is_env_name("front"));
+    }
+
+    #[test]
+    fn supersedes_detection() {
+        assert_eq!(supersedes_base("admin-web-next").as_deref(), Some("admin-web"));
+        assert_eq!(supersedes_base("api-nitro").as_deref(), Some("api"));
+        assert_eq!(supersedes_base("app-v2").as_deref(), Some("app"));
+        assert_eq!(supersedes_base("admin-web"), None);
+        assert_eq!(supersedes_base("api"), None);
+    }
+
+    #[test]
+    fn hash_stable_and_normalized() {
+        let a = hash_root("C:\\FHE-Work\\WRMS");
+        assert!(a.starts_with("ws_"));
+        assert_eq!(a, hash_root("C:\\FHE-Work\\WRMS\\"));
+        assert_eq!(a, hash_root("c:\\fhe-work\\wrms"));
+        assert_ne!(a, hash_root("C:\\FHE-Work\\Trading-Portal"));
+    }
+
+    #[test]
+    fn upsert_block_appends_then_replaces_in_place() {
+        let b1 = "<!-- AIOS:workspace BEGIN x -->\nAAA\n<!-- AIOS:workspace END -->";
+        let out = upsert_managed_block("# my notes\n", b1);
+        assert!(out.starts_with("# my notes"));
+        assert!(out.contains("AAA"));
+        // re-running replaces the block in place (no duplicate), preserves prose.
+        let b2 = "<!-- AIOS:workspace BEGIN y -->\nBBB\n<!-- AIOS:workspace END -->";
+        let out2 = upsert_managed_block(&out, b2);
+        assert!(out2.contains("BBB"));
+        assert!(!out2.contains("AAA"));
+        assert!(out2.starts_with("# my notes"));
+        assert_eq!(out2.matches("AIOS:workspace BEGIN").count(), 1);
+        assert_eq!(out2.matches("AIOS:workspace END").count(), 1);
+    }
+}
+
 /// Returns the user's home directory (HOME, then USERPROFILE on Windows).
 #[tauri::command]
 pub fn home_dir() -> String {

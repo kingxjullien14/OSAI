@@ -22,7 +22,6 @@ export interface AppSettings {
   terminalSocket: string;
 
   // appearance
-  accentIntensity: number; // 0..100
   terminalFontSize: number; // 10..18
   splashOnLaunch: boolean;
   reduceMotion: boolean;
@@ -75,8 +74,11 @@ export interface AppSettings {
   // default (show real data when it exists).
   showCodexUsage: boolean;
 
-  // memory
-  graphPhysicsStrength: number; // 0..100
+  // projects — when ON, a workspace's CLAUDE.md/AGENTS.md context is kept fresh on
+  // rescan for workspaces that already have an aios.workspace.json (ones you've
+  // opted into). OFF by default — generation is otherwise an explicit, consent-first
+  // action per workspace in Settings → projects.
+  regenerateContextOnChange: boolean;
 
   // chat provider (model-agnostic). Default "codex-cli" keeps new chats aligned
   // with the WA oracle. chatModel is the last picked model id (null = provider
@@ -127,7 +129,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultPaneType: "terminal",
   terminalSocket: "aios",
 
-  accentIntensity: 70,
   terminalFontSize: 13,
   splashOnLaunch: true,
   reduceMotion: false,
@@ -144,10 +145,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   funFx: true,
   minimizeToTray: false,
   showCodexUsage: true,
+  regenerateContextOnChange: false,
   autoRefreshSeconds: 15,
   showNonAiosSessions: false,
-
-  graphPhysicsStrength: 50,
 
   chatProvider: "codex-cli",
   chatModel: null,
@@ -160,10 +160,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboardingComplete: false,
   onboardedAt: null,
 };
-
-/** Read-only display value — the vault is auto-resolved from your home dir. */
-export const MEMORY_VAULT_PATH =
-  "~/.claude/projects/<your-home>/memory (auto-resolved)";
 
 type Listener = (s: AppSettings) => void;
 const listeners = new Set<Listener>();

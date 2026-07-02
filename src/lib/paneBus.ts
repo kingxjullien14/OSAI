@@ -19,6 +19,9 @@ export interface ChatHandle {
   detach: (notify: boolean) => void;
   /** Stop the current turn while keeping the pane alive. */
   stop?: () => void;
+  /** Queued follow-ups typed ahead in this pane — they die with the pane, so
+   *  the close dialog warns when this is non-zero. */
+  queued?: () => number;
 }
 
 /** Live ChatPanes keyed by pane key — lets App intercept close on a busy chat. */
@@ -303,6 +306,37 @@ export function onChatBusy(fn: (busy: ReadonlySet<string>) => void): () => void 
   fn(busyChats);
   return () => {
     busyListeners.delete(fn);
+  };
+}
+
+// ── chrome-overlay signal (defeat native-webview occlusion) ──────────────────
+// A native child webview (browser / appcast / app panes) ALWAYS composites
+// ABOVE the HTML layer — z-index is meaningless against it — so any HTML menu
+// the pane CHROME opens (the ⋯ overflow / right-click context menu, which live
+// in PaneCard, OUTSIDE the native pane component) paints behind the page and is
+// invisible. PaneCard broadcasts "a chrome menu is open over pane <key>" here;
+// the native panes subscribe via `onPaneOverlay` and shrink their webview to 0
+// while their key is in the set, the same trick they already use for their own
+// toolbar dropdowns and for in-flight drags.
+const paneOverlayKeys = new Set<string>();
+const paneOverlayListeners = new Set<(keys: ReadonlySet<string>) => void>();
+
+/** Mark (open=true) / clear (open=false) a chrome overlay over a pane key. */
+export function setPaneOverlay(key: string, open: boolean): void {
+  const had = paneOverlayKeys.has(key);
+  if (open === had) return;
+  if (open) paneOverlayKeys.add(key);
+  else paneOverlayKeys.delete(key);
+  paneOverlayListeners.forEach((fn) => fn(paneOverlayKeys));
+}
+
+/** Subscribe to the set of pane keys that currently have a chrome overlay open.
+ *  Native-webview panes hide themselves while their own key is present. */
+export function onPaneOverlay(fn: (keys: ReadonlySet<string>) => void): () => void {
+  paneOverlayListeners.add(fn);
+  fn(paneOverlayKeys); // sync current state on mount
+  return () => {
+    paneOverlayListeners.delete(fn);
   };
 }
 

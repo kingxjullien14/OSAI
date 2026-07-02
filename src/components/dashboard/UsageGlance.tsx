@@ -38,6 +38,14 @@ function barColor(pct: number): string {
   return "var(--color-accent)";
 }
 
+/** The bar FILL: a violet→cyan gradient in the healthy (accent) zone — the Neon
+ *  Glass dual-gradient from the mockup — then solid semantic colors as it heats. */
+function barFill(pct: number): string {
+  if (pct >= 85) return "var(--color-danger)";
+  if (pct >= 65) return "var(--color-warning)";
+  return "linear-gradient(90deg, var(--color-accent), var(--aios-accent-2))";
+}
+
 function UsageBar({
   label,
   pct,
@@ -67,7 +75,7 @@ function UsageBar({
       <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
         <div
           className="h-full rounded-full transition-[width] duration-700"
-          style={{ width: `${clamped}%`, background: barColor(pct) }}
+          style={{ width: `${clamped}%`, background: barFill(pct), boxShadow: `0 0 10px -3px ${barColor(pct)}` }}
         />
       </div>
     </div>
@@ -137,7 +145,7 @@ function ModelRows({
             <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
               <div
                 className="h-full rounded-full transition-[width] duration-700"
-                style={{ width: `${pct}%`, background: barColor(pct) }}
+                style={{ width: `${pct}%`, background: barFill(pct), boxShadow: `0 0 8px -3px ${barColor(pct)}` }}
               />
             </div>
           </div>

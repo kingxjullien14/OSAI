@@ -74,11 +74,65 @@ fn detach_child_process(cmd: &mut Command) {
 /// turn, resuming the prior session by id). Each engine's differing event shape
 /// is normalized into claude's wire shape in Rust (see `adapt_codex_appserver_*`
 /// / `adapt_opencode_line`) so the frontend is untouched.
+/// BYO-key API providers (Tier 4). Each maps to a `chat_api::ApiProtocol` + a POST
+/// URL + the keychain/env provider id (`apikeys::key_for`). Fieldless + Copy so
+/// `Engine` stays Copy. Ids mirror `src/lib/providers.ts` (`ApiProviderId`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ApiProvider {
+    OpenRouter,
+    Anthropic,
+    Openai,
+    Ollama,
+}
+
+impl ApiProvider {
+    fn parse(s: &str) -> Option<ApiProvider> {
+        match s {
+            "openrouter" => Some(ApiProvider::OpenRouter),
+            "anthropic" => Some(ApiProvider::Anthropic),
+            "openai" => Some(ApiProvider::Openai),
+            "ollama" => Some(ApiProvider::Ollama),
+            _ => None,
+        }
+    }
+    /// keychain/env provider id (matches apikeys.rs + providers.ts).
+    fn id(self) -> &'static str {
+        match self {
+            ApiProvider::OpenRouter => "openrouter",
+            ApiProvider::Anthropic => "anthropic",
+            ApiProvider::Openai => "openai",
+            ApiProvider::Ollama => "ollama",
+        }
+    }
+    fn protocol(self) -> crate::chat_api::ApiProtocol {
+        use crate::chat_api::ApiProtocol;
+        match self {
+            ApiProvider::Anthropic => ApiProtocol::AnthropicMessages,
+            ApiProvider::OpenRouter | ApiProvider::Openai => ApiProtocol::OpenaiChat,
+            ApiProvider::Ollama => ApiProtocol::OllamaChat,
+        }
+    }
+    /// Full POST URL for a turn. (Ollama endpoint override = a later setting.)
+    fn url(self) -> &'static str {
+        match self {
+            ApiProvider::Anthropic => "https://api.anthropic.com/v1/messages",
+            ApiProvider::Openai => "https://api.openai.com/v1/chat/completions",
+            ApiProvider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
+            ApiProvider::Ollama => "http://localhost:11434/api/chat",
+        }
+    }
+    fn keyless(self) -> bool {
+        matches!(self, ApiProvider::Ollama)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Engine {
     Claude,
     Codex,
     Opencode,
+    /// BYO-key native API tier (Tier 4) — no process; `run_api_turn` does the HTTP.
+    Api(ApiProvider),
 }
 
 impl Engine {
@@ -86,11 +140,15 @@ impl Engine {
         match s {
             Some("codex") => Engine::Codex,
             Some("opencode") => Engine::Opencode,
-            _ => Engine::Claude,
+            // an API provider id (openrouter/anthropic/openai/ollama) selects the
+            // API tier; anything else falls back to claude (back-compat default).
+            Some(other) => ApiProvider::parse(other).map_or(Engine::Claude, Engine::Api),
+            None => Engine::Claude,
         }
     }
     /// True for spawn-per-turn engines (no persistent stdin process). Codex is
     /// NOT per-turn anymore — it runs a persistent app-server (see `Engine` doc).
+    /// API engines are handled BEFORE this check (in chat_start / chat_send).
     fn per_turn(self) -> bool {
         matches!(self, Engine::Opencode)
     }
@@ -139,6 +197,9 @@ struct ChatSession {
     title: Mutex<String>,
     /// True while a turn is in flight (set on send, cleared on `result`).
     busy: AtomicBool,
+    /// True once the replay buffer has evicted lines (REPLAY_CAP) — a reattach
+    /// replays a transcript that silently starts mid-run unless we say so.
+    replay_truncated: AtomicBool,
     /// True once the pane closed but we kept the process alive.
     detached: AtomicBool,
     /// Fire an OS notification when the current/next turn completes.
@@ -170,6 +231,10 @@ struct ChatSession {
     /// `apply_patch_approval`); we surface it as the SAME ApprovalCard claude
     /// uses and, on the user's decision, reply over JSON-RPC with the mapped id.
     pending_approvals: Mutex<HashMap<String, Value>>,
+    /// API tier (Tier 4): the FULL conversation AIOS owns + replays to the provider
+    /// every turn (`[{role, content}]`, chronological). Empty for CLI engines.
+    /// AIOS owning this array is also what makes honest branching possible later.
+    api_messages: Mutex<Vec<Value>>,
 }
 
 /// Module-level registry of every live chat session, keyed by an incrementing
@@ -578,6 +643,29 @@ fn user_line(text: &str) -> String {
     )
 }
 
+/// The user line we RECORD (history + replay buffer) when images rode the turn:
+/// same shape as `user_line` plus one `aios_image_ref` block per attachment.
+/// The engine still gets real base64 blocks on the wire; recording only paths
+/// keeps the log light while letting replay re-show the thumbnails — before
+/// this, a resumed image turn silently showed just its caption, as if the
+/// picture never existed.
+fn user_record_line(text: &str, images: &[String]) -> String {
+    let mut content: Vec<Value> = images
+        .iter()
+        .map(|p| json!({ "type": "aios_image_ref", "path": p }))
+        .collect();
+    if !text.trim().is_empty() {
+        content.push(json!({ "type": "text", "text": text }));
+    }
+    let mut line = json!({
+        "type": "user",
+        "message": { "role": "user", "content": content }
+    })
+    .to_string();
+    line.push('\n');
+    line
+}
+
 /// Guesses an image media_type from a file path extension. Defaults to png —
 /// claude rejects unknown types, and png is the most common clipboard format.
 fn image_media_type(path: &str) -> &'static str {
@@ -688,6 +776,11 @@ pub fn chat_start(
     resume: Option<String>,
 ) -> Result<u32, String> {
     let eng = Engine::parse(engine.as_deref());
+    // BYO-key API tier (Tier 4): no process — register the session here; each turn
+    // is an HTTP call in run_api_turn.
+    if let Engine::Api(provider) = eng {
+        return start_api_session(provider, on_event, cwd, model, resume);
+    }
     // codex (ChatGPT sub) → persistent codex app-server process (JSON-RPC).
     if matches!(eng, Engine::Codex) {
         return start_codex_appserver(
@@ -716,9 +809,14 @@ pub fn chat_start(
         .arg("--include-partial-messages")
         .arg("--verbose");
 
-    // resume a prior session id (continues that conversation's history)
-    if let Some(r) = resume.as_deref().filter(|s| !s.is_empty()) {
-        cmd.arg("--resume").arg(r);
+    // resume a prior session id (continues that conversation's history). The
+    // frontend always passes the STORE id (the conversation's permanent
+    // identity); we resolve it to the newest fork for the actual --resume —
+    // claude forks a fresh session_id on every resume, and only the newest
+    // fork's transcript carries the turns since (see resolve_resume_pointer).
+    let resume_store_id = resume.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
+    if let Some(store_id) = resume_store_id.as_deref() {
+        cmd.arg("--resume").arg(resolve_resume_pointer(store_id));
     }
     if let Some(m) = model.as_deref().filter(|s| !s.is_empty()) {
         cmd.arg("--model").arg(m);
@@ -784,6 +882,7 @@ pub fn chat_start(
         history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
+        replay_truncated: AtomicBool::new(false),
         detached: AtomicBool::new(false),
         notify_on_done: AtomicBool::new(false),
         rpc_id: AtomicU64::new(1),
@@ -792,7 +891,20 @@ pub fn chat_start(
         answer_item: Mutex::new(None),
         answer_streamed: AtomicBool::new(false),
         pending_approvals: Mutex::new(HashMap::new()),
+        api_messages: Mutex::new(Vec::new()),
     });
+
+    // Resumed conversation: pin its PERMANENT identity now — claude_id stays the
+    // store id (so the pane, stars and pointer updates key off it) and the
+    // durable log keeps appending to the SAME events.jsonl across every fork.
+    // The forked init that arrives in a moment is detected in ingest_line (its
+    // session_id differs) and recorded as the resume POINTER, not the identity —
+    // this is what stops each reopen from fragmenting one conversation into a
+    // frozen old entry + a new-turns-only entry.
+    if let Some(store_id) = resume_store_id.as_deref() {
+        *session.claude_id.lock() = Some(store_id.to_string());
+        session.history.lock().set_id(store_id);
+    }
 
     // stdout reader: blocking reads → UTF-8-safe → whole lines. Each line is
     // appended to the replay buffer AND forwarded to the current sink (if any).
@@ -908,6 +1020,7 @@ fn start_per_turn(
         history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
+        replay_truncated: AtomicBool::new(false),
         detached: AtomicBool::new(false),
         notify_on_done: AtomicBool::new(false),
         rpc_id: AtomicU64::new(1),
@@ -916,6 +1029,7 @@ fn start_per_turn(
         answer_item: Mutex::new(None),
         answer_streamed: AtomicBool::new(false),
         pending_approvals: Mutex::new(HashMap::new()),
+        api_messages: Mutex::new(Vec::new()),
     });
     // Bare init (no session_id) just flips claudeReady — the real id arrives on
     // turn 1. ingest into the buffer too so a reattach replays it.
@@ -924,15 +1038,238 @@ fn start_per_turn(
     Ok(id)
 }
 
+/// Register a BYO-key API session (Tier 4) — no process; `run_api_turn` does the
+/// HTTP per turn. AIOS mints the session id (no CLI to do it) so history keys +
+/// the frontend's recordChatSession work, and emits a `system` init carrying it.
+fn start_api_session(
+    provider: ApiProvider,
+    on_event: Channel<String>,
+    cwd: Option<String>,
+    model: Option<String>,
+    resume: Option<String>,
+) -> Result<u32, String> {
+    let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+    // RESUME: reuse the prior chat's id (append to the SAME durable log) + replay
+    // its message array so the conversation continues with full context across a
+    // restart / model switch (AIOS owns the array — the CLI can't do this). A
+    // fresh chat mints a new id + an empty array.
+    let resume_id = resume.filter(|s| !s.is_empty());
+    let api_sid = resume_id
+        .clone()
+        .unwrap_or_else(|| format!("api-{}-{}", provider.id(), id));
+    let prior = resume_id
+        .as_deref()
+        .map(crate::chat_history::replay_api_messages)
+        .unwrap_or_default();
+    let session = Arc::new(ChatSession {
+        id,
+        engine: Engine::Api(provider),
+        child: Mutex::new(None),
+        stdin: Mutex::new(None),
+        thread_id: Mutex::new(None),
+        cwd: Mutex::new(cwd.filter(|s| !s.is_empty())),
+        model: Mutex::new(model.filter(|s| !s.is_empty())),
+        effort: Mutex::new(None),
+        sink: Mutex::new(Some(on_event)),
+        buffer: Mutex::new(VecDeque::with_capacity(256)),
+        claude_id: Mutex::new(Some(api_sid.clone())),
+        history: Mutex::new(crate::chat_history::HistoryLog::new()),
+        title: Mutex::new(String::new()),
+        busy: AtomicBool::new(false),
+        replay_truncated: AtomicBool::new(false),
+        detached: AtomicBool::new(false),
+        notify_on_done: AtomicBool::new(false),
+        rpc_id: AtomicU64::new(1),
+        pending_turn: Mutex::new(None),
+        active_turn: Mutex::new(None),
+        answer_item: Mutex::new(None),
+        answer_streamed: AtomicBool::new(false),
+        pending_approvals: Mutex::new(HashMap::new()),
+        api_messages: Mutex::new(prior),
+    });
+    session.history.lock().set_id(&api_sid);
+    // init carries the session_id → the pane flips ready + records the session.
+    ingest_line_arc(
+        &session,
+        &format!(
+            "{{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"{}\"}}",
+            api_sid
+        ),
+    );
+    with_sessions(|m| m.insert(id, session));
+    Ok(id)
+}
+
+/// A claude-shaped error `result` line (frees the composer + shows WHY in red).
+fn api_error_result(sid: &str, msg: &str) -> String {
+    format!(
+        "{{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"text\":\"{}\",\"session_id\":\"{}\",\"total_cost_usd\":0}}",
+        json_escape(msg),
+        sid
+    )
+}
+
+/// Build + send the streaming POST (blocking — runs on the per-turn thread, never
+/// a tokio runtime). Returns the live `Response` for line-by-line streaming, or a
+/// transport error.
+fn send_api_request(
+    provider: ApiProvider,
+    key: Option<&str>,
+    body: &Value,
+) -> Result<reqwest::blocking::Response, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("http client error: {e}"))?;
+    let mut req = client.post(provider.url()).json(body);
+    match provider {
+        ApiProvider::Anthropic => {
+            req = req
+                .header("x-api-key", key.unwrap_or(""))
+                .header("anthropic-version", "2023-06-01");
+        }
+        ApiProvider::OpenRouter | ApiProvider::Openai => {
+            req = req.header("authorization", format!("Bearer {}", key.unwrap_or("")));
+        }
+        ApiProvider::Ollama => {}
+    }
+    req.send().map_err(|e| format!("request failed: {e}"))
+}
+
+/// Run ONE turn for a BYO-key API session (Tier 4). Appends the user message to
+/// the AIOS-owned conversation, calls the provider over HTTP on a worker thread,
+/// STREAMS the response line-by-line (text tokens type out live), and settles with
+/// the full answer (recorded to history) + a usage-bearing `result`. Errors
+/// surface as a red result.
+fn run_api_turn(
+    sess: Arc<ChatSession>,
+    app: AppHandle,
+    text: String,
+    provider: ApiProvider,
+    messages_override: Option<Vec<Value>>,
+) -> Result<(), String> {
+    let sid = sess.claude_id.lock().clone().unwrap_or_default();
+    let model = sess.model.lock().clone().unwrap_or_default();
+    if model.is_empty() {
+        ingest_line(&sess, &app, &api_error_result(&sid, "no model selected for the API provider"));
+        return Ok(());
+    }
+    let key = if provider.keyless() {
+        None
+    } else {
+        crate::apikeys::key_for(provider.id())
+    };
+    if !provider.keyless() && key.is_none() {
+        ingest_line(
+            &sess,
+            &app,
+            &api_error_result(
+                &sid,
+                &format!(
+                    "no API key for {} — add one in Settings → agent control, or set the env var",
+                    provider.id()
+                ),
+            ),
+        );
+        return Ok(());
+    }
+    // Branching (Tier-3 P2): when the frontend supplies the active root→leaf path
+    // (it already includes this user turn), the frontend OWNS the tree — send that
+    // array verbatim. Otherwise (linear chat) append this turn to our own array.
+    let messages = match messages_override {
+        Some(m) if !m.is_empty() => {
+            *sess.api_messages.lock() = m.clone();
+            m
+        }
+        _ => {
+            sess.api_messages
+                .lock()
+                .push(json!({ "role": "user", "content": text }));
+            sess.api_messages.lock().clone()
+        }
+    };
+    let proto = provider.protocol();
+
+    let sess2 = Arc::clone(&sess);
+    let app2 = app.clone();
+    thread::spawn(move || {
+        use std::io::BufRead;
+        let body = crate::chat_api::build_request_body(proto, &model, &messages);
+        let resp = match send_api_request(provider, key.as_deref(), &body) {
+            Ok(r) => r,
+            Err(e) => {
+                ingest_line(&sess2, &app2, &api_error_result(&sid, &e));
+                return;
+            }
+        };
+        // a non-2xx body is a plain JSON error (not a stream) — surface it.
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().unwrap_or_default();
+            let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+            let msg = crate::chat_api::parse_answer(proto, &v)
+                .err()
+                .unwrap_or_else(|| format!("HTTP {} from provider", status.as_u16()));
+            ingest_line(&sess2, &app2, &api_error_result(&sid, &msg));
+            return;
+        }
+        // stream the body line-by-line: text deltas type out live; usage + the
+        // full answer settle the turn at the end.
+        let mut full = String::new();
+        let (mut input, mut output) = (0u64, 0u64);
+        for line in std::io::BufReader::new(resp).lines() {
+            let Ok(line) = line else { break };
+            for ev in crate::chat_api::parse_stream_line(proto, &line) {
+                match ev {
+                    crate::chat_api::StreamEvent::Delta(t) => {
+                        full.push_str(&t);
+                        ingest_line(&sess2, &app2, &text_delta_line(&t));
+                    }
+                    crate::chat_api::StreamEvent::InputTokens(n) => input = n,
+                    crate::chat_api::StreamEvent::OutputTokens(n) => output = n,
+                    crate::chat_api::StreamEvent::Done => {}
+                }
+            }
+        }
+        if full.trim().is_empty() {
+            ingest_line(
+                &sess2,
+                &app2,
+                &api_error_result(&sid, "the provider returned an empty response"),
+            );
+            return;
+        }
+        // record the FULL answer (durable history + AIOS-owned array). The deltas
+        // already rendered it, so the reducer dedups this line in the UI. Then the
+        // `result` settles the streaming turn.
+        ingest_line(&sess2, &app2, &assistant_text_line(&full));
+        let mut usage = serde_json::Map::new();
+        if input > 0 {
+            usage.insert("input_tokens".into(), json!(input));
+        }
+        if output > 0 {
+            usage.insert("output_tokens".into(), json!(output));
+        }
+        ingest_line(
+            &sess2,
+            &app2,
+            &format!(
+                "{{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"{}\",\"usage\":{},\"total_cost_usd\":0}}",
+                sid,
+                Value::Object(usage)
+            ),
+        );
+        sess2
+            .api_messages
+            .lock()
+            .push(json!({ "role": "assistant", "content": full }));
+    });
+    Ok(())
+}
+
 /// Buffers + forwards a line on a session that has no AppHandle context (startup).
 fn ingest_line_arc(sess: &Arc<ChatSession>, line: &str) {
-    {
-        let mut b = sess.buffer.lock();
-        if b.len() >= REPLAY_CAP {
-            b.pop_front();
-        }
-        b.push_back(line.to_string());
-    }
+    buffer_line(sess, line);
     if let Some(ch) = sess.sink.lock().as_ref() {
         let _ = ch.send(line.to_string());
     }
@@ -953,6 +1290,7 @@ fn run_per_turn(sess: Arc<ChatSession>, app: AppHandle, text: String) -> Result<
         Engine::Codex => Command::new(codex_bin()),
         Engine::Opencode => Command::new(opencode_bin()),
         Engine::Claude => return Err("claude is not a per-turn engine".into()),
+        Engine::Api(_) => return Err("api sessions don't use run_per_turn".into()),
     };
     match engine {
         Engine::Codex => {
@@ -993,6 +1331,7 @@ fn run_per_turn(sess: Arc<ChatSession>, app: AppHandle, text: String) -> Result<
             cmd.arg(&text);
         }
         Engine::Claude => unreachable!(),
+        Engine::Api(_) => unreachable!("api handled before run_per_turn"),
     }
     match cwd.as_deref().filter(|s| !s.is_empty()) {
         Some(dir) => {
@@ -1329,6 +1668,7 @@ fn start_codex_appserver(
         history: Mutex::new(crate::chat_history::HistoryLog::new()),
         title: Mutex::new(String::new()),
         busy: AtomicBool::new(false),
+        replay_truncated: AtomicBool::new(false),
         detached: AtomicBool::new(false),
         notify_on_done: AtomicBool::new(false),
         rpc_id: AtomicU64::new(1),
@@ -1337,6 +1677,7 @@ fn start_codex_appserver(
         answer_item: Mutex::new(None),
         answer_streamed: AtomicBool::new(false),
         pending_approvals: Mutex::new(HashMap::new()),
+        api_messages: Mutex::new(Vec::new()),
     });
 
     // Bare init (no session_id) flips claudeReady now; the real session_id lands
@@ -1771,6 +2112,9 @@ fn adapt_line(sess: &Arc<ChatSession>, engine: Engine, line: &str) -> Vec<String
         Engine::Codex => adapt_codex_line(sess, line),
         Engine::Opencode => adapt_opencode_line(sess, line),
         Engine::Claude => vec![line.to_string()],
+        // API lines are already emitted claude-shaped; never routed here, but
+        // pass through verbatim to keep the match total.
+        Engine::Api(_) => vec![line.to_string()],
     }
 }
 
@@ -2053,17 +2397,26 @@ fn adapt_opencode_line(sess: &Arc<ChatSession>, line: &str) -> Vec<String> {
     out
 }
 
+/// Appends one line to the replay buffer ONLY (no live-sink send). Used for the
+/// user's own turns: the pane already rendered them locally when it sent, so
+/// echoing them back live would double the bubble — but a reattached pane
+/// rebuilds the transcript purely from this buffer, and without the user lines
+/// every response run collapsed into phantom "variants" of one rootless prompt
+/// (the ‹2/2› switcher bug) with the questions themselves missing.
+fn buffer_line(sess: &Arc<ChatSession>, line: &str) {
+    let mut b = sess.buffer.lock();
+    if b.len() >= REPLAY_CAP {
+        b.pop_front();
+        sess.replay_truncated.store(true, Ordering::SeqCst);
+    }
+    b.push_back(line.to_string());
+}
+
 /// Appends one line to the replay buffer AND forwards it to the live sink (if a
 /// pane is attached). The low-level fan-out shared by `ingest_line` and by
 /// synthetic lines we inject (e.g. the live `usage` tick after a turn).
 fn fan_out(sess: &Arc<ChatSession>, line: &str) {
-    {
-        let mut b = sess.buffer.lock();
-        if b.len() >= REPLAY_CAP {
-            b.pop_front();
-        }
-        b.push_back(line.to_string());
-    }
+    buffer_line(sess, line);
     if let Some(ch) = sess.sink.lock().as_ref() {
         let _ = ch.send(line.to_string());
     }
@@ -2079,6 +2432,18 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
             // Key the durable history log by the engine session id + flush any
             // lines that streamed before the id was known.
             sess.history.lock().set_id(&sid);
+        }
+    } else if line.contains("\"subtype\":\"init\"") {
+        // Resumed session: claude --resume forked a fresh session_id. The
+        // identity (claude_id, history key, store entry) stays the seeded store
+        // id; the fork only moves the resume POINTER so the NEXT resume
+        // continues from the newest engine transcript. Stable ids everywhere
+        // else is what keeps one conversation ONE history entry forever.
+        let cur = sess.claude_id.lock().clone();
+        if let (Some(cur), Some(sid)) = (cur, extract_json_str(line, "session_id")) {
+            if sid != cur {
+                update_resume_pointer(&cur, &sid);
+            }
         }
     }
 
@@ -2108,7 +2473,7 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
             } else {
                 title
             };
-            notify_done(app, sess.id, &label);
+            notify_done(app, sess.id, &label, sess.claude_id.lock().clone());
         }
         // Live usage tick: right after each claude turn, re-read the statusline's
         // usage.json and push a synthetic `usage` event so the composer's usage
@@ -2233,17 +2598,22 @@ fn extract_json_str(line: &str, key: &str) -> Option<String> {
 
 /// Payload for the in-app `aios-notify` event. The front-end turns this into a
 /// clickable `AiosNotification` whose target reattaches the chat by session id.
+/// `claude_id` (the durable conversation uuid) rides along so a click can still
+/// reopen the conversation from history when the live session is gone — the
+/// registry is in-memory, so every backend id in a notification dies with the
+/// app; without the uuid a stale notification was a permanent dead end.
 #[derive(serde::Serialize, Clone)]
 struct AiosNotifyPayload {
     kind: String,
     session_id: u32,
     title: String,
+    claude_id: Option<String>,
 }
 
 /// Fires a native OS notification AND an in-app `aios-notify` event that a
 /// backgrounded chat finished. The in-app event is what makes the bell + toast
 /// fire and carries the session id so the click can reattach the exact chat.
-fn notify_done(app: &AppHandle, session_id: u32, title: &str) {
+fn notify_done(app: &AppHandle, session_id: u32, title: &str, claude_id: Option<String>) {
     use tauri_plugin_notification::NotificationExt;
     let _ = app
         .notification()
@@ -2257,6 +2627,7 @@ fn notify_done(app: &AppHandle, session_id: u32, title: &str) {
             kind: "chat.done".to_string(),
             session_id,
             title: title.to_string(),
+            claude_id,
         },
     );
 }
@@ -2271,18 +2642,35 @@ pub fn chat_send(
     session_id: u32,
     text: String,
     image_paths: Option<Vec<String>>,
+    // API-tier branching (Tier 4): the active root→leaf conversation to send,
+    // including this turn. When present, the API engine sends exactly this array
+    // (the frontend owns the tree); CLI engines ignore it.
+    messages: Option<Vec<Value>>,
 ) -> Result<(), String> {
     let Some(s) = with_sessions(|m| m.get(&session_id).cloned()) else {
         return Err(format!("chat session {session_id} not found"));
     };
     s.busy.store(true, Ordering::SeqCst);
     let images = image_paths.unwrap_or_default();
-    // Persist the user's turn to the durable history log (text only — image
-    // base64 isn't worth storing). Engine OUTPUT is captured in `ingest_line`;
-    // the user line goes to the engine's stdin and is never echoed back as an
-    // event, so it must be recorded here to keep the log complete.
-    if !text.trim().is_empty() {
-        s.history.lock().record(&user_line(&text));
+    // Persist the user's turn to the durable history log (text + image PATH
+    // refs — base64 isn't worth storing). Engine OUTPUT is captured in
+    // `ingest_line`; the user line goes to the engine's stdin and is never
+    // echoed back as an event, so it must be recorded here to keep the log
+    // complete. Mirror it into the replay buffer too (buffer-only — the live
+    // pane already rendered its own bubble) so a reattach reconstructs the
+    // full dialogue, not an answers-only transcript.
+    if !text.trim().is_empty() || !images.is_empty() {
+        let line = if images.is_empty() {
+            user_line(&text)
+        } else {
+            user_record_line(&text, &images)
+        };
+        s.history.lock().record(&line);
+        buffer_line(&s, &line);
+    }
+    if let Engine::Api(provider) = s.engine {
+        // API tier (Tier 4) is text-only for v1 — no multimodal channel yet.
+        return run_api_turn(s, app, text, provider, messages);
     }
     if matches!(s.engine, Engine::Codex) {
         return codex_send_turn(&s, text, &images);
@@ -2336,6 +2724,10 @@ pub struct ChatReattachInfo {
     pub model: Option<String>,
     /// The engine's own session uuid (claude session_id / codex threadId).
     pub claude_id: Option<String>,
+    /// Human label the session was running under (chat_set_title) — lets the
+    /// reattached pane keep its conversation title instead of re-deriving one
+    /// from the next message (which used to rename the history entry).
+    pub title: String,
 }
 
 /// Reattaches a reopened pane to a live (possibly backgrounded) session: rebinds
@@ -2346,7 +2738,21 @@ pub fn chat_reattach(session_id: u32, on_event: Channel<String>) -> Result<ChatR
     let s = with_sessions(|m| m.get(&session_id).cloned())
         .ok_or_else(|| format!("chat session {session_id} not found"))?;
     // Replay buffer first, then go live — order matters so the pane sees history
-    // before new deltas.
+    // before new deltas. If the rolling buffer ever evicted lines, say so up
+    // front — otherwise the replay silently starts mid-run and reads as "the
+    // beginning of the conversation".
+    if s.replay_truncated.load(Ordering::SeqCst) {
+        let _ = on_event.send(
+            json!({
+                "type": "result",
+                "subtype": "success",
+                "is_error": false,
+                "text": format!("older activity trimmed from this replay (kept the last {REPLAY_CAP} events) — the full conversation is in History"),
+                "total_cost_usd": 0
+            })
+            .to_string(),
+        );
+    }
     for line in s.buffer.lock().iter() {
         let _ = on_event.send(line.clone());
     }
@@ -2358,15 +2764,18 @@ pub fn chat_reattach(session_id: u32, on_event: Channel<String>) -> Result<ChatR
         Engine::Claude => "claude",
         Engine::Codex => "codex",
         Engine::Opencode => "opencode",
+        Engine::Api(p) => p.id(),
     }
     .to_string();
     let model = s.model.lock().clone().filter(|m| !m.is_empty());
     let claude_id = s.claude_id.lock().clone();
+    let title = s.title.lock().clone();
     Ok(ChatReattachInfo {
         busy,
         engine,
         model,
         claude_id,
+        title,
     })
 }
 
@@ -2454,18 +2863,44 @@ pub fn chat_interrupt(session_id: u32) -> Result<(), String> {
     write_line(session_id, &line)
 }
 
-/// Steers the in-flight turn with a follow-up message WITHOUT interrupting it
-/// (codex `turn/steer` — the model folds it into the running turn). Only codex
-/// supports true mid-turn steering today; other engines return Err so the
-/// frontend queues the message to fire when the current turn completes.
+/// Steers the in-flight turn with a follow-up message WITHOUT interrupting it.
+///
+/// - **codex**: a real `turn/steer` — the model folds it into the running turn.
+/// - **claude**: no native mid-turn steer exists, but claude's persistent stdin
+///   accepts a user line at any time. We write it immediately (a "soft inject"):
+///   the running turn picks it up at its next step boundary if claude reads stdin
+///   mid-turn, otherwise it lands as the next turn the instant the current one
+///   ends. Either way the text reaches the model WITHOUT discarding in-flight
+///   work — the host's `chat_interrupt` is the separate "stop & redirect" path.
+///   Recorded to history like a normal turn (engine output is captured by the
+///   reader; the user line is never echoed back, so it must be logged here).
+///
+/// Other (spawn-per-turn) engines return Err so the frontend queues the message
+/// to fire when the current turn completes.
+///
+/// `silent` marks plumbing injections (e.g. the "the user is answering in the
+/// UI — wait" hold sent when AskUserQuestion/ExitPlanMode auto-dismiss): the
+/// model must see them, but they're kept out of the durable history + replay
+/// buffer so a resumed/reattached transcript doesn't grow ghost user bubbles.
 #[tauri::command]
-pub fn chat_steer(session_id: u32, text: String) -> Result<(), String> {
+pub fn chat_steer(session_id: u32, text: String, silent: Option<bool>) -> Result<(), String> {
     let s = with_sessions(|m| m.get(&session_id).cloned())
         .ok_or_else(|| format!("chat session {session_id} not found"))?;
-    if matches!(s.engine, Engine::Codex) {
-        return codex_steer(&s, &text);
+    let res = if matches!(s.engine, Engine::Codex) {
+        codex_steer(&s, &text)
+    } else if matches!(s.engine, Engine::Claude) {
+        write_line(session_id, &user_line(&text))
+    } else {
+        Err("steering not supported for this engine".to_string())
+    };
+    // Record only on success (a failed steer falls back to the queue, which
+    // records on its own send — recording here too would double the line).
+    if res.is_ok() && !silent.unwrap_or(false) && !text.trim().is_empty() {
+        let line = user_line(&text);
+        s.history.lock().record(&line);
+        buffer_line(&s, &line);
     }
-    Err("steering not supported for this engine".into())
+    res
 }
 
 /// Writes a raw, already-formed JSON line to a session's stdin (must end in
@@ -2526,6 +2961,22 @@ pub fn chat_send_raw(session_id: u32, line: String) -> Result<(), String> {
     } else {
         format!("{line}\n")
     };
+    // A `tool_result` answer (e.g. the user answering an AskUserQuestion card)
+    // goes to the engine's stdin and is never echoed back as an event — exactly
+    // like chat_send's user line, so record it to the durable history. Otherwise a
+    // resumed chat replays the prompt with no answer (the ask card shows an open
+    // question forever). Only persist genuine `user` messages; the claude approval
+    // `control_response` shape that also flows through here is protocol noise.
+    if let Some(s) = with_sessions(|m| m.get(&session_id).cloned()) {
+        let is_user_msg = serde_json::from_str::<serde_json::Value>(line.trim())
+            .ok()
+            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
+            .as_deref()
+            == Some("user");
+        if is_user_msg {
+            s.history.lock().record(line.trim());
+        }
+    }
     write_line(session_id, &line)
 }
 
@@ -2577,6 +3028,12 @@ pub struct ChatSessionInfo {
     /// `list_chat_sessions` from the transcript/rollout; empty when unknown.
     #[serde(default)]
     pub last_user: String,
+    /// Where to `--resume` from NEXT time (claude forks a fresh session_id on
+    /// every resume; the newest fork carries the full model-side context). Empty
+    /// = resume `id` itself. `id` stays the conversation's PERMANENT identity —
+    /// the events.jsonl key, star key, and pane binding never churn with forks.
+    #[serde(default)]
+    pub resume_id: String,
 }
 
 /// One rendered turn loaded from a transcript, to repaint a resumed conversation.
@@ -2615,6 +3072,50 @@ fn load_store() -> Vec<ChatSessionInfo> {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<Vec<ChatSessionInfo>>(&s).ok())
         .unwrap_or_default()
+}
+
+fn save_store(store: &[ChatSessionInfo]) {
+    if let Some(path) = sessions_store() {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = path.with_extension("json.tmp");
+        if let Ok(json) = serde_json::to_string(store) {
+            let _ = std::fs::write(&tmp, json);
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+/// Where to actually `--resume` a stored conversation from: its newest fork id
+/// (`resume_id`) when one is recorded, else the stored id itself. The store id
+/// stays the conversation's permanent identity; this is just the engine handle.
+fn resolve_resume_pointer(store_id: &str) -> String {
+    load_store()
+        .iter()
+        .find(|s| s.id == store_id)
+        .map(|s| {
+            if s.resume_id.is_empty() {
+                store_id.to_string()
+            } else {
+                s.resume_id.clone()
+            }
+        })
+        .unwrap_or_else(|| store_id.to_string())
+}
+
+/// Records that conversation `store_id` forked to engine session `new_id` — the
+/// next resume must continue from the fork (the old engine transcript is frozen
+/// at the fork point). Called from `ingest_line` when a resumed session's init
+/// reports a session_id different from the identity we seeded.
+fn update_resume_pointer(store_id: &str, new_id: &str) {
+    let mut store = load_store();
+    if let Some(entry) = store.iter_mut().find(|s| s.id == store_id) {
+        if entry.resume_id != new_id {
+            entry.resume_id = new_id.to_string();
+            save_store(&store);
+        }
+    }
 }
 
 /// Records (upserts) a chat-pane session so `/resume` can list ONLY the chats
@@ -2673,20 +3174,12 @@ pub fn record_chat_session(
             engine: engine.unwrap_or_default(),
             model: model.unwrap_or_default(),
             last_user: String::new(),
+            resume_id: String::new(),
         });
     }
     store.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     store.truncate(200);
-    if let Some(path) = sessions_store() {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let tmp = path.with_extension("json.tmp");
-        if let Ok(json) = serde_json::to_string(&store) {
-            let _ = std::fs::write(&tmp, json);
-            let _ = std::fs::rename(&tmp, &path);
-        }
-    }
+    save_store(&store);
     Ok(())
 }
 
@@ -2987,6 +3480,7 @@ fn codex_session_info_from_rollout(path: &std::path::Path) -> Option<ChatSession
         engine: "codex".to_string(),
         model,
         last_user: String::new(),
+        resume_id: String::new(),
     })
 }
 

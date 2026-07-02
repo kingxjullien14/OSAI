@@ -90,7 +90,7 @@ import { chord, fmtChord } from "../lib/platform";
 import { DEFAULT_PROFILE, addProfile, loadProfiles } from "../lib/profiles";
 import { rememberUrl } from "../lib/browser-mem";
 import { type NotificationLevel } from "../lib/notifications";
-import { onAiosDrag, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
+import { onAiosDrag, onPaneOverlay, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
 import { homeDir } from "../lib/fs";
 import { basename, dirname, toFileUrl } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
@@ -271,6 +271,13 @@ export function BrowserPane({
     [],
   );
 
+  // A chrome menu (the pane's ⋯ overflow / right-click context menu) lives in
+  // PaneCard, ABOVE us in the tree — it can't shrink our native webview itself,
+  // so PaneCard broadcasts its open state on the pane bus and we hide while our
+  // key is flagged (same fix as `overlayMenuOpen` below, for menus we don't own).
+  const [chromeMenuOpen, setChromeMenuOpen] = useState(false);
+  useEffect(() => onPaneOverlay((keys) => setChromeMenuOpen(keys.has(label))), [label]);
+
   const rect = useCallback((): Rect | null => {
     const el = slotRef.current;
     if (!el) return null;
@@ -291,6 +298,8 @@ export function BrowserPane({
     profileMenuOpen ||
     menuOpen ||
     sendMenuOpen ||
+    // a chrome menu (⋯ / right-click) opened by PaneCard over this pane.
+    chromeMenuOpen ||
     // the address-bar autocomplete was the one dropdown MISSING here — it
     // rendered behind the native page, invisible while browsing.
     (suggestOpen && suggestions.length > 0);
@@ -1097,7 +1106,7 @@ export function BrowserPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
         <div className="flex shrink-0 items-center gap-1">
           <NavBtn
             title="Back"
@@ -1588,7 +1597,7 @@ export function BrowserPane({
           over the native webview, so it's always visible regardless of the
           webview compositing above the React layer. */}
       {findOpen && (
-        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2">
+        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
           <Search size={13} className="text-[var(--color-muted)]" />
           <input
             ref={findInputRef}
@@ -1634,7 +1643,7 @@ export function BrowserPane({
         // a reserved strip (find-bar pattern): the native webview paints over
         // ANY absolutely-positioned toast, so the toast takes real layout space
         // above the page instead — the rAF bounds-sync follows the shift.
-        <div className="fade-in-up flex h-7 shrink-0 items-center justify-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 text-[11px] text-[var(--color-text-2)]">
+        <div className="fade-in-up flex h-7 shrink-0 items-center justify-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-3 text-[11px] text-[var(--color-text-2)] backdrop-blur-md">
           <span className="truncate">{toast}</span>
         </div>
       )}

@@ -135,12 +135,24 @@ test("sendContract makes streaming send behavior explicit", () => {
       disabled: false,
     },
   );
+  // claude steers too now (soft-inject onto its stdin; ⌥⏎ interrupts & redirects).
   assert.deepEqual(
     sendContract({
       streaming: true,
       hasDraft: true,
       hasImages: false,
       engine: "claude",
+      started: true,
+    }).mode,
+    "steer",
+  );
+  // an engine without steering still queues mid-turn.
+  assert.deepEqual(
+    sendContract({
+      streaming: true,
+      hasDraft: true,
+      hasImages: false,
+      engine: "opencode",
       started: true,
     }).mode,
     "queue",

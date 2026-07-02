@@ -4,6 +4,7 @@
  *  logs exactly like VS Code's run terminal (and flutter's own `r` hot-reload
  *  works right in it). */
 import { invoke } from "./tauri";
+import type { ProjectWorkspace } from "./projectWorkspaces";
 
 export interface RunCommand {
   label: string;
@@ -50,4 +51,36 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 /** A short ▶ label for the run button, e.g. "▶ flutter run". */
 export function runLabel(p: ProjectRun): string {
   return p.commands.length ? `▶ ${p.commands[0].label}` : "▶ run";
+}
+
+/* ── structured workspaces (PLAN-projects-workspaces.md §8; P2 backend) ──
+   These call the Rust detection backend and return the `ProjectWorkspace` tree
+   (model + store live in lib/projectWorkspaces.ts). Not wired into the UI yet. */
+
+/** Scan the given roots (each child dir = a candidate workspace) for structured
+ *  workspaces. Empty roots → the backend's best-effort defaults. */
+export async function scanWorkspaces(roots: string[] = []): Promise<ProjectWorkspace[]> {
+  return invoke<ProjectWorkspace[]>("scan_workspaces", { roots });
+}
+
+/** Infer a single workspace's structure at `root`. */
+export async function detectWorkspace(root: string): Promise<ProjectWorkspace> {
+  return invoke<ProjectWorkspace>("detect_workspace", { root });
+}
+
+/** Suggested scan roots for the Settings UI to offer (existing code dirs). */
+export async function suggestedScanRoots(): Promise<string[]> {
+  return invoke<string[]>("suggested_scan_roots");
+}
+
+/** Preview the managed context block a workspace would write — read-only, no FS
+ *  writes. Powers the consent-first preview before generating. */
+export async function previewWorkspaceContext(root: string): Promise<string> {
+  return invoke<string>("preview_workspace_context", { root });
+}
+
+/** Write `aios.workspace.json` + upsert the managed block into CLAUDE.md +
+ *  AGENTS.md at the workspace root. Returns the files written. */
+export async function generateWorkspaceContext(root: string): Promise<string[]> {
+  return invoke<string[]>("generate_workspace_context", { root });
 }

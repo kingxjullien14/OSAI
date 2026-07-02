@@ -8,7 +8,9 @@
 //! permits it.
 
 use std::process::Command;
+#[cfg(target_os = "macos")]
 use std::thread;
+#[cfg(target_os = "macos")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(serde::Serialize)]

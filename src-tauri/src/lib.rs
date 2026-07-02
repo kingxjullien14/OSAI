@@ -8,7 +8,10 @@ mod bridges;
 mod browser;
 mod browser_store;
 mod chat;
+mod chat_api;
 mod chat_history;
+mod apikeys;
+mod control;
 mod device;
 mod diag;
 mod files;
@@ -290,6 +293,11 @@ pub fn run() {
                 browser_store::init(dir);
             }
 
+            // Control plane (Tier 2): a localhost HTTP server that lets an external
+            // agent drive the app (emit → App.tsx dispatchControl). No-op unless
+            // AIOS_CONTROL=1 — off by default, token-gated, 127.0.0.1 only.
+            control::start_control_server(app.handle().clone());
+
             // Install the native menu so cockpit accelerators (⌘F/⌘W/⌘1-9/…)
             // fire even when a child webview holds focus (R2a urgent fix).
             // macOS ONLY: there the menu lives in the system menu bar for free;
@@ -367,6 +375,12 @@ pub fn run() {
             lsp::lsp_status,
             lsp::lsp_find_root,
             set_close_to_tray,
+            control::aios_control_status,
+            control::aios_set_control,
+            apikeys::aios_set_api_key,
+            apikeys::aios_delete_api_key,
+            apikeys::aios_has_api_key,
+            apikeys::aios_list_api_keys,
             oracles::list_oracles,
             oracles::list_tmux_sessions,
             oracles::create_oracle,
@@ -381,6 +395,11 @@ pub fn run() {
             files::shell_source_status,
             files::detect_project,
             files::list_projects,
+            files::scan_workspaces,
+            files::detect_workspace,
+            files::suggested_scan_roots,
+            files::preview_workspace_context,
+            files::generate_workspace_context,
             files::home_dir,
             files::read_file_preview,
             files::read_text_file,
@@ -437,6 +456,16 @@ pub fn run() {
             chat::read_chat_transcript,
             chat_history::read_chat_history,
             chat_history::chat_history_meta,
+            chat_history::save_chat_tree,
+            chat_history::load_chat_tree,
+            chat_history::list_chat_history,
+            chat_history::set_starred,
+            chat_history::delete_chats,
+            chat_history::restore_chats,
+            chat_history::purge_trash,
+            chat_history::list_trash,
+            chat_history::export_chat,
+            chat_history::search_chat_history,
             chat::detect_providers,
             browser::browser_show,
             browser::browser_set_bounds,

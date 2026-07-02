@@ -36,6 +36,7 @@ import {
 } from "../lib/appcast";
 import type { Rect } from "../lib/browser";
 import { type NotificationLevel } from "../lib/notifications";
+import { onPaneOverlay } from "../lib/paneBus";
 import { reportDiag } from "../lib/diag";
 
 /** macOS deep-link straight to Privacy › Screen Recording. */
@@ -123,6 +124,11 @@ function AppCastPaneInner({
   // Picker search query + keyboard-nav highlight index (into the FLAT filtered list).
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
+  // A chrome menu (PaneCard's ⋯ / right-click) is open over this pane → hide the
+  // capture view so the HTML menu shows (same fix as `pickerOpen`, but for menus
+  // PaneCard owns; it broadcasts on the pane bus keyed by our `label`).
+  const [chromeMenuOpen, setChromeMenuOpen] = useState(false);
+  useEffect(() => onPaneOverlay((keys) => setChromeMenuOpen(keys.has(label))), [label]);
 
   const notify = useCallback(
     (msg: string, level: NotificationLevel = "info") => {
@@ -200,7 +206,7 @@ function AppCastPaneInner({
     // React dropdown and clips it, so hide the mirror while the user is choosing
     // (mirrors the BrowserPane "hide webview when a menu/modal is open" pattern).
     // The pickerOpen effect below shows + re-syncs bounds again on close.
-    if (pickerOpen) {
+    if (pickerOpen || chromeMenuOpen) {
       if (startedRef.current) appcastHide(label).catch((e) => reportDiag("appcast.hide", e, { action: "picker" }));
       return;
     }
@@ -240,7 +246,7 @@ function AppCastPaneInner({
       window.removeEventListener("resize", sync);
       clearInterval(poll);
     };
-  }, [active, picked, label, rect, pickerOpen]);
+  }, [active, picked, label, rect, pickerOpen, chromeMenuOpen]);
 
   // Teardown on unmount: hide then close (stops capture + drops the view).
   useEffect(() => {
@@ -348,7 +354,7 @@ function AppCastPaneInner({
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
       {/* Toolbar — window picker (mirrors BrowserPane's URL-bar row). */}
-      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2">
+      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
         <MonitorUp size={14} className="shrink-0 text-[var(--color-muted)]" />
         <div ref={pickerRef} className="relative min-w-0 flex-1">
           <button

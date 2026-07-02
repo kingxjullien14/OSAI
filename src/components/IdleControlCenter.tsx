@@ -43,16 +43,14 @@ import {
 } from "react";
 import {
   ArrowUp,
-  Flame,
+  Check,
   FolderGit2,
-  GitBranch,
+  Globe,
   History,
-  Layers,
   Search,
   Sparkles,
-  SquareStack,
-  Target,
   Terminal,
+  X,
 } from "lucide-react";
 
 import type { AppDef } from "../App";
@@ -68,14 +66,15 @@ import type { UsageExtras } from "../lib/stats";
 import { AnimatePresence, m } from "motion/react";
 
 import { ProviderBlock, useUsageRates } from "./dashboard/UsageGlance";
-import { listWorkspaces, subscribeWorkspaces, type Workspace } from "../lib/workspaces";
+import { listChatHistory, chatHistoryMeta, type HistoryEntry } from "../lib/chatHistory";
+import { type Workspace } from "../lib/workspaces";
+import { type WorkSession } from "../lib/workSessions";
 import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
 import { setPaletteMorphSource } from "../lib/paletteMorph";
 import { BlurText } from "./fx/BlurText";
 import { Confetti } from "./fx/Confetti";
 import { DotPattern } from "./fx/DotPattern";
-import { NumberTicker } from "./fx/NumberTicker";
 import { Ripple } from "./fx/Ripple";
 import { Spotlight } from "./fx/Spotlight";
 import { spotlightMove } from "./fx/spotlightGlow";
@@ -110,6 +109,11 @@ export function IdleControlCenter({
   onResumeLayout,
   onTalkToJarvis,
   onApplyWorkspace,
+  shapeByRoot,
+  workSessions,
+  onResumeSession,
+  onRemoveSession,
+  onDoneSession,
 }: {
   projects: ProjectInfo[];
   sidebar: SidebarState;
@@ -137,6 +141,13 @@ export function IdleControlCenter({
   onTalkToJarvis: (seed: string) => void;
   /** restore a saved workspace (named pane layout) from its launch-row chip. */
   onApplyWorkspace?: (ws: Workspace) => void;
+  /** root → shape label for structured workspaces; RecentProjects shows a hint chip. */
+  shapeByRoot?: Record<string, string>;
+  /** Work Sessions for the "Continue working" rail + a one-click resume (Tier 1). */
+  workSessions?: WorkSession[];
+  onResumeSession?: (s: WorkSession) => void;
+  onRemoveSession?: (id: string) => void;
+  onDoneSession?: (id: string) => void;
 }) {
   // ── derived state — declared BEFORE any JSX/hook that reads them (TDZ-safe) ──
   const recent = [...projects].sort((a, b) => b.mtime - a.mtime).slice(0, 5);
@@ -147,19 +158,31 @@ export function IdleControlCenter({
   const dirtyProjects = pulse.filter(
     (repo) => repo.dirty || repo.ahead || repo.behind,
   ).length;
-  const pinned = sidebar.items
-    .filter((item) => item.group === "pinned" && !item.hidden)
-    .slice(0, 6);
-  const streak = extras?.currentStreak ?? 0;
-  const ctxPct = rate?.contextPct ?? null;
-
   const { claude, codex, hasClaude, hasCodex } = useUsageRates();
   const hasUsage = hasClaude || hasCodex;
 
-  // saved workspaces — read straight from the store (localStorage) so the
-  // chips appear/refresh without prop threading; App only supplies the apply.
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(listWorkspaces);
-  useEffect(() => subscribeWorkspaces(() => setWorkspaces(listWorkspaces())), []);
+  // recent chats for the "pick up where you left off" card (durable history).
+  const [recentChats, setRecentChats] = useState<HistoryEntry[]>([]);
+  useEffect(() => {
+    let alive = true;
+    listChatHistory(6)
+      .then((h) => alive && setRecentChats(h))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Props retained for the interface but no longer rendered on this surface —
+  // the bottom status/ambient band + workspace/pinned chips were removed by
+  // design (owner: "the bottom part feels out").
+  void onApplyWorkspace;
+  void onOpenSidebarItem;
+  void onOpenScheduledAgents;
+  void sidebar;
+  void rate;
+  void extras;
+  void focus;
 
   // liveness 0..1 — the backdrop breathes with what the system is actually
   // doing (agents running, repos with unpushed work, unread signals). Idle
@@ -177,23 +200,26 @@ export function IdleControlCenter({
   useEffect(() => subscribePetConfetti(() => setConfettiKey((k) => k + 1)), []);
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden">
+    // .aios-stage = the same animated aurora ground the chat pane uses, so the
+    // home and chat share one background (owner request). The drift blooms below
+    // layer extra life on top, like the chat empty-hero.
+    <div className="aios-stage relative flex h-full flex-col overflow-hidden">
       {/* masked dot grid — quiet texture under the hero (pure SVG, no motion) */}
       <DotPattern />
       {/* one-shot accent spotlight sweep on arrival, settling over the blobs */}
       <Spotlight />
-      {/* faint ambient drift — identity, not decoration; reduce-motion kills it */}
+      {/* drifting accent + cyan blooms — the aurora breathes; reduce-motion kills it */}
       <div
         className="pointer-events-none absolute inset-0 overflow-hidden"
-        style={{ opacity: 0.55 + liveness * 0.45, transition: "opacity 2s ease-in-out" }}
+        style={{ opacity: 0.6 + liveness * 0.4, transition: "opacity 2s ease-in-out" }}
       >
         <div
-          className="aios-drift-a absolute h-[48vh] w-[48vh] rounded-full blur-[110px]"
-          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 70%)" }}
+          className="aios-drift-a absolute h-[52vh] w-[52vh] rounded-full blur-[120px]"
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 70%)" }}
         />
         <div
-          className="aios-drift-b absolute h-[40vh] w-[40vh] rounded-full blur-[110px]"
-          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-highlight) 11%, transparent), transparent 70%)" }}
+          className="aios-drift-b absolute h-[44vh] w-[44vh] rounded-full blur-[120px]"
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--aios-accent-2) 14%, transparent), transparent 70%)" }}
         />
       </div>
 
@@ -224,79 +250,63 @@ export function IdleControlCenter({
           greeting) and keeps the launch row adjacent to the content instead of
           slammed to the bottom with a dead band above it. */}
       <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col items-center justify-center gap-7 px-6 py-10">
-          <div className="flex w-full max-w-[760px] flex-col items-center gap-6">
-          {/* greeting + clock — the focal point */}
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Greeting />
-            <HeroClock />
-          </div>
-
-          {/* "pick up where you left off" — one keystroke back to the panes you
-              rested (home anchor / hidden-all) or the last stored layout. Hides
-              itself when there's nothing to resume. */}
-          {resumeLayout && onResumeLayout && (
-            <button
-              type="button"
-              onClick={onResumeLayout}
-              title={resumeLayout.labels.join(" · ")}
-              className="aios-fade-in pill press flex items-center gap-1.5"
-              style={{ animationDelay: "70ms" }}
-            >
-              <History size={11} className="shrink-0 text-[var(--color-muted)]" />
-              pick up where you left off
-              <span className="font-mono text-[10px] text-[var(--color-faint)]">
-                {resumeLayout.count} pane{resumeLayout.count === 1 ? "" : "s"}
+        <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-8 px-7 py-7">
+          {/* top strip — brand mark + live status (Mission Control) */}
+          <div className="flex items-center gap-3">
+            <span className="grid h-7 w-7 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)]">
+              <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+            </span>
+            <span className="font-mono text-[13px] font-semibold tracking-[0.3em] text-[var(--color-text-2)]">AIOS</span>
+            <span className="flex-1" />
+            {activeAgents > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)] backdrop-blur">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]" />
+                {activeAgents} live
               </span>
-            </button>
-          )}
-
-          {/* command line — the one obvious primary action */}
-          <CommandLine
-            onSeedChat={onTalkToJarvis}
-            onOpenPalette={onOpenPalette}
-            projects={projects}
-            onOpenProject={onOpenProject}
-            onSpawn={onSpawn}
-          />
-
-          {/* usage glance — claude + codex, quiet, side-by-side */}
-          {hasUsage && (
-            <div className="aios-fade-in flex w-full flex-wrap items-start justify-center gap-x-12 gap-y-4" style={{ animationDelay: "120ms" }}>
-              {hasClaude && (
-                <div className="min-w-[200px] flex-1 sm:max-w-[280px]">
-                  <ProviderBlock
-                    name="claude"
-                    fiveHour={claude!.fiveHour}
-                    sevenDay={claude!.sevenDay}
-                    models={claude!.models}
-                    showRemaining
-                  />
-                </div>
-              )}
-              {hasCodex && (
-                <div className="min-w-[200px] flex-1 sm:max-w-[280px]">
-                  <ProviderBlock
-                    name="codex"
-                    fiveHour={codex!.fiveHour}
-                    sevenDay={codex!.sevenDay}
-                    models={codex!.models}
-                    showRemaining
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* one quiet ambient line — streak · focus · ctx */}
-          <AmbientLine streak={streak} bestStreak={extras?.longestStreak ?? 0} focus={focus} ctxPct={ctxPct} />
+            )}
           </div>
 
-          {/* launch row — recent · quick + chips/status, the base of the deck */}
-          <div className="w-full border-t border-[var(--color-border)] pt-4">
-            <div className="flex w-full flex-col gap-2.5">
-              <div className="grid gap-x-10 gap-y-2.5 sm:grid-cols-2">
-            <RecentProjects projects={recent} pulse={pulse} onOpen={onOpenProject} />
+          {/* hero — greeting + the one question, with the composer below */}
+          <div className="flex flex-col items-center gap-5 pt-1">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Greeting />
+              <h1 className="text-[28px] font-semibold tracking-tight text-[var(--color-text)]">
+                what should we{" "}
+                <span className="bg-[linear-gradient(120deg,var(--color-accent),var(--aios-accent-2))] bg-clip-text text-transparent">
+                  work
+                </span>{" "}
+                on?
+              </h1>
+            </div>
+            {resumeLayout && onResumeLayout && (
+              <button
+                type="button"
+                onClick={onResumeLayout}
+                title={resumeLayout.labels.join(" · ")}
+                className="aios-fade-in pill press flex items-center gap-1.5"
+                style={{ animationDelay: "70ms" }}
+              >
+                <History size={11} className="shrink-0 text-[var(--color-muted)]" />
+                pick up where you left off
+                <span className="font-mono text-[10px] text-[var(--color-faint)]">
+                  {resumeLayout.count} pane{resumeLayout.count === 1 ? "" : "s"}
+                </span>
+              </button>
+            )}
+            <div className="w-full max-w-[640px]">
+              <CommandLine
+                onSeedChat={onTalkToJarvis}
+                onOpenPalette={onOpenPalette}
+                projects={projects}
+                onOpenProject={onOpenProject}
+                onSpawn={onSpawn}
+              />
+            </div>
+          </div>
+
+          {/* quick launch — glass tiles */}
+          <div className="flex flex-col gap-3">
+            <Eyebrow>quick launch</Eyebrow>
             <QuickActions
               onSpawn={onSpawn}
               onOpenPalette={onOpenPalette}
@@ -306,51 +316,65 @@ export function IdleControlCenter({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--color-border)] pt-3">
-            {/* workspace chips — one click rebuilds a saved pane layout */}
-            {onApplyWorkspace && workspaces.length > 0 && (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {workspaces.slice(0, 4).map((ws) => (
-                  <button
-                    key={ws.name}
-                    type="button"
-                    onClick={() => onApplyWorkspace(ws)}
-                    onMouseMove={spotlightMove}
-                    title={`restore workspace · ${ws.panes.length} ${ws.panes.length === 1 ? "pane" : "panes"}`}
-                    className="aios-spotlight flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
-                  >
-                    <SquareStack size={11} className="shrink-0 text-[var(--color-muted)]" />
-                    {ws.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {pinned.length > 0 && (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {pinned.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onOpenSidebarItem(item)}
-                    onMouseMove={spotlightMove}
-                    className="aios-spotlight rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 text-[11px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-border))] hover:text-[var(--color-text)]"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            <StatusFooter
-              activeAgents={activeAgents}
-              totalAgents={scheduledAgents.length}
-              unread={unread}
-              dirtyProjects={dirtyProjects}
-              onOpenScheduledAgents={onOpenScheduledAgents}
-              onRevealSidebar={onRevealSidebar}
-            />
-              </div>
+          {/* two columns — recent projects + pick-up-where-you-left-off (chats) */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="flex flex-col gap-3">
+              <Eyebrow>recent projects</Eyebrow>
+              <RecentProjects projects={recent} pulse={pulse} onOpen={onOpenProject} shapeByRoot={shapeByRoot} />
+            </div>
+            <div className="flex flex-col gap-3">
+              <Eyebrow>continue working</Eyebrow>
+              {workSessions && workSessions.some((s) => s.status !== "done") && onResumeSession ? (
+                <ContinueWorking
+                  sessions={workSessions}
+                  onResume={onResumeSession}
+                  onRemove={onRemoveSession}
+                  onDone={onDoneSession}
+                />
+              ) : (
+                <MiniHistory
+                  chats={recentChats}
+                  onOpen={(c) =>
+                    onSpawn(
+                      { type: "chat", resume: { id: c.id, title: c.title, engine: c.engine } } as AppDef["kind"],
+                      c.title || "chat",
+                    )
+                  }
+                />
+              )}
             </div>
           </div>
+
+          {/* usage — one glass card per provider (claude / codex / opencode) */}
+          {hasUsage && (
+            <div className="flex flex-col gap-3">
+              <Eyebrow>usage</Eyebrow>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {hasClaude && (
+                  <div className="surface-card rounded-2xl p-4">
+                    <ProviderBlock
+                      name="claude"
+                      fiveHour={claude!.fiveHour}
+                      sevenDay={claude!.sevenDay}
+                      models={claude!.models}
+                      showRemaining
+                    />
+                  </div>
+                )}
+                {hasCodex && (
+                  <div className="surface-card rounded-2xl p-4">
+                    <ProviderBlock
+                      name="codex"
+                      fiveHour={codex!.fiveHour}
+                      sevenDay={codex!.sevenDay}
+                      models={codex!.models}
+                      showRemaining
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -392,31 +416,6 @@ function Greeting() {
       <span className="font-mono text-[11px] tracking-[0.08em] text-[var(--color-muted)]">
         {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }).toLowerCase()}
       </span>
-    </div>
-  );
-}
-
-/** The hero clock. Isolated 1Hz re-render (its own state) so the tick never
- *  reconciles the rest of the home. Hairline-weight numerals, CSS colon blink,
- *  seconds demoted to a quiet trailing tick. clamp() scales it across windows. */
-function HeroClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  return (
-    <div className="aios-fade-in flex items-baseline justify-center gap-2 font-mono tabular-nums text-[var(--color-text)]" style={{ animationDelay: "40ms" }}>
-      {/* key= remounts a changed glyph so .clock-tick eases it in (150ms
-          opacity) — the 1Hz swap was the one hard cut on the calmest surface.
-          tabular-nums means no layout shift; reduce-motion kills the ease. */}
-      <span key={`h${hh}`} className="clock-tick text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{hh}</span>
-      <span className="aios-colon text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em] text-[var(--color-accent)]">:</span>
-      <span key={`m${mm}`} className="clock-tick text-[clamp(72px,13vw,140px)] font-light leading-none tracking-[-0.03em]">{mm}</span>
-      <span key={`s${ss}`} className="clock-tick self-end pb-[0.9vw] font-mono text-[clamp(16px,2vw,22px)] font-light leading-none tracking-tight text-[var(--color-faint)]">{ss}</span>
     </div>
   );
 }
@@ -680,59 +679,6 @@ function CommandLine({
   );
 }
 
-// ── ambient line — streak · focus · ctx ───────────────────────────────────────
-
-function AmbientLine({
-  streak,
-  bestStreak,
-  focus,
-  ctxPct,
-}: {
-  streak: number;
-  bestStreak: number;
-  focus: MemoryFocus | null;
-  ctxPct: number | null;
-}) {
-  const parts: ReactNode[] = [];
-  if (streak > 0) {
-    parts.push(
-      <span key="streak" className="inline-flex items-center gap-1.5">
-        <Flame size={13} className="aios-flame text-[var(--color-accent)]" fill="currentColor" />
-        <NumberTicker value={streak} className="font-mono text-[var(--color-text-2)]" />
-        <span>day streak{bestStreak > streak ? ` · best ${bestStreak}` : ""}</span>
-      </span>,
-    );
-  }
-  if (focus?.title) {
-    parts.push(
-      <span key="focus" className="inline-flex min-w-0 items-baseline gap-1.5">
-        <span className="text-[var(--color-muted)]">focus</span>
-        <span className="truncate text-[var(--color-text-2)]" title={focus.title}>
-          {focus.title}
-        </span>
-      </span>,
-    );
-  }
-  if (ctxPct != null) {
-    parts.push(
-      <span key="ctx" className="font-mono">
-        <span className="text-[var(--color-text-2)]">{Math.round(ctxPct)}%</span> ctx
-      </span>,
-    );
-  }
-  if (!parts.length) return null;
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[11.5px] text-[var(--color-faint)]">
-      {parts.map((part, i) => (
-        <span key={i} className="inline-flex items-center gap-5">
-          {i > 0 && <span className="text-[var(--color-border-strong)]">·</span>}
-          {part}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 // ── relative-time helper ──────────────────────────────────────────────────────
 function ago(ts: number): string {
   if (!ts) return "";
@@ -746,28 +692,232 @@ function ago(ts: number): string {
   return `${Math.floor(hh / 24)}d`;
 }
 
+// ── dashboard primitives (Mission Control) ──────────────────────────────────
+
+/** Section eyebrow — a glowing tick + mono label + a fading rule. Sits ABOVE a
+ *  glass card, matching the Mission Control mockup. */
+function Eyebrow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-0.5">
+      <span className="h-[5px] w-[5px] shrink-0 rounded-[1px] bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-faint)]">{children}</span>
+      <span className="h-px flex-1 bg-[linear-gradient(90deg,var(--color-border),transparent)]" />
+    </div>
+  );
+}
+
+/** Engine → its accent tint for the chat badge/icon (claude=accent, codex=cyan,
+ *  opencode=green). Keeps the card colourful instead of flat grey. */
+function engineTint(engine: string): string {
+  const e = (engine || "").toLowerCase();
+  if (e.includes("codex") || e.includes("gpt")) return "var(--aios-accent-2)";
+  if (e.includes("opencode")) return "var(--color-success)";
+  return "var(--color-accent)";
+}
+
+/** "pick up where you left off" — recent durable chats; click resumes the
+ *  session in a fresh chat pane. The right column of the dashboard. */
+function MiniHistory({
+  chats,
+  onOpen,
+}: {
+  chats: HistoryEntry[];
+  onOpen: (c: HistoryEntry) => void;
+}) {
+  return (
+    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
+      {chats.length === 0 ? (
+        <div className="px-2 py-3 text-[12px] text-[var(--color-faint)]">no conversations yet</div>
+      ) : (
+        chats.slice(0, 4).map((c) => {
+          const tint = engineTint(c.engine);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onOpen(c)}
+              onMouseMove={spotlightMove}
+              title={c.title}
+              className="aios-spotlight group flex items-start gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
+            >
+              <span
+                className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg border"
+                style={{
+                  borderColor: `color-mix(in srgb, ${tint} 32%, transparent)`,
+                  background: `color-mix(in srgb, ${tint} 12%, transparent)`,
+                  color: tint,
+                }}
+              >
+                <History size={12} />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
+                    {c.title || "untitled"}
+                  </span>
+                  <span
+                    className="shrink-0 rounded border px-1 py-0.5 font-mono text-[8.5px] uppercase tracking-wide"
+                    style={{ borderColor: `color-mix(in srgb, ${tint} 38%, transparent)`, color: tint }}
+                  >
+                    {c.engine || "chat"}
+                  </span>
+                </span>
+                {c.last_user && (
+                  <span className="truncate text-[11.5px] text-[var(--color-text-2)]">{c.last_user}</span>
+                )}
+                <span className="font-mono text-[9.5px] text-[var(--color-faint)]">{ago(c.mtime)}</span>
+              </span>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/** "Continue working" — recent Work Sessions (goal + chat thread + panes). Click
+ *  restores the deck + re-threads the chat. Replaces the recent-chats column when
+ *  any session exists (falls back to that column otherwise). */
+function ContinueWorking({
+  sessions,
+  onResume,
+  onRemove,
+  onDone,
+}: {
+  sessions: WorkSession[];
+  onResume: (s: WorkSession) => void;
+  onRemove?: (id: string) => void;
+  onDone?: (id: string) => void;
+}) {
+  const visible = sessions.filter((s) => s.status !== "done").slice(0, 5);
+  // per-session message count (summed across its bound chats' durable logs) —
+  // a sub-friendly activity readout (no $ cost; meta has no token total).
+  const [msgsById, setMsgsById] = useState<Record<string, number>>({});
+  const metaKey = visible.map((s) => `${s.id}:${s.chatSessionIds.join(",")}`).join("|");
+  useEffect(() => {
+    let alive = true;
+    Promise.all(
+      visible.map(async (s) => {
+        let msgs = 0;
+        for (const id of s.chatSessionIds) {
+          try {
+            msgs += (await chatHistoryMeta(id)).message_count || 0;
+          } catch {
+            /* no durable log for this chat — skip */
+          }
+        }
+        return [s.id, msgs] as const;
+      }),
+    ).then((pairs) => {
+      if (alive) setMsgsById(Object.fromEntries(pairs.filter(([, n]) => n > 0)));
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaKey]);
+  return (
+    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
+      {visible.length === 0 ? (
+        <div className="px-2 py-3 text-[12px] text-[var(--color-faint)]">no saved sessions yet</div>
+      ) : (
+        visible.map((s) => {
+          const paneCount = s.panes.length + (s.chatSessionIds.length > 0 ? 1 : 0);
+          const proj = s.projectRoot
+            ? s.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? ""
+            : "";
+          return (
+            <div
+              key={s.id}
+              onMouseMove={spotlightMove}
+              className="aios-spotlight group flex items-center gap-1 rounded-lg border border-transparent pr-1 transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
+            >
+              <button
+                type="button"
+                onClick={() => onResume(s)}
+                title={s.goal || s.title}
+                className="flex min-w-0 flex-1 items-start gap-2.5 px-2 py-1.5 text-left"
+              >
+                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)]">
+                  <History size={12} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
+                      {s.title || "work session"}
+                    </span>
+                    {proj && (
+                      <span className="shrink-0 truncate rounded border border-[var(--color-border)] px-1 py-0.5 font-mono text-[8.5px] uppercase tracking-wide text-[var(--color-muted)]">
+                        {proj}
+                      </span>
+                    )}
+                  </span>
+                  {s.goal && (
+                    <span className="truncate text-[11.5px] text-[var(--color-text-2)]">{s.goal}</span>
+                  )}
+                  <span className="font-mono text-[9.5px] text-[var(--color-faint)]">
+                    {paneCount} pane{paneCount === 1 ? "" : "s"}
+                    {msgsById[s.id] ? ` · ${msgsById[s.id]} msg${msgsById[s.id] === 1 ? "" : "s"}` : ""} ·{" "}
+                    {ago(Math.floor(s.lastActiveAt / 1000))}
+                  </span>
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                {onDone && (
+                  <button
+                    type="button"
+                    onClick={() => onDone(s.id)}
+                    title="mark done — archive from this list"
+                    className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-success)]"
+                  >
+                    <Check size={13} />
+                  </button>
+                )}
+                {onRemove && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(s.id)}
+                    title="remove from continue-working"
+                    className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-danger)]"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 // ── recent projects ────────────────────────────────────────────────────────────
 
 function RecentProjects({
   projects,
   pulse,
   onOpen,
+  shapeByRoot,
 }: {
   projects: ProjectInfo[];
   /** git summary for these roots — already polled by IdleDashboard; rows
    *  surface it as a status dot (it used to be only a footer count). */
   pulse: RepoPulse[];
   onOpen: (p: ProjectInfo) => void;
+  /** root → shape label for structured workspaces (split/environments); a hint
+   *  chip that signals "opening this offers a component picker". */
+  shapeByRoot?: Record<string, string>;
 }) {
   const pulseFor = (root: string) => pulse.find((r) => r.root === root) ?? null;
   return (
-    <div className="flex flex-col gap-1">
-      <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-muted)]">recent</span>
+    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
       {projects.length === 0 ? (
-        <div className="px-1 py-1.5 text-[12px] text-[var(--color-faint)]">no projects under ~/Repo</div>
+        <div className="px-1 py-1.5 text-[12px] text-[var(--color-faint)]">no projects yet — add a scan root in settings</div>
       ) : (
         projects.map((p) => {
           const repo = pulseFor(p.root);
+          const shape = shapeByRoot?.[p.root];
           const drift =
             repo && (repo.dirty > 0 || repo.ahead > 0 || repo.behind > 0)
               ? [
@@ -785,10 +935,12 @@ function RecentProjects({
               onClick={() => onOpen(p)}
               onMouseMove={spotlightMove}
               title={drift ? `open terminal in ${p.root}\n${drift}` : `open terminal in ${p.root}`}
-              className="aios-spotlight group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+              className="aios-spotlight group flex items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
             >
-              <FolderGit2 size={13} className="shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-accent)]" />
-              <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)]">
+                <FolderGit2 size={12} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
                 {p.name}
               </span>
               {drift && (
@@ -798,7 +950,16 @@ function RecentProjects({
                   aria-label={drift}
                 />
               )}
-              <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--color-faint)]">{p.kind}</span>
+              {shape ? (
+                <span
+                  className="shrink-0 rounded-[4px] border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-[var(--color-accent)]"
+                  title="structured workspace — opens a component picker"
+                >
+                  {shape}
+                </span>
+              ) : (
+                <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[color-mix(in_srgb,var(--color-accent)_65%,var(--color-faint))]">{p.kind}</span>
+              )}
               <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">{ago(p.mtime)}</span>
             </button>
           );
@@ -824,17 +985,19 @@ function QuickActions({
   resumeLabel?: string;
 }) {
   const actions: Array<{ label: string; hint: string; icon: ReactNode; run: () => void; title?: string }> = [
-    { label: "new chat", hint: "ask aios", icon: <Sparkles size={13} />, run: () => onSpawn({ type: "chat" }, "chat") },
-    ...(onResumeLast
-      ? [{ label: "resume last", hint: "↑ recent", icon: <History size={13} />, run: onResumeLast, title: resumeLabel }]
-      : []),
-    { label: "terminal", hint: "shell pane", icon: <Terminal size={13} />, run: () => onSpawn({ type: "shell" }, "terminal") },
-    { label: "palette", hint: chord("K"), icon: <Search size={13} />, run: onOpenPalette },
-    { label: "rail", hint: "spaces", icon: <Layers size={13} />, run: onRevealSidebar },
+    { label: "new chat", hint: "ask aios", icon: <Sparkles size={17} />, run: () => onSpawn({ type: "chat" }, "chat") },
+    { label: "terminal", hint: "shell", icon: <Terminal size={17} />, run: () => onSpawn({ type: "shell" }, "terminal") },
+    { label: "files", hint: "browse", icon: <FolderGit2 size={17} />, run: () => onSpawn({ type: "files" } as AppDef["kind"], "files") },
+    { label: "browser", hint: "web", icon: <Globe size={17} />, run: () => onSpawn({ type: "browser" } as AppDef["kind"], "browser") },
+    { label: "history", hint: "resume", icon: <History size={17} />, run: () => onSpawn({ type: "history" } as AppDef["kind"], "history") },
   ];
+  // unused-prop guard: these still feed other entry points; keep them referenced.
+  void onOpenPalette;
+  void onRevealSidebar;
+  void onResumeLast;
+  void resumeLabel;
   return (
-    <div className="flex flex-col gap-1">
-      <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-muted)]">quick</span>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {actions.map((action) => (
         <button
           key={action.label}
@@ -842,63 +1005,16 @@ function QuickActions({
           onClick={action.run}
           onMouseMove={spotlightMove}
           title={action.title}
-          className="aios-spotlight group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+          className="aios-spotlight surface-card group flex flex-col gap-2.5 rounded-2xl p-3.5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--color-accent)_40%,transparent)] hover:shadow-[var(--aios-glow-soft)]"
         >
-          <span className="text-[var(--color-muted)] group-hover:text-[var(--color-accent)]">{action.icon}</span>
-          <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">{action.label}</span>
-          <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--color-faint)]">{action.hint}</span>
+          <span className="grid h-9 w-9 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] transition-transform group-hover:scale-105">
+            {action.icon}
+          </span>
+          <span className="text-[13px] font-medium text-[var(--color-text)]">{action.label}</span>
+          <span className="font-mono text-[9.5px] text-[var(--color-faint)]">{action.hint}</span>
         </button>
       ))}
     </div>
   );
 }
 
-// ── status footer — quiet counts, each a launch point ─────────────────────────
-
-function StatusFooter({
-  activeAgents,
-  totalAgents,
-  unread,
-  dirtyProjects,
-  onOpenScheduledAgents,
-  onRevealSidebar,
-}: {
-  activeAgents: number;
-  totalAgents: number;
-  unread: number;
-  dirtyProjects: number;
-  onOpenScheduledAgents: () => void;
-  onRevealSidebar: () => void;
-}) {
-  return (
-    <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10.5px] text-[var(--color-faint)]">
-      {totalAgents > 0 && (
-        <button
-          type="button"
-          onClick={onOpenScheduledAgents}
-          className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--color-text-2)]"
-          title="open agent monitor"
-        >
-          <Target size={11} />
-          <span className="text-[var(--color-text-2)]">{activeAgents}</span>/{totalAgents} agents
-        </button>
-      )}
-      {unread > 0 && (
-        <button
-          type="button"
-          onClick={onRevealSidebar}
-          className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--color-text-2)]"
-          title="open the rail"
-        >
-          <span className="text-[var(--color-text-2)]">{unread}</span> notif
-        </button>
-      )}
-      {dirtyProjects > 0 && (
-        <span className="inline-flex items-center gap-1.5" title={`${dirtyProjects} repos with uncommitted/unpushed changes`}>
-          <GitBranch size={11} />
-          <span className="text-[var(--color-text-2)]">{dirtyProjects}</span> dirty
-        </span>
-      )}
-    </div>
-  );
-}

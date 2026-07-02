@@ -56,3 +56,4 @@ latest.json
 # agent worktrees + local session state
 .claude/
 scripts\aios-watch.log
+aios.workspace.json

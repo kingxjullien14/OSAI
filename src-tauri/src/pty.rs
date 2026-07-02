@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, State};
 #[cfg(windows)]
 use tauri::Manager;
 
+#[cfg(not(windows))]
 use crate::oracles::tmux_bin;
 
 /// Default multiplexer socket name for AIOS's own persistent terminal sessions
@@ -108,7 +109,14 @@ pub fn run_mux_quiet(bin: &str, args: &[&str]) -> bool {
 fn apply_mux_style(bin: &str, sock: &str) {
     run_mux_quiet(bin, &["-L", sock, "set", "-g", "mouse", "on"]);
     run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left-length", "24"]);
-    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left", "[#W] "]);
+    // Neon Glass status bar — replace tmux's default olive/green with the app's
+    // deep-violet ground + muted text; accent window name + cyan active marker.
+    // (Hex set ops no-op silently on a mux that can't parse them — safe.)
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-style", "bg=#0A0713,fg=#8A83A3"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left", "#[fg=#A86BFF,bold][#W] #[default]"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-right-length", "40"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-right", "#[fg=#5C5673]#H  %H:%M#[default]"]);
+    run_mux_quiet(bin, &["-L", sock, "set", "-g", "window-status-current-style", "fg=#3DE8FF,bold"]);
 }
 
 /// One live PTY-backed session. All fields are behind Mutex so the whole
@@ -375,7 +383,11 @@ pub fn pty_spawn_oracle(
         cmd.arg(format!(
             "{tmux} -L {sock} set -g mouse on 2>/dev/null; \
              {tmux} -L {sock} set -g status-left-length 24 2>/dev/null; \
-             {tmux} -L {sock} set -g status-left '[#W] ' 2>/dev/null; \
+             {tmux} -L {sock} set -g status-style 'bg=#0A0713,fg=#8A83A3' 2>/dev/null; \
+             {tmux} -L {sock} set -g status-left '#[fg=#A86BFF,bold][#W] #[default]' 2>/dev/null; \
+             {tmux} -L {sock} set -g status-right-length 40 2>/dev/null; \
+             {tmux} -L {sock} set -g status-right '#[fg=#5C5673]#H  %H:%M#[default]' 2>/dev/null; \
+             {tmux} -L {sock} set -g window-status-current-style 'fg=#3DE8FF,bold' 2>/dev/null; \
              exec {tmux} -L {sock} attach -t {session}"
         ));
         cmd.env("TERM", "xterm-256color");

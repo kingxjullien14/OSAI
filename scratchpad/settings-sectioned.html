@@ -1,0 +1,151 @@
+<title>AIOS — Settings (redesign)</title>
+<style>
+  :root{
+    --ground:#0A0713;--void:#06040D;--text:#ECE9F7;--text-2:#C4BEDA;--muted:#8A83A3;--faint:#5C5673;
+    --accent:#A86BFF;--accent-2:#3DE8FF;--hair:rgba(255,255,255,0.08);--hair-2:rgba(255,255,255,0.12);
+    --glass:rgba(28,20,46,0.42);--glass-2:rgba(20,14,33,0.6);--glow-v:rgba(168,107,255,0.45);--ok:#46e08a;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 620px at 6% -10%,rgba(168,107,255,0.16),transparent 56%),
+      radial-gradient(820px 600px at 112% 116%,rgba(61,232,255,0.10),transparent 54%),var(--ground);
+    background-attachment:fixed;}
+  .modal{position:fixed;inset:0;display:grid;place-items:center;padding:30px;}
+  .panel{width:min(940px,100%);height:min(620px,90vh);display:grid;grid-template-columns:236px 1fr;overflow:hidden;
+    border-radius:18px;border:1px solid var(--hair-2);background:var(--glass-2);
+    -webkit-backdrop-filter:blur(26px) saturate(1.3);backdrop-filter:blur(26px) saturate(1.3);
+    box-shadow:0 40px 100px -40px #000,inset 0 1px 0 rgba(255,255,255,0.06);}
+
+  /* nav */
+  .nav{display:flex;flex-direction:column;border-right:1px solid var(--hair);position:relative;}
+  .nav::after{content:"";position:absolute;inset-block:0;right:0;width:1px;background:linear-gradient(180deg,transparent,var(--accent) 40%,var(--accent-2) 75%,transparent);opacity:.5;}
+  .nav .hd{display:flex;align-items:center;gap:10px;padding:16px 16px 14px;}
+  .nav .hd b{font-size:15px;font-weight:600;}
+  .nav .hd .g{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 14px -2px var(--glow-v);}
+  .search{margin:0 12px 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--hair);border-radius:9px;padding:6px 9px;background:rgba(255,255,255,.03);}
+  .search input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:12px;}
+  .search input::placeholder{color:var(--faint);}
+  .navlist{display:flex;flex-direction:column;gap:2px;padding:0 8px;overflow:auto;}
+  .navitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;border:1px solid transparent;color:var(--text-2);font-size:13px;cursor:pointer;transition:all .15s;}
+  .navitem:hover{border-color:var(--hair);background:rgba(255,255,255,.03);color:var(--text);}
+  .navitem.on{border-color:rgba(168,107,255,.34);background:linear-gradient(90deg,rgba(168,107,255,.18),rgba(168,107,255,.05));color:var(--text);box-shadow:0 0 22px -10px var(--glow-v);position:relative;}
+  .navitem.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;background:linear-gradient(180deg,var(--accent),var(--accent-2));box-shadow:0 0 8px var(--glow-v);}
+  .navitem .ic{color:var(--muted);} .navitem.on .ic{color:var(--accent);}
+  .nav .foot{margin-top:auto;padding:12px 16px;font-family:var(--mono);font-size:10px;color:var(--faint);border-top:1px solid var(--hair);}
+
+  /* content */
+  .content{overflow:auto;padding:22px 26px 30px;}
+  .ctitle{font-size:18px;font-weight:600;letter-spacing:-0.01em;margin:0 0 2px;}
+  .csub{font-size:12.5px;color:var(--muted);margin:0 0 20px;}
+  .card{border:1px solid var(--hair);border-radius:14px;background:color-mix(in srgb,var(--glass) 80%,transparent);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);margin-bottom:16px;overflow:hidden;}
+  .card .eb{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);padding:11px 15px 0;}
+  .rowset{display:flex;flex-direction:column;}
+  .set{display:flex;align-items:center;gap:14px;padding:13px 15px;border-top:1px solid var(--hair);}
+  .set:first-of-type{border-top:none;}
+  .set .lbl{flex:1;min-width:0;}
+  .set .lbl .t{font-size:13px;color:var(--text);}
+  .set .lbl .d{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+  /* controls */
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:rgba(255,255,255,.03);}
+  .seg span{padding:6px 12px;font-size:12px;color:var(--text-2);border-right:1px solid var(--hair);display:inline-flex;align-items:center;gap:6px;}
+  .seg span:last-child{border-right:none;}
+  .seg span.on{background:rgba(168,107,255,.16);color:var(--text);}
+  .sw{width:38px;height:21px;border-radius:999px;background:var(--accent);position:relative;box-shadow:0 0 14px -3px var(--glow-v);cursor:pointer;}
+  .sw::after{content:"";position:absolute;top:2px;left:19px;width:17px;height:17px;border-radius:50%;background:#fff;}
+  .sw.off{background:rgba(255,255,255,.1);box-shadow:none;} .sw.off::after{left:2px;}
+  .swatches{display:flex;align-items:center;gap:9px;}
+  .dot{width:22px;height:22px;border-radius:50%;cursor:pointer;transition:transform .12s;}
+  .dot:hover{transform:scale(1.12);}
+  .dot.on{box-shadow:0 0 0 2px var(--void),0 0 0 4px var(--text),0 0 16px -2px var(--glow-v);}
+  .slider{width:160px;height:5px;border-radius:999px;background:rgba(255,255,255,.08);position:relative;}
+  .slider>i{position:absolute;inset:0 40% 0 0;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 10px var(--glow-v);}
+  .slider>b{position:absolute;top:50%;left:60%;width:14px;height:14px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.5);}
+  .val{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:30px;text-align:right;}
+  svg{display:block;}
+</style>
+
+<div class="modal">
+  <div class="panel">
+    <!-- nav -->
+    <div class="nav">
+      <div class="hd"><span class="g"></span><b>Settings</b></div>
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input placeholder="search settings…" />
+      </div>
+      <div class="navlist">
+        <div class="navitem on"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Appearance</div>
+        <div class="navitem"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Engines &amp; models</div>
+        <div class="navitem"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg> Behavior &amp; safety</div>
+        <div class="navitem"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2-3 2"/></svg> Terminal</div>
+        <div class="navitem"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg> Privacy</div>
+        <div class="navitem"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> About &amp; updates</div>
+      </div>
+      <div class="foot">AIOS · v0.9.2 · up to date</div>
+    </div>
+
+    <!-- content -->
+    <div class="content">
+      <h2 class="ctitle">Appearance</h2>
+      <p class="csub">Theme, accent, and density. Changes apply live.</p>
+
+      <div class="card">
+        <div class="eb">theme</div>
+        <div class="rowset">
+          <div class="set">
+            <span class="lbl"><span class="t">Color theme</span><span class="d">Match the OS or pin light / dark.</span></span>
+            <span class="seg"><span>System</span><span class="on">Dark</span><span>Light</span></span>
+          </div>
+          <div class="set">
+            <span class="lbl"><span class="t">Accent</span><span class="d">Tints the whole app — buttons, focus, glow.</span></span>
+            <span class="swatches">
+              <span class="dot" style="background:#f26522"></span>
+              <span class="dot" style="background:#339cff"></span>
+              <span class="dot" style="background:#40c977"></span>
+              <span class="dot on" style="background:#924ff7"></span>
+              <span class="dot" style="background:#fb5b86"></span>
+              <span class="dot" style="background:#f5b21f"></span>
+              <span class="dot" style="background:conic-gradient(from 0deg,#ff5f57,#febc2e,#28c840,#339cff,#924ff7,#fb5b86,#ff5f57)"></span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="eb">layout</div>
+        <div class="rowset">
+          <div class="set">
+            <span class="lbl"><span class="t">Density</span><span class="d">Tighten the spacing across panes.</span></span>
+            <span class="seg"><span class="on">Cozy</span><span>Compact</span></span>
+          </div>
+          <div class="set">
+            <span class="lbl"><span class="t">Text size</span><span class="d">Scales the token-driven type ramp.</span></span>
+            <span class="slider"><i></i><b></b></span><span class="val">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="eb">motion &amp; effects</div>
+        <div class="rowset">
+          <div class="set">
+            <span class="lbl"><span class="t">Neon glow &amp; aurora</span><span class="d">Frosted glass, ambient blooms, the composer beam.</span></span>
+            <span class="sw"></span>
+          </div>
+          <div class="set">
+            <span class="lbl"><span class="t">Playful effects</span><span class="d">Click sparks, pet confetti, liveness ripple.</span></span>
+            <span class="sw"></span>
+          </div>
+          <div class="set">
+            <span class="lbl"><span class="t">Reduce motion</span><span class="d">Honor the OS setting; glows go static.</span></span>
+            <span class="sw off"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

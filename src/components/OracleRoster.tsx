@@ -484,7 +484,7 @@ function OracleRow({
   }
 
   return (
-    <div className="group flex flex-col gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[var(--color-panel-2)]/60">
+    <div className="group flex flex-col gap-1 rounded-md border border-transparent px-2 py-1 transition-all hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]/60">
       <div className="flex items-center gap-2.5">
       <button onClick={onAttach} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
         <span

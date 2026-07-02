@@ -7,7 +7,9 @@ import {
   Bot,
   Bug,
   Folder,
+  FolderGit2,
   Globe,
+  History,
   MessageSquare,
   MonitorPlay,
   MonitorUp,
@@ -30,17 +32,21 @@ export type PaneContent =
   | { type: "pulse" }
   | { type: "notifications" }
   | { type: "scheduled-agents" }
+  | { type: "history" }
+  | { type: "projects" }
   | { type: "apps" }
   | { type: "app"; name: string; bundleId?: string | null }
   | {
       type: "chat";
       cwd?: string;
       seed?: string;
-      resume?: { id: string; title: string; engine?: string; model?: string };
+      resume?: { id: string; title: string; engine?: string; model?: string; findText?: string };
       reattach?: number;
       modelId?: string;
       agentId?: string;
       agentLabel?: string;
+      /** standing goal to seed the chat's goal box on mount (from a resumed Work Session). */
+      goal?: string;
     }
   | { type: "pet" }
   | { type: "file"; path: string; name: string }
@@ -75,6 +81,8 @@ export const SPAWN: AppDef[] = [
   { id: "notes", kind: { type: "notes" }, icon: NotebookPen, label: "notes", group: "tools", firstClass: true },
   { id: "files", kind: { type: "files" }, icon: Folder, label: "files", group: "tools", firstClass: true },
   { id: "browser", kind: { type: "browser" }, icon: Globe, label: "browser", group: "tools", firstClass: true },
+  { id: "history", kind: { type: "history" }, icon: History, label: "history", group: "tools", firstClass: true },
+  { id: "projects", kind: { type: "projects" }, icon: FolderGit2, label: "projects", group: "tools", firstClass: true },
   ...(isApple
     ? [
         // Attach (focus/screenshot another app) is still mac-only (mac_list_apps).

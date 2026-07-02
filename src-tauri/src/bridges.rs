@@ -280,6 +280,7 @@ fn find_process(needles: &[&str]) -> Option<ProcHit> {
 
 /// Converts a `ps` ETIME field (`[[dd-]hh:]mm:ss`) into "3h 12m" / "12m" /
 /// "5d 3h" / "<1m". Unparseable → the raw string trimmed.
+#[cfg(unix)]
 fn humanize_etime(raw: &str) -> String {
     let raw = raw.trim();
     if raw.is_empty() {

@@ -1,0 +1,179 @@
+<title>AIOS Composer — Neon Glass layouts</title>
+<style>
+  :root {
+    --ground: #0A0713; --void: #06040D;
+    --text: #ECE9F7; --text-2: #C4BEDA; --muted: #8A83A3; --faint: #5C5673;
+    --accent: #A86BFF; --accent-2: #3DE8FF;
+    --hair: rgba(255,255,255,0.07); --hair-2: rgba(255,255,255,0.12);
+    --glass: rgba(28,20,46,0.42);
+    --glow-violet: rgba(168,107,255,0.45);
+    --sans: -apple-system, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0; color: var(--text); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(900px 600px at 10% -10%, rgba(168,107,255,0.20), transparent 60%),
+      radial-gradient(800px 600px at 110% 120%, rgba(61,232,255,0.12), transparent 58%),
+      var(--ground);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 28px 80px; }
+  .pagehead { margin-bottom: 8px; }
+  .pagehead .kicker { font-family: var(--mono); font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: var(--accent); }
+  .pagehead h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 6px; }
+  .pagehead p { color: var(--muted); font-size: 14px; margin: 0; max-width: 60ch; line-height: 1.6; }
+
+  .variant { margin-top: 44px; }
+  .vlabel { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .vlabel .n { font-family: var(--mono); font-size: 11px; color: var(--void); background: linear-gradient(135deg, var(--accent), var(--accent-2)); padding: 3px 9px; border-radius: 6px; font-weight: 700; letter-spacing: .05em; }
+  .vlabel .t { font-size: 15px; font-weight: 600; }
+  .vlabel .d { font-size: 12.5px; color: var(--muted); }
+
+  /* shared composer chrome */
+  .composer { position: relative; border-radius: 18px; background: var(--glass);
+    border: 1px solid rgba(168,107,255,0.28);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
+    box-shadow: 0 0 0 1px rgba(168,107,255,0.08), 0 20px 56px -26px var(--glow-violet), inset 0 1px 0 rgba(255,255,255,0.08); }
+  .composer::before { content:""; position:absolute; left:14px; right:14px; top:0; height:1px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent); opacity:.8; }
+  .ph { color: var(--faint); font-size: 14.5px; }
+  .grad-hair { height: 1px; background: linear-gradient(90deg, transparent, rgba(168,107,255,0.35), rgba(61,232,255,0.30), transparent); margin: 0 14px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px;
+    font-size: 11.5px; color: var(--text-2); background: rgba(255,255,255,0.04); border: 1px solid var(--hair); white-space: nowrap; }
+  .pill.model { border-color: rgba(168,107,255,0.4); background: rgba(168,107,255,0.10); color: var(--text); }
+  .pill .ic { width: 12px; height: 12px; color: var(--muted); }
+  .pill .cv { color: var(--faint); }
+  .iconbtn { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--muted);
+    border: 1px solid transparent; }
+  .iconbtn:hover { color: var(--text); border-color: var(--hair); background: rgba(255,255,255,0.04); }
+  .iconbtn svg, .pill .ic { stroke-width: 1.8; }
+  .send { display: inline-flex; align-items: center; gap: 7px; border: none; cursor: pointer;
+    font-family: var(--sans); font-weight: 600; color: var(--void);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 22px -4px var(--glow-violet); }
+  svg { display: block; }
+
+  /* ── V1: zoned — input hero, gradient divider, pills left / actions right ── */
+  .v1 .ph { padding: 18px 18px 16px; min-height: 58px; }
+  .v1 .bar { display: flex; align-items: center; gap: 8px; padding: 11px 12px; flex-wrap: wrap; }
+  .v1 .left { display: flex; gap: 7px; flex-wrap: wrap; }
+  .v1 .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .v1 .send { padding: 8px 16px; border-radius: 999px; font-size: 12.5px; }
+  .v1 .send svg { width: 15px; height: 15px; }
+
+  /* ── V2: segmented — inline round send, fused control cluster ── */
+  .v2 .top { position: relative; padding: 18px 18px; min-height: 76px; }
+  .v2 .fab { position: absolute; right: 14px; bottom: 14px; width: 40px; height: 40px; border-radius: 50%;
+    display: grid; place-items: center; }
+  .v2 .fab svg { width: 18px; height: 18px; }
+  .v2 .bar { display: flex; align-items: center; gap: 10px; padding: 0 14px 14px; flex-wrap: wrap; }
+  .v2 .seg { display: inline-flex; align-items: stretch; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--hair-2); background: rgba(255,255,255,0.03); }
+  .v2 .seg > span { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 11.5px; color: var(--text-2);
+    border-right: 1px solid var(--hair); }
+  .v2 .seg > span:last-child { border-right: none; }
+  .v2 .seg > span.model { background: rgba(168,107,255,0.14); color: var(--text); }
+  .v2 .seg .ic { width: 12px; height: 12px; color: var(--muted); }
+  .v2 .acts { margin-left: auto; display: flex; gap: 4px; }
+
+  /* ── V3: launch bar — full-height gradient send on the right edge ── */
+  .v3 .grid { display: grid; grid-template-columns: 1fr 96px; min-height: 108px; }
+  .v3 .body { display: flex; flex-direction: column; min-width: 0; }
+  .v3 .ph { padding: 18px 18px 12px; flex: 1; }
+  .v3 .chips { display: flex; gap: 7px; padding: 0 16px 14px; flex-wrap: wrap; align-items: center; }
+  .v3 .chips .iconbtn { width: 28px; height: 28px; }
+  .v3 .launch { border: none; cursor: pointer; color: var(--void);
+    background: linear-gradient(160deg, var(--accent), var(--accent-2));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    border-radius: 0 18px 18px 0; box-shadow: inset 0 0 30px rgba(255,255,255,0.12); }
+  .v3 .launch svg { width: 20px; height: 20px; }
+  .v3 .launch span { font-family: var(--mono); font-size: 10px; letter-spacing: .15em; text-transform: uppercase; font-weight: 700; }
+
+  .note { margin-top: 16px; font-size: 12.5px; color: var(--faint); display: flex; gap: 8px; line-height: 1.5; }
+  .note b { color: var(--text-2); font-weight: 600; }
+  @media (max-width: 600px) { .v3 .grid { grid-template-columns: 1fr 72px; } }
+</style>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="kicker">AIOS · Neon Glass · composer</div>
+    <h1>Three composer layouts</h1>
+    <p>Same design language, three ways to lay out the prompt box. Pick one (or mix) and I'll build it into the real app — then sweep the language across everything else.</p>
+  </div>
+
+  <!-- V1 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">01</span><span class="t">Zoned</span><span class="d">— tall input hero · gradient divider · context left, actions right</span></div>
+    <div class="composer v1">
+      <div class="ph">ask, or describe a task — / for commands, @ for files</div>
+      <div class="grad-hair"></div>
+      <div class="bar">
+        <div class="left">
+          <span class="pill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>kingx</span>
+          <span class="pill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/></svg>full access</span>
+          <span class="pill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>lean</span>
+          <span class="pill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>medium</span>
+        </div>
+        <div class="right">
+          <span class="pill model">sonnet 4.6 <span class="cv">▾</span></span>
+          <span class="iconbtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M14.7 6.3a4 4 0 0 1 0 5.6l-7 7a3 3 0 0 1-4.2-4.2l8-8a2 2 0 0 1 2.8 2.8l-7.5 7.5"/></svg></span>
+          <span class="iconbtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+          <button class="send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>send</button>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>Best for:</b><span>readability — the input is clearly the hero, controls are organized into two calm zones. The most "designed", least busy.</span></div>
+  </div>
+
+  <!-- V2 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">02</span><span class="t">Segmented</span><span class="d">— round send inside the input · controls fused into one cluster</span></div>
+    <div class="composer v2">
+      <div class="top">
+        <div class="ph">ask, or describe a task — / for commands, @ for files</div>
+        <button class="send fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+      <div class="bar">
+        <div class="seg">
+          <span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>kingx</span>
+          <span>full access</span>
+          <span>lean</span>
+          <span>medium</span>
+          <span class="model">sonnet 4.6 ▾</span>
+        </div>
+        <div class="acts">
+          <span class="iconbtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M14.7 6.3a4 4 0 0 1 0 5.6l-7 7a3 3 0 0 1-4.2-4.2l8-8a2 2 0 0 1 2.8 2.8l-7.5 7.5"/></svg></span>
+          <span class="iconbtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>Best for:</b><span>compactness — the fused segmented strip reads as one deliberate control, and the floating round send feels modern. Densest of the three.</span></div>
+  </div>
+
+  <!-- V3 -->
+  <div class="variant">
+    <div class="vlabel"><span class="n">03</span><span class="t">Launch bar</span><span class="d">— bold full-height gradient send on the right edge</span></div>
+    <div class="composer v3">
+      <div class="grid">
+        <div class="body">
+          <div class="ph">ask, or describe a task — / for commands, @ for files</div>
+          <div class="chips">
+            <span class="pill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>kingx</span>
+            <span class="pill">full access</span>
+            <span class="pill">lean</span>
+            <span class="pill">medium</span>
+            <span class="pill model">sonnet 4.6 ▾</span>
+            <span class="iconbtn"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"><path d="M14.7 6.3a4 4 0 0 1 0 5.6l-7 7a3 3 0 0 1-4.2-4.2l8-8a2 2 0 0 1 2.8 2.8l-7.5 7.5"/></svg></span>
+          </div>
+        </div>
+        <button class="launch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>send</span></button>
+      </div>
+    </div>
+    <div class="note"><b>Best for:</b><span>impact — the gradient launch column is unmistakable and very "neon console". Boldest, most opinionated.</span></div>
+  </div>
+</div>

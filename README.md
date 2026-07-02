@@ -6,13 +6,13 @@
 
 # AIOS
 
-**the superapp for driving AI coding agents — one native window.**
+**The superapp for driving AI coding agents — one native window.**
 
-terminals, an agent roster, a multi-engine chat, an embedded browser, a file
-explorer, a Monaco code editor with language servers, live app-window mirroring,
-and a push-to-talk conductor that builds your workspace from a sentence. native,
-fast, self-updating, and it runs on *your own* AI subscriptions with no keys
-baked in.
+Terminals · an agent roster · a multi-engine chat · an embedded browser · a file
+explorer · a Monaco editor with language servers · live app-window mirroring · and
+a push-to-talk conductor that builds your workspace from a sentence.
+
+<sub>Native, fast, self-updating — and it runs on *your own* AI subscriptions, with no keys baked in.</sub>
 
 <br />
 
@@ -24,22 +24,28 @@ baked in.
 [![self-update](https://img.shields.io/badge/updates-signed%20%2F%20auto-success)](./RELEASING.md)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-<sub>actively developed — it's the author's daily driver, updated most days.</sub>
+<sub>Actively developed — it's the author's daily driver, updated most days.</sub>
 
 </div>
 
 ---
 
-AIOS is a desktop **superapp** for driving AI coding agents. It wraps a Rust
-(Tauri v2) backend and a React + xterm.js frontend into a single native window
-where **every pane is a tool**: terminals, an agent roster, a multi-engine chat,
-an embedded browser, a file explorer, a Monaco editor with language servers,
-mirrored native app windows, a pulse dashboard, and more.
+<div align="center">
 
-It runs natively on **macOS and Windows** from one codebase, and it **degrades
-gracefully** — it runs fine on a plain machine with nothing but a terminal. No
-`claude` CLI? The chat pane sits quiet. No `tmux` (or on Windows)? The oracle
-roster is just empty. Nothing errors; missing pieces simply go quiet.
+[**Screenshots**](#-screenshots) · [**What's inside**](#-whats-inside) · [**Requirements**](#-requirements) · [**Build & Run**](#-build--run) · [**Configuration**](#-configuration) · [**Architecture**](#-architecture) · [**Design**](#-design) · [**Roadmap**](#-roadmap)
+
+</div>
+
+<br />
+
+AIOS is a desktop **superapp** for driving AI coding agents — a Rust (Tauri v2)
+backend and a React + xterm.js frontend fused into a single native window where
+**every pane is a tool**. One codebase, native on **macOS and Windows**.
+
+> **It degrades gracefully.** AIOS runs fine on a plain machine with nothing but a
+> terminal. No `claude` CLI? The chat pane sits quiet. No multiplexer (`tmux` on
+> macOS/Linux, `psmux` on Windows)? The agent roster is just empty. Nothing
+> errors — missing pieces simply go quiet.
 
 ## 📸 Screenshots
 
@@ -55,12 +61,16 @@ AIOS is built around a **resizable pane grid** — open as many tools as you wan
 drag the dividers, maximize, minimize to the sidebar, or fan them all out in a
 Mission-Control-style overview. When nothing's open you land on an **idle
 dashboard**: a bento grid of your usage pulse, recent repos, a memory focus
-widget, money-agent summaries, your oracle fleet, and live device stats.
+widget, scheduled-agent summaries, your oracle fleet, and live device stats. A
+calm, skippable **first-run onboarding** (welcome → your name → engine detection
+→ MCP review → theme & accent) sets you up on first launch.
 
-A calm, skippable **first-run onboarding** (welcome → your name → engine
-detection → MCP review → theme & accent) sets you up on first launch.
+<sub>Every capability below is one pane. Click any row to expand it.</sub>
 
-### 💬 Chat — multi-engine, local-first
+<details>
+<summary><b>💬 Chat</b> — multi-engine, local-first</summary>
+
+<br />
 
 A Codex-style chat pane that streams from a **local CLI** — so conversations run
 on *your own* subscription with no API keys baked into the app.
@@ -86,14 +96,22 @@ on *your own* subscription with no API keys baked into the app.
   recall, a true **stop** button, push-to-talk voice, and a **working-directory
   picker** so you can re-root the agent's session without leaving the pane.
 
-### 🖥 Terminals — real PTYs
+</details>
+
+<details>
+<summary><b>🖥 Terminals</b> — real PTYs, persistent on both platforms</summary>
+
+<br />
 
 - Real PTYs streamed **per session over a Tauri Channel**, rendered with
   `xterm.js` + the **WebGL** addon (DOM fallback). Open as many as you want.
   PowerShell on Windows, your login shell on Unix.
-- On Unix, **persistent shells** route through a `tmux` session
-  (`aios-term-<pane>`) so they survive an app quit; oracle/raw panes stay
-  ephemeral.
+- **Persistent shells on both platforms** — sessions route through a terminal
+  multiplexer (`tmux` on macOS/Linux, `psmux` on Windows) as `aios-term-<pane>`,
+  so they survive closing the pane *or* quitting the app. A closed session
+  reappears in a **reattach** list in the sidebar — pop it back into a new pane,
+  rename it, or kill it. With no multiplexer installed, terminals fall back to a
+  plain (non-persistent) PTY — never an error.
 - **Compose box** — a multi-line prompt bar (default-open for oracle/claude-code
   panes) with live mode/model/context pills parsed straight from the PTY output,
   plus slash commands sent raw to the shell.
@@ -101,14 +119,25 @@ on *your own* subscription with no API keys baked into the app.
   auto-saved + path inserted), middle-click paste, file-drop → shell-quoted
   paths, and a `[[btn: a | b | c]]` sentinel that renders clickable buttons.
 
-### 🛰 Oracle roster
+</details>
 
-Spawn, rename, attach, and kill **`tmux`-backed agent sessions** ("oracles")
-from the sidebar. A pinned, undeletable **master** session sits on top. The
-superapp attaches to each as a terminal. No tmux (or on Windows) → the roster is
-simply empty.
+<details>
+<summary><b>🛰 Oracle roster</b> — multiplexer-backed agent sessions</summary>
 
-### 🌐 Browser — a real webview
+<br />
+
+Spawn, rename, hide, attach, and kill **multiplexer-backed agent sessions**
+("oracles") from the sidebar — `tmux` on macOS/Linux, `psmux` on Windows. A
+one-tap **spawn** boots a `claude` oracle; the superapp attaches to each as a
+terminal, and a self-poll keeps the list live as sessions come and go. No
+multiplexer installed → the roster is simply empty.
+
+</details>
+
+<details>
+<summary><b>🌐 Browser</b> — a real native webview</summary>
+
+<br />
 
 A **native child webview** (real WebKit / WebView2, not an iframe) for docs,
 dashboards, and previews without leaving the deck.
@@ -121,14 +150,24 @@ dashboards, and previews without leaving the deck.
   YouTube Premium, etc.) actually persist and stay isolated.
 - **Pin to sidebar** — resolves the favicon and drops the site into your rail.
 
-### 📁 Files
+</details>
+
+<details>
+<summary><b>📁 Files</b> — a fast, git-aware explorer</summary>
+
+<br />
 
 A fast, VS Code-style explorer with a filterable tree, **git status**
 decorations (M/A/D/U/R + folder "dirty" dots), indent guides, and type icons.
 Single-click opens — code into the editor, media into the viewer. Drag any row
 into a terminal or chat to insert its shell-quoted path.
 
-### ✍️ Code editor (with language servers) & file viewer
+</details>
+
+<details>
+<summary><b>✍️ Code editor & viewer</b> — Monaco with language servers</summary>
+
+<br />
 
 - **Editor** — Monaco (VS Code's engine): syntax highlighting, minimap,
   find/replace, multi-cursor, dirty/saved indicator, `⌘/Ctrl+S` to save, and a
@@ -142,7 +181,12 @@ into a terminal or chat to insert its shell-quoted path.
 - **Viewer** — inline preview for images, PDFs, and office docs (via
   LibreOffice).
 
-### 🪞 App mirror & attach
+</details>
+
+<details>
+<summary><b>🪞 App mirror & attach</b> — cast a native window into a pane</summary>
+
+<br />
 
 Cast **one native app window** live into an AIOS pane — `ScreenCaptureKit` on
 macOS, `Windows.Graphics.Capture` on Windows — so you can keep a design tool,
@@ -150,30 +194,53 @@ a simulator, or another app on the deck beside your agents. Pick a window from
 the dropdown; the frame mirrors and tracks as you resize. (Display is shipped;
 click/keystroke forwarding is in progress.)
 
-### 🗒 Notes
+</details>
+
+<details>
+<summary><b>🗒 Notes</b> — a synced markdown scratchpad</summary>
+
+<br />
 
 An Apple-Notes-style scratch pad over your markdown files — search, create,
 delete, autosave (debounced + on blur), word count, and a **live sync** so edits
 made by an oracle show up without clobbering what you're typing. "Send to AI"
 routes a note straight into chat.
 
-### 🤖 Money agents
+</details>
 
-A board for always-on **autonomous agents** — long-running, scheduled daemons
-with a mission, a work queue, and live health (running / scheduled / needs-steer
-/ failed). Each row shows its primary metric, current job, next action, and last
-run, with the logs a click away; open one straight into a chat to steer it.
-(Daemon-backed — Unix-oriented; the board shows empty where the daemons aren't
-running.)
+<details>
+<summary><b>🤖 Scheduled agents</b> — recurring in-app AI tasks</summary>
 
-### 📊 Pulse & usage
+<br />
+
+**Recurring AI tasks.** Give an agent a mission (the prompt it runs) and a
+cadence — `hourly` · `daily` · `weekly` · `every N min/hours/days` · or `manual`
+— and the in-app scheduler pulses it in a background chat, then fires a
+clickable notification. **One-click starter templates** (repo digest, nightly
+tests, dependency audit, URL watch, morning briefing) pre-fill the create form.
+Each row shows its cadence, last-run age, and live state (scheduled / due /
+manual); **run-now** fires a one-off pulse, and a **steer-all** box pushes a
+control update into every agent at once. Open any one into a full chat to drive
+it by hand. Pure in-app — no daemons — so it works the same on macOS and Windows.
+
+</details>
+
+<details>
+<summary><b>📊 Pulse & usage</b> — your activity, read locally</summary>
+
+<br />
 
 The idle dashboard and account menu surface a GitHub-style **activity heatmap**,
 **current/longest streaks**, token totals, your favorite model, live **5h / 7d
 rate-limit %**, and **device stats** (CPU, RAM, disk, battery, uptime) — all read
 locally from your usage data, degrading to quiet zeros when absent.
 
-### 🔌 Bridges · 🧩 Plugins · 🔔 Notifications
+</details>
+
+<details>
+<summary><b>🔌 Bridges · 🧩 Plugins · 🔔 Notifications</b></summary>
+
+<br />
 
 - **Bridges** — connection status for every channel AIOS can speak through
   (WhatsApp and more), detected via process, scheduler, and activity logs.
@@ -183,7 +250,12 @@ locally from your usage data, degrading to quiet zeros when absent.
   monitor** that can watch an oracle's session and ping you when a task goes idle
   (done) or throws, with anti-spam guards so you get a signal, not noise.
 
-### 🎙 Voice & the Conductor
+</details>
+
+<details>
+<summary><b>🎙 Voice & the Conductor</b> — speak a workspace into existence</summary>
+
+<br />
 
 Hold to record, transcribe via a local **whisper.cpp** server, and either drop
 the text into the focused composer **or** speak a whole workspace into
@@ -192,7 +264,12 @@ existing primitives — *"open a terminal and a browser on github.com, then ask
 claude to wire up the deploy"* — and executes it over the pane bus. Routing
 happens in plain code; it never pollutes the model's context.
 
-### 🐾 Companion · 🎨 Theming
+</details>
+
+<details>
+<summary><b>🐾 Companion · 🎨 Theming</b> — delight & looks</summary>
+
+<br />
 
 - **Companion** — a small idle pet tile with subtle liveness, plus celebratory
   flourishes (confetti, sparks) on a long clean run. Pure delight, fully gated
@@ -201,14 +278,16 @@ happens in plain code; it never pollutes the model's context.
   (comfortable / compact), a font-size slider, a reduce-motion toggle, and the
   motion/fx system built on `motion` (Framer Motion's successor).
 
-### ⌘ Command palette & shortcuts
+</details>
+
+<details>
+<summary><b>⌘ Command palette & shortcuts</b> — every action, one keystroke away</summary>
+
+<br />
 
 A Raycast-style fuzzy **command palette** groups every action into **open** (new
 panes), **resume** (recent chats), **fleet** (oracles), **run** (auto-discovered
 projects), **view**, **actions**, and **app**.
-
-<details>
-<summary><b>⌨️ Keyboard shortcut reference</b></summary>
 
 > Modifiers are platform-aware: **⌘ on macOS = Ctrl on Windows/Linux**. The keys
 > below show the macOS glyphs.
@@ -234,7 +313,10 @@ projects), **view**, **actions**, and **app**.
 
 </details>
 
-### ⬆️ Self-update
+<details>
+<summary><b>⬆️ Self-update</b> — signed, automatic</summary>
+
+<br />
 
 AIOS updates itself. The in-app updater checks **GitHub Releases** for a newer
 **minisign-signed** build, verifies the signature against a pinned public key,
@@ -242,23 +324,32 @@ downloads, installs, and relaunches — surfaced both at boot (quietly) and in
 Settings › software update. See [`RELEASING.md`](./RELEASING.md) for how signed
 release manifests are produced.
 
+</details>
+
 ## 🚀 Requirements
 
-- **macOS or Windows** (the Tauri shell is cross-platform; some agent
-  integrations — tmux oracles, bridges, money-agent daemons — assume a Unix
-  host and stay quiet on Windows).
+**You need:**
+
+- **macOS or Windows** — one codebase, native on both.
 - **Rust** (stable, via [rustup](https://rustup.rs)) — for the Tauri backend.
   On Windows, the MSVC toolchain + **VS Build Tools 2022** ("Desktop development
   with C++").
 - **Node** 18+ — for the frontend. macOS can use **pnpm**; **Windows uses npm**
   (see [`WINDOWS.md`](./WINDOWS.md) for why).
 - **WebView2** — preinstalled on Windows 11; renders the UI.
-- _Optional:_ a `claude` CLI on your `PATH` — for the chat pane.
-- _Optional:_ the `codex` and/or `opencode` CLIs — for the other chat engines.
-- _Optional:_ **tmux** — for the oracle roster and persistent terminals (Unix).
-- _Optional:_ `typescript-language-server` / `rust-analyzer` — to light up the
-  editor's language features.
-- _Optional:_ a **whisper.cpp** server on `:9000` — for push-to-talk voice.
+
+**Nice to have** — every one is optional, and AIOS degrades gracefully without it:
+
+| Add this | To unlock |
+| --- | --- |
+| a `claude` CLI on your `PATH` | the chat pane |
+| the `codex` and/or `opencode` CLIs | the other chat engines |
+| a multiplexer — **tmux** (macOS/Linux) or **psmux** (Windows, `winget install psmux`) | the oracle roster + persistent/reattachable terminals |
+| `typescript-language-server` / `rust-analyzer` | the editor's language features |
+| a **whisper.cpp** server on `:9000` | push-to-talk voice |
+
+> A few integrations (e.g. messaging bridges) are still Unix-oriented and stay
+> quiet on Windows.
 
 ## 🛠 Build & Run
 
@@ -275,8 +366,8 @@ On **Windows**, a helper script wraps the above:
 .\scripts\run.ps1 -Build     # produce an .msi / .exe installer instead
 ```
 
-(macOS users can substitute `pnpm` for `npm` if they prefer. `npm run dev` runs
-just the Vite frontend on `:1420`.)
+> macOS users can substitute `pnpm` for `npm` if they prefer. `npm run dev` runs
+> just the Vite frontend on `:1420`.
 
 ## ⚙️ Configuration
 
@@ -307,7 +398,7 @@ layout, and per-pane chat drafts — persists in `localStorage` (`aios.settings`
 ```
 src/            React + TypeScript frontend (Vite)
   components/     one file per pane (Chat, Terminal, Editor, Browser, Files,
-                  Notes, Pulse, Bridges, Plugins, AppCast, MoneyAgents, Pet,
+                  Notes, Pulse, Bridges, Plugins, AppCast, ScheduledAgents, Pet,
                   Viewer, Onboarding, …) + fx/ (the motion/fx primitives)
   lib/            thin Tauri-invoke wrappers, the pane bus, the conductor,
                   the LSP client, the updater, settings
@@ -363,8 +454,9 @@ Shipped and stable today: everything in **What's inside** above. On deck:
   without losing the thread, in-transcript find, and a cumulative cost HUD.
 - **Model-agnostic chat** — a live model catalog, OpenRouter key onboarding, and
   BYO-key native APIs with secure key storage.
-- **Deeper Windows parity** — Windows-native equivalents for the remaining
-  Unix-only integrations (detach/reattach terminals, bridges).
+- **Deeper Windows parity** — Windows-native equivalents for the few remaining
+  Unix-only integrations (e.g. messaging bridges). Persistent/reattachable
+  terminals and the oracle roster already work on Windows via `psmux`.
 
 ## 📄 License
 

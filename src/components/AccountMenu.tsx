@@ -98,7 +98,7 @@ export function AccountMenu({
 
   return (
     <div
-      className={`flex w-full items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 py-1.5 text-left transition-colors hover:border-[var(--color-border-strong)] ${
+      className={`flex w-full items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 py-1.5 text-left backdrop-blur-md transition-all hover:border-[var(--color-border-strong)] ${
         iconsOnly ? "justify-center px-1" : "gap-2 px-2"
       }`}
     >

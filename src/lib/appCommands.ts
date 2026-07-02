@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import {
   Camera,
+  FolderOpen,
   Layers,
   Maximize2,
   MessageSquare,
@@ -18,10 +19,12 @@ import type { Command as PaletteCommand } from "../components/CommandPalette.tsx
 import type { ChatSessionInfo } from "./chat.ts";
 import type { OracleInfo } from "./pty.ts";
 import type { ProjectInfo } from "./run.ts";
+import { allComponents, joinPath, type ProjectWorkspace } from "./projectWorkspaces.ts";
 import { SPAWN, type PaneContent } from "./apps.ts";
 import { commandToPaletteCommand, createCommand, type AiosCommand } from "./commands.ts";
 import { MOD, chord } from "./platform.ts";
 import type { Workspace } from "./workspaces.ts";
+import type { WorkSession } from "./workSessions.ts";
 
 export interface AppCommandDeps {
   activeKey: string | null;
@@ -30,6 +33,8 @@ export interface AppCommandDeps {
   chats: ChatSessionInfo[];
   oracles: OracleInfo[];
   projects: ProjectInfo[];
+  /** Structured workspaces — powers per-component "open" entries (P5). */
+  projectWorkspaces: ProjectWorkspace[];
   spawn: (kind: PaneContent, label: string) => void;
   resumeChat: (chat: ChatSessionInfo) => void;
   addOracle: (identity: string) => void;
@@ -49,6 +54,11 @@ export interface AppCommandDeps {
   openSaveWorkspace: () => void;
   applyWorkspace: (ws: Workspace) => void;
   deleteWorkspace: (name: string) => void;
+  /** Capture the current deck (panes + the current chat) as a resumable Work Session. */
+  saveWorkSession: () => void;
+  /** Work Sessions + a resume handler — powers the palette session switcher. */
+  workSessions: WorkSession[];
+  resumeWorkSession: (s: WorkSession) => void;
   /** Surface a command failure to the user (toast) — silent no-ops erode trust. */
   notify?: (message: string) => void;
 }
@@ -145,6 +155,34 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
       group: "run",
       actionLabel: "run",
     })),
+    // per-component "open" entries for structured workspaces (split / environments)
+    // — land a terminal in the exact component folder (env-qualified). Fullstack
+    // workspaces are covered by the "run" entry above, so skip them.
+    ...deps.projectWorkspaces.flatMap((ws) => {
+      const comps = allComponents(ws);
+      if (comps.length <= 1) return [];
+      return comps.map((c) => {
+        const cwd = c.path === "." ? ws.root : joinPath(ws.root, c.path);
+        const where = `${ws.name} · ${c.name}`;
+        const meta = [c.role, c.stack, c.status && c.status !== "current" ? c.status : null]
+          .filter(Boolean)
+          .join(" · ");
+        return {
+          command: createCommand({
+            id: `project.open.${cwd}`,
+            label: `open ${where}`,
+            description: `${meta} · ${relPath(deps.home, cwd)}`,
+            scope: "run",
+            icon: createElement(FolderOpen, { size: 14 }),
+            keywords: ["open", "project", "component", "terminal", ws.name, c.name, c.role, c.stack],
+            preview: [cwd, `${ws.name} → ${c.name}`],
+            run: () => deps.spawn({ type: "shell", cwd }, where),
+          }),
+          group: "run",
+          actionLabel: "open",
+        };
+      });
+    }),
     {
       command: createCommand({
         id: "workspace.save",
@@ -159,6 +197,40 @@ export function buildAppCommands(deps: AppCommandDeps): PaletteCommand[] {
       group: "workspaces",
       actionLabel: "save",
     },
+    {
+      command: createCommand({
+        id: "session.save",
+        label: "save work session…",
+        description: "remember these panes + the current chat as a resumable session",
+        scope: "global",
+        icon: createElement(SquareStack, { size: 14 }),
+        keywords: ["work", "session", "continue", "save", "snapshot", "resume", "goal", "thread"],
+        enabled: () => deps.panesCount > 0,
+        run: deps.saveWorkSession,
+      }),
+      group: "workspaces",
+      actionLabel: "save",
+    },
+    ...deps.workSessions
+      .filter((s) => s.status !== "done")
+      .map((s) => {
+        const paneCount = s.panes.length + (s.chatSessionIds.length > 0 ? 1 : 0);
+        const sub = `${paneCount} ${paneCount === 1 ? "pane" : "panes"} · ${savedAgo(s.lastActiveAt)} — restores the deck + re-threads the chat`;
+        return {
+          command: createCommand({
+            id: `session.resume.${s.id}`,
+            label: `session: ${s.title}`,
+            description: sub,
+            scope: "global" as const,
+            icon: createElement(SquareStack, { size: 14 }),
+            keywords: ["session", "work", "continue", "resume", "pick up", s.title],
+            preview: [s.goal || s.panes.map((p) => p.label).join(" · ") || s.title, sub],
+            run: () => deps.resumeWorkSession(s),
+          }),
+          group: "workspaces",
+          actionLabel: "resume",
+        };
+      }),
     ...deps.workspaces.map((ws) => ({
       command: createCommand({
         id: `workspace.open.${ws.name.toLowerCase()}`,

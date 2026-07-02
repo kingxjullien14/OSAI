@@ -248,3 +248,104 @@ test("replayHistoryToTurns renders a compaction card and folds in its summary", 
   assert.doesNotMatch(card.summary, /being continued/); // preamble stripped
   assert.doesNotMatch(card.summary, /read the transcript/); // trailing stripped
 });
+
+test("a new content block settles the open thinking turn mid-stream", () => {
+  n = 0;
+  let s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "pondering" } },
+    },
+    { now: 100, uid },
+  ).state;
+  assert.equal(s.turns[0].kind, "thinking");
+  assert.equal(s.turns[0].streaming, true);
+  // a web_search (or any next block) begins → the thought settles immediately,
+  // not at turn end (the server-tool "all thinking" bug)
+  s = reduceChatStreamEvent(
+    s,
+    { type: "stream_event", event: { type: "content_block_start", content_block: { type: "server_tool_use" } } },
+    { now: 1600, uid },
+  ).state;
+  assert.equal(s.turns[0].streaming, false);
+  assert.equal(s.turns[0].durationMs, 1500);
+  assert.equal(s.thinkingTurnId, null);
+});
+
+test("a replayed text user event becomes a user bubble (reattach fidelity)", () => {
+  n = 0;
+  // the reattach buffer carries the user's own recorded lines (chat.rs
+  // buffer_line) — without a bubble the transcript replays answers-only and
+  // the branching UI hides everything behind a phantom ‹N/M› switcher.
+  const s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hello there" }] },
+    },
+    { now: 5, uid },
+  );
+  assert.equal(s.handled, true);
+  assert.equal(s.state.turns.length, 1);
+  assert.deepEqual(
+    { kind: s.state.turns[0].kind, text: s.state.turns[0].text },
+    { kind: "user", text: "hello there" },
+  );
+});
+
+test("a replayed user event with aios_image_ref blocks restores thumbnails", () => {
+  n = 0;
+  const s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "aios_image_ref", path: "C:/tmp/shot.png" },
+          { type: "text", text: "what is this?" },
+        ],
+      },
+    },
+    { now: 5, uid },
+  );
+  assert.equal(s.state.turns.length, 1);
+  const turn = s.state.turns[0];
+  assert.equal(turn.kind, "user");
+  assert.deepEqual(turn.images, ["C:/tmp/shot.png"]);
+  assert.equal(turn.text, "what is this?");
+});
+
+test("a tool_result user event still fills its tool card, not a bubble", () => {
+  n = 0;
+  const withTool = {
+    turns: [{ kind: "tool", id: "tu1", name: "Bash", input: {} }],
+    streamingTurnId: null,
+    thinkingTurnId: null,
+  };
+  const s = reduceChatStreamEvent(
+    withTool,
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }],
+      },
+    },
+    { now: 5, uid },
+  );
+  assert.equal(s.state.turns.length, 1, "no extra bubble");
+  assert.equal(s.state.turns[0].result, "ok");
+});
+
+test("replayHistoryToTurns restores image refs on user turns", () => {
+  n = 0;
+  const lines = [
+    `{"type":"user","message":{"role":"user","content":[{"type":"aios_image_ref","path":"/tmp/a.png"},{"type":"text","text":"look"}]},"_ts":1000}`,
+  ];
+  const turns = replayHistoryToTurns(lines, uid);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].kind, "user");
+  assert.deepEqual(turns[0].images, ["/tmp/a.png"]);
+});

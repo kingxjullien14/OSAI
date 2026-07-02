@@ -18,12 +18,16 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  FileText,
   FolderClosed,
   FolderGit2,
   FolderOpen,
   Globe,
   Home,
   ListCollapse,
+  Loader2,
+  PanelRight,
+  PenLine,
   RefreshCw,
   Search,
   TerminalSquare,
@@ -34,10 +38,14 @@ import {
   gitStatus,
   homeDir,
   readDirTree,
+  readFilePreview,
   type DirEntry,
+  type FilePreview,
   type GitCode,
 } from "../lib/fs";
-import { listProjects, type ProjectInfo } from "../lib/run";
+import { scanWorkspaces, type ProjectInfo } from "../lib/run";
+import { flattenProjectWorkspaces, getScanRoots } from "../lib/projectWorkspaces";
+import { browserRevealInFinder } from "../lib/browser";
 import { AIOS_DIR_MIME, AIOS_PATH_MIME, spawnPane, startPathDrag } from "../lib/paneBus";
 import { fileIcon } from "../lib/fileIcons";
 import { basename, dirname, normalizeSlashes } from "../lib/paths.ts";
@@ -56,6 +64,7 @@ const GIT_COLOR: Record<GitCode, string> = {
 // Persisted toggles (VS Code-style defaults: both hidden).
 const HIDDEN_KEY = "aios.files.showHidden";
 const ALL_KEY = "aios.files.showAll";
+const PREVIEW_KEY = "aios.files.preview";
 function loadBool(key: string): boolean {
   try {
     return localStorage.getItem(key) === "1";
@@ -90,6 +99,14 @@ export function FilesPane({
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(() => loadBool(HIDDEN_KEY));
   const [showAll, setShowAll] = useState(() => loadBool(ALL_KEY));
+  // preview defaults ON (single-click a file → it shows here, not a new pane).
+  const [previewOn, setPreviewOn] = useState(() => {
+    try {
+      return localStorage.getItem(PREVIEW_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
   const [projOpen, setProjOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [projScan, setProjScan] = useState<"idle" | "scanning" | "done" | "error">("idle");
@@ -262,9 +279,9 @@ export function FilesPane({
 
   const scanProjects = useCallback(() => {
     setProjScan("scanning");
-    listProjects()
-      .then((p) => {
-        setProjects(p);
+    scanWorkspaces(getScanRoots())
+      .then((ws) => {
+        setProjects(flattenProjectWorkspaces(ws));
         setProjScan("done");
       })
       .catch(() => {
@@ -312,7 +329,7 @@ export function FilesPane({
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)] text-[13px]">
       {/* header: root + actions */}
-      <div className="relative flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-2 text-[var(--color-muted)]">
+      <div className="relative flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2 text-[var(--color-muted)] backdrop-blur-md">
         <button onClick={() => homeDir().then(setRootTo)} className="rounded p-1 hover:text-[var(--color-text)]" title="Home">
           <Home size={13} />
         </button>
@@ -324,7 +341,10 @@ export function FilesPane({
           {rootName}
         </button>
         {gitRoot && (
-          <span className="shrink-0 font-mono text-[9.5px] text-[var(--color-faint)]" title={`git repo · ${gitRoot}`}>
+          <span
+            className="shrink-0 rounded border border-[color-mix(in_srgb,var(--aios-accent-2)_32%,transparent)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--aios-accent-2)]"
+            title={`git repo · ${gitRoot}`}
+          >
             git
           </span>
         )}
@@ -346,6 +366,13 @@ export function FilesPane({
           title={showHidden ? "Hide dotfiles + junk" : "Show dotfiles (.env, .git, …)"}
         >
           {showHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+        </button>
+        <button
+          onClick={() => setPreviewOn((v) => { saveBool(PREVIEW_KEY, !v); return !v; })}
+          className={`rounded p-1 hover:text-[var(--color-text)] ${previewOn ? "text-[var(--color-accent)]" : ""}`}
+          title={previewOn ? "Hide preview panel" : "Show preview panel (select a file)"}
+        >
+          <PanelRight size={13} />
         </button>
         <button onClick={collapseAll} className="rounded p-1 hover:text-[var(--color-text)]" title="Collapse all">
           <ListCollapse size={13} />
@@ -403,7 +430,7 @@ export function FilesPane({
       </div>
 
       {/* filter */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] px-2.5 py-1.5">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] px-2.5 py-1.5 transition-colors focus-within:border-[color-mix(in_srgb,var(--color-accent)_40%,transparent)]">
         <Search size={12} className="text-[var(--color-faint)]" />
         <input
           value={filter}
@@ -432,8 +459,11 @@ export function FilesPane({
 
       {error && <p className="px-3 py-2 text-[12px] text-[var(--color-danger)]">{error}</p>}
 
+      {/* body — tree on the left; when the preview panel is on and a FILE is
+          selected, it splits to show an inline glass preview on the right. */}
+      <div className="flex min-h-0 flex-1">
       {/* tree — dropping a FOLDER here re-roots this pane at it (R-cross-pane). */}
-      <div className="min-h-0 flex-1">
+      <div className={`min-h-0 ${previewOn && selectedIsFile ? "w-1/2 min-w-[200px] shrink-0 border-r border-[var(--color-border)]" : "flex-1"}`}>
       <PaneDropZone
         onDir={(dir) => {
           setRootTo(dir);
@@ -447,7 +477,7 @@ export function FilesPane({
       >
       {/* .stagger: initial listing cascades once (capped at 5 delays); rows are
           keyed by path so scroll/expand only animate genuinely NEW entries. */}
-      <div className="stagger h-full overflow-auto py-1">
+      <div className="stagger h-full overflow-auto py-1 font-mono text-[12px]">
         {rows.map(({ entry, depth }) => (
           <TreeRow
             key={entry.path}
@@ -471,8 +501,198 @@ export function FilesPane({
       </div>
       </PaneDropZone>
       </div>
+      {previewOn && selectedIsFile && selected && (
+        <FilePreviewPanel
+          path={selected}
+          gitCode={git.get(normalizeSlashes(selected))}
+          onOpenInEditor={() => selected && onOpenFile?.(selected, basename(selected))}
+          onOpenInBrowser={openInBrowser}
+          onReveal={() => browserRevealInFinder(selected).catch(() => {})}
+          onClose={() => { saveBool(PREVIEW_KEY, false); setPreviewOn(false); }}
+        />
+      )}
+      </div>
     </div>
   );
+}
+
+/** Inline file preview — the right half of the Files split. Loads a capped
+ *  preview (text ≤256KB, or an image/pdf via the asset protocol) and renders it
+ *  in a frosted glass panel; anything non-renderable shows a typed placeholder
+ *  with an "open in editor" hand-off. */
+/** A line of code → lightly highlighted spans (strings green, numbers cyan,
+ *  comment lines faint). Dependency-free + per-line; evokes the mockup's syntax
+ *  colors without a heavyweight highlighter on a capped preview. */
+function highlightLine(line: string): React.ReactNode {
+  const t = line.trimStart();
+  if (
+    t.startsWith("//") || t.startsWith("#") || t.startsWith("*") ||
+    t.startsWith("/*") || t.startsWith("--") || t.startsWith(";")
+  ) {
+    return <span style={{ color: "var(--color-faint)" }}>{line}</span>;
+  }
+  const parts: React.ReactNode[] = [];
+  const re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d[\d._]*\b)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = re.exec(line)) !== null) {
+    if (m.index > last) parts.push(line.slice(last, m.index));
+    const tok = m[0];
+    const isStr = /^["'`]/.test(tok);
+    parts.push(
+      <span key={i++} style={{ color: isStr ? "var(--color-success)" : "var(--aios-accent-2)" }}>
+        {tok}
+      </span>,
+    );
+    last = re.lastIndex;
+  }
+  if (last < line.length) parts.push(line.slice(last));
+  return parts.length ? parts : line;
+}
+
+const GIT_WORD: Record<GitCode, string> = {
+  M: "modified",
+  A: "added",
+  U: "untracked",
+  D: "deleted",
+  R: "renamed",
+};
+
+function FilePreviewPanel({
+  path,
+  gitCode,
+  onOpenInEditor,
+  onOpenInBrowser,
+  onReveal,
+  onClose,
+}: {
+  path: string;
+  gitCode?: GitCode;
+  onOpenInEditor: () => void;
+  onOpenInBrowser: () => void;
+  onReveal: () => void;
+  onClose: () => void;
+}) {
+  const [preview, setPreview] = useState<FilePreview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setErr(null);
+    setPreview(null);
+    readFilePreview(path)
+      .then((p) => alive && setPreview(p))
+      .catch((e) => alive && setErr(String(e)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  const name = basename(path);
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  // line-numbered code (mockup): split into rows, capped for perf on huge files.
+  const LINE_CAP = 1500;
+  const lines =
+    preview?.kind === "text" && preview.text != null ? preview.text.split("\n") : null;
+  const shownLines = lines ? lines.slice(0, LINE_CAP) : null;
+  return (
+    <div className="surface-card flex min-w-0 flex-1 flex-col rounded-none">
+      {/* preview header — cyan file-icon chip + name + meta + close */}
+      <div className="flex h-10 shrink-0 items-center gap-2.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-3 backdrop-blur-md">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--aios-accent-2)_30%,transparent)] bg-[color-mix(in_srgb,var(--aios-accent-2)_12%,transparent)] text-[var(--aios-accent-2)]">
+          <FileText size={12} />
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--color-text)]" title={path}>
+          {name}
+        </span>
+        {preview && (
+          <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-[var(--color-faint)]">
+            {(ext || preview.kind)} · {fmtBytes(preview.size)}
+            {gitCode && (
+              <span style={{ color: GIT_COLOR[gitCode] }}> · {GIT_WORD[gitCode]}</span>
+            )}
+          </span>
+        )}
+        <button
+          onClick={onClose}
+          className="rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+          title="close preview"
+        >
+          <PanelRight size={12} />
+        </button>
+      </div>
+      {/* preview body */}
+      <div className="relative min-h-0 flex-1 overflow-auto">
+        {loading ? (
+          <div className="grid h-full place-items-center">
+            <Loader2 size={16} className="animate-spin text-[var(--color-accent)]" />
+          </div>
+        ) : err ? (
+          <p className="p-3 font-mono text-[11px] text-[var(--color-danger)]">{err}</p>
+        ) : !preview ? null : preview.kind === "image" ? (
+          <div className="grid h-full place-items-center p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={fileSrc(path)} alt={name} className="max-h-full max-w-full rounded-lg object-contain shadow-[var(--aios-shadow-pop)]" />
+          </div>
+        ) : preview.kind === "pdf" ? (
+          <iframe src={fileSrc(path)} title={name} className="h-full w-full border-0" />
+        ) : shownLines ? (
+          <div className="py-2 font-mono text-[11.5px] leading-[1.7]">
+            {shownLines.map((ln, i) => (
+              <div key={i} className="flex px-3 hover:bg-[color-mix(in_srgb,var(--color-accent)_5%,transparent)]">
+                <span className="mr-3.5 w-9 shrink-0 select-none text-right text-[var(--color-faint)]">{i + 1}</span>
+                <span className="whitespace-pre-wrap break-words text-[var(--color-text-2)]">{highlightLine(ln) || " "}</span>
+              </div>
+            ))}
+            {(lines!.length > LINE_CAP || preview.truncated) && (
+              <div className="mt-1 border-t border-[var(--color-border)] px-3 py-1.5 text-[10px] text-[var(--color-faint)]">
+                preview capped · open in editor for the full file
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <FileText size={26} className="text-[var(--color-faint)]" />
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--color-muted)]">
+              {preview.kind} · {ext || "file"}
+            </span>
+            <span className="font-mono text-[10px] text-[var(--color-faint)]">{fmtBytes(preview.size)}</span>
+          </div>
+        )}
+      </div>
+      {/* footer — gradient open-in-editor + ghost open-in-browser (mockup) */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-[var(--color-border)] px-3 py-2.5">
+        <button
+          onClick={onOpenInEditor}
+          className="press flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-medium text-[var(--color-accent-fg)] transition-all bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:brightness-110"
+        >
+          <PenLine size={12} /> open in editor
+        </button>
+        <button
+          onClick={onOpenInBrowser}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] px-3 py-1.5 text-[11.5px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] hover:text-[var(--color-text)]"
+        >
+          <Globe size={12} /> open in browser
+        </button>
+        <button
+          onClick={onReveal}
+          title={isApple ? "reveal in Finder" : "reveal in Explorer"}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] px-3 py-1.5 text-[11.5px] text-[var(--color-text-2)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] hover:text-[var(--color-text)]"
+        >
+          <FolderOpen size={12} /> reveal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** bytes → "1.2 KB" / "3.4 MB". */
+function fmtBytes(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)} KB`;
+  return `${n} B`;
 }
 
 function TreeRow({
@@ -549,15 +769,18 @@ function TreeRow({
           return;
         }
         onSelect();
+        // single click: dirs expand; FILES only select → show in the preview
+        // panel (no new pane). Double-click opens the file in its own pane.
         if (isDir) onToggle();
-        else onOpen();
       }}
       onDoubleClick={() => !isDir && onOpen()}
       title={entry.path}
       className={`group flex cursor-pointer items-center gap-1 pr-2 transition-colors ${
-        selected ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel-2)]"
+        selected
+          ? "bg-[color-mix(in_srgb,var(--color-accent)_13%,transparent)] shadow-[inset_2px_0_0_var(--color-accent)]"
+          : "hover:bg-[color-mix(in_srgb,var(--color-accent)_6%,transparent)]"
       }`}
-      style={{ height: 22 }}
+      style={{ height: 23 }}
     >
       {/* indent guides */}
       {Array.from({ length: depth }).map((_, i) => (
@@ -588,7 +811,10 @@ function TreeRow({
       {/* name */}
       <span
         className="min-w-0 flex-1 truncate"
-        style={{ color: nameColor, fontWeight: gitCode || folderDirty ? 500 : 400 }}
+        style={{
+          color: selected ? "var(--color-text)" : nameColor,
+          fontWeight: gitCode || folderDirty ? 500 : 400,
+        }}
       >
         {entry.name}
       </span>

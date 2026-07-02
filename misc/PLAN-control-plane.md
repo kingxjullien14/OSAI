@@ -1,8 +1,31 @@
 # PLAN — AIOS Control Plane (oracle drives the shell like the human)
 
-> Status: design plan, no code changes. Read-only exploration done against
-> `src/App.tsx` (full), `aios-bridge/mcp/aios-spawn-tab/index.js`, `package.json`,
-> and the full file inventory of `src-tauri/src/*.rs` + `src/lib/*.ts`.
+> Status (2026-06-23): **SHIPPED + LIVE-VERIFIED — the oracle drives the shell.** Gated tsc 0 / 192
+> tests / build ✓ / cargo ✓. `src/lib/control.ts` (command vocabulary + pure `routeControl` +
+> `capabilities`, **14 unit tests**) + App's `dispatchControl` wired to the SAME UI closures + an
+> `aios://control` listener. **HTTP transport** `src-tauri/src/control.rs` — localhost-only `tiny_http`
+> (§3 option a), token-gated + ephemeral port, injects a correlation id, forwards POST `/control` →
+> `app.emit` → dispatchControl, waits (≤5s) for the webview's `aios://control-reply` (Rust `listen_any`
+> + id-keyed channel) → HTTP body. Reads return real data + writes echo the pane list. **`aios-control`
+> MCP** (`aios-bridge/mcp/aios-control/`): one `control` tool POSTing to the endpoint. **VERIFIED LIVE
+> 2026-06-23** — the owner registered the MCP and drove the app by sentence ("open a browser pane on
+> github.com, then list the panes"): the pane opened + the live pane list came back.
+>
+> **Follow-ups SHIPPED 2026-06-23:**
+> - **Settings toggle** — Settings → general → "agent control" (`aios_control_status` /
+>   `aios_set_control` commands). LAZY-SPAWN: flipping ON starts the server with no restart; the choice
+>   persists to `~/.aios/control-enabled` (Rust's cross-launch source of truth — it can't read
+>   localStorage); **off by default → nothing binds until enabled**; `AIOS_CONTROL=1` still force-enables
+>   at boot for dev/headless.
+> - **More verbs** — `browser.open/navigate/back/forward/reload` (a browser pane's webview label == its
+>   pane key), `layout.list/save/apply` (named workspaces), `settings.get/set` (set type-validates
+>   against `DEFAULT_SETTINGS`; nullable keys accept string|null). All in `control.ts` + `dispatchControl`.
+> - **Crypto-grade token** — 256-bit from the OS CSPRNG (`getrandom` 0.2), replacing the time/pid mix.
+>
+> **NEXT (open):** oracle verbs (spawn/kill/appshot an oracle) are the only un-built control family;
+> everything else needs a REBUILD to go live (owner runs the BUILT app). The MCP itself is unchanged —
+> `additionalProperties:true` already passes the new `name`/`value` fields; its DESCRIPTION lists them.
+> (Design exploration was read-only against `src/App.tsx`, the spawn-tab MCP, etc.)
 > Items marked **(verify)** are config/rust files whose exact contents must be
 > confirmed at implementation time (the planning session could not load them):
 > `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`,

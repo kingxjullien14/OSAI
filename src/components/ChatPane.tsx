@@ -22,7 +22,7 @@
  *   7. `/` slash menu (clear / plan / model / help)
  *   8. `@` file-mention picker sourced from cwd
  */
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Channel } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -88,6 +88,7 @@ import {
   readChatTranscript,
   recordChatSession,
   CHAT_MODELS,
+  resolveChatModel,
   baseModelId,
   defaultAiForProvider,
   EFFORTS,
@@ -100,11 +101,15 @@ import {
   type WebChatTurn,
 } from "../lib/chat";
 import { detectAvailableEngines } from "../lib/providerDetect";
+import { availableApiModels, isApiProviderId } from "../lib/providers";
+import { listConfiguredProviders } from "../lib/apiKeys";
+import { activePath, siblingPosition, stepBranch, type Selection, type TreeNode } from "../lib/chatTree";
+import { turnsToApiMessages, messagesUpToLastUser, type ApiMessage } from "../lib/apiMessages";
 import { saveScheduledAgentChatSession } from "../lib/scheduledAgents";
 import { fileSrc, homeDir, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
-import { SHIFT, chord } from "../lib/platform";
-import { claudeRate, idleRate, codexRate, resetIn, type ModelRate } from "../lib/dashboard";
+import { ALT, SHIFT, chord } from "../lib/platform";
+import { claudeRate, codexRate, resetIn, type ModelRate } from "../lib/dashboard";
 import {
   composerContextChips,
   contextLedger,
@@ -117,11 +122,14 @@ import {
   sendContract,
   stopStrategy,
   updateQueuedMessage,
-  usageStack,
   type ContextBudgetMode,
   type QueuedMessage,
 } from "../lib/chatPaneState";
-import { usagePaceRisk } from "../lib/usagePace";
+import {
+  computeResponseVariants,
+  activeVariantIndex,
+  hiddenVariantTurnIds,
+} from "../lib/chatBranching";
 import { dictateCancel, dictateStart, dictateStop } from "../lib/voice";
 import {
   chatHandles,
@@ -154,7 +162,14 @@ import {
   replayHistoryToTurns,
   type ChatTurn,
 } from "../lib/chatStream";
-import { readChatHistory } from "../lib/chatHistory";
+import { readChatHistory, saveChatTree, loadChatTree } from "../lib/chatHistory";
+import { partitionTools, deriveFleet, isAgentTurn } from "../lib/subagentFleet";
+import { FleetView } from "./chat/FleetView";
+import { AgentStep } from "./chat/AgentStep";
+import { serializeTree, deserializeTree } from "../lib/chatTreePersist";
+import { groupByDate } from "../lib/historyManage";
+import { sessionUsage, formatTokens, formatAge } from "../lib/sessionUsage";
+import { lineDiff, diffStat, refineDiff, type DiffLine } from "../lib/textDiff";
 import { memorySearch, type MemoryHit } from "../lib/memory";
 import {
   onPetResult,
@@ -169,17 +184,23 @@ import {
   shouldAutoscroll,
   type ScrollIntent,
 } from "../lib/chatScroll";
+import { dayBoundaries, fmtTickTime, markerStyle, nearestTick } from "../lib/chatTimeline";
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { playCue } from "../lib/sound";
 import { PaneDropZone } from "./PaneDropZone";
 import { CopyButton, trapTab } from "./ui";
 import { RunCinema } from "./RunCinema";
 import { reportDiag } from "../lib/diag";
-import { pushNotification } from "../lib/notifications";
+import { pushNotification, resolveNeedsInputNotification } from "../lib/notifications";
 import { BlurFade } from "./fx/BlurFade";
+import { BorderBeam } from "./fx/BorderBeam";
 import { Magnet } from "./fx/Magnet";
+import { spotlightMove } from "./fx/spotlightGlow";
 import { SplitText } from "./fx/SplitText";
 import { TiltCard } from "./fx/TiltCard";
+import { DotPattern } from "./fx/DotPattern";
+import { HoverBorderGradient } from "./fx/HoverBorderGradient";
+import { NumberTicker } from "./fx/NumberTicker";
 
 // ── transcript model ──────────────────────────────────────────────────────
 
@@ -198,7 +219,9 @@ type RenderBlock =
   | { kind: "approval"; id: string; turn: Extract<Turn, { kind: "approval" }> }
   | { kind: "result"; id: string; turn: Extract<Turn, { kind: "result" }> }
   | { kind: "compaction"; id: string; turn: Extract<Turn, { kind: "compaction" }> }
+  | { kind: "change"; id: string; turn: ToolTurn }
   | { kind: "ask"; id: string; turn: ToolTurn }
+  | { kind: "plan"; id: string; turn: ToolTurn }
   | { kind: "activity"; id: string; tools: ToolTurn[]; durationMs?: number };
 
 /** Searchable text for find-in-chat — one string per block, covering what the
@@ -217,11 +240,50 @@ function blockSearchText(b: RenderBlock): string {
     case "approval":
       return `${b.turn.toolName} ${JSON.stringify(b.turn.input ?? {})}`;
     case "ask":
+    case "change":
+    case "plan":
       return `${b.turn.name} ${JSON.stringify(b.turn.input ?? {})}`;
     case "activity":
       return b.tools
         .map((t) => `${t.name} ${JSON.stringify(t.input ?? {})} ${t.result ?? ""}`)
         .join("\n");
+  }
+}
+
+/** First non-blank line of a string, capped — the scrubber's hover snippet. */
+function firstLine(s: string): string {
+  const l = (s.split("\n").find((x) => x.trim()) ?? "").trim();
+  return l.length > 80 ? `${l.slice(0, 80)}…` : l;
+}
+
+/** A short label for a block on the scrubber's hover/drag bubble. */
+function tickLabel(b: RenderBlock): string {
+  switch (b.kind) {
+    case "user":
+    case "assistant":
+    case "thinking":
+      return firstLine(b.turn.text);
+    case "result":
+      return b.turn.text ? firstLine(b.turn.text) : b.turn.ok === false ? "error" : "done";
+    case "compaction":
+      return "context compacted";
+    case "approval":
+      return `approve ${b.turn.toolName}`;
+    case "ask":
+      return "a question";
+    case "plan":
+      return "a plan to review";
+    case "change": {
+      const inp = b.turn.input ?? {};
+      const p =
+        (typeof inp.file_path === "string" && inp.file_path) ||
+        (typeof inp.path === "string" && inp.path) ||
+        "";
+      const name = p ? p.split(/[\\/]/).filter(Boolean).pop() : "";
+      return name ? `edited ${name}` : "file change";
+    }
+    case "activity":
+      return `${b.tools.length} step${b.tools.length === 1 ? "" : "s"}`;
   }
 }
 
@@ -233,20 +295,6 @@ type UsageSnapshot = { fiveHour: UsageWin; sevenDay: UsageWin };
 
 function isSparkModel(modelId: string): boolean {
   return /^gpt-5\.3-codex-spark$/i.test(modelId);
-}
-
-function usageProviderKey(model: ChatModel): string {
-  if ((model.engine ?? "claude") === "codex" && isSparkModel(model.id)) {
-    return "codex:gpt-5.3-spark";
-  }
-  return model.engine ?? "claude";
-}
-
-function usageProviderLabel(model: ChatModel): string {
-  if ((model.engine ?? "claude") === "codex" && isSparkModel(model.id)) {
-    return "gpt-5.3 spark";
-  }
-  return model.engine ?? "claude";
 }
 
 function codexUsageForModel(r: ChatUsageRate, model: ChatModel): UsageSnapshot | null {
@@ -300,24 +348,6 @@ function modelWindowFor(
   return null;
 }
 
-function normalizeUsage(
-  raw: Awaited<ReturnType<typeof idleRate>> | ChatUsageRate,
-  provider: string,
-  model: ChatModel,
-): UsageSnapshot {
-  if (provider === "codex" || provider === "codex:gpt-5.3-spark") {
-    return codexUsageForModel(raw as ChatUsageRate, model) ?? {
-      fiveHour: { pct: null, resetsAt: null },
-      sevenDay: { pct: null, resetsAt: null },
-    };
-  }
-  const normalized = raw as Awaited<ReturnType<typeof idleRate>>;
-  return {
-    fiveHour: normalized.fiveHour,
-    sevenDay: normalized.sevenDay,
-  };
-}
-
 /** A pasted/attached image: live thumbnail + its saved temp path (null while saving). */
 interface ImageChip {
   id: string;
@@ -351,6 +381,16 @@ function extFromMime(mime: string): string {
 // instruction prefixes for the composer modes
 const PLAN_PREFIX =
   "Plan first: lay out a concise step-by-step plan and wait for my go-ahead before writing any code or running mutating commands.\n\n";
+
+// Steered (silent) into the running turn the moment an AskUserQuestion /
+// ExitPlanMode tool call arrives. Headless claude auto-dismisses both tools
+// instantly (no TTY for its native picker), so without this the model reads the
+// dismissal as "no answer" and barrels ahead on assumptions before the user has
+// touched the card (user-reported). Silent = kept out of history/replay.
+const HOLD_ASK =
+  "[AIOS shell] Your AskUserQuestion call was auto-dismissed by the headless harness, but the user IS being shown your questions in an interactive picker right now. Do not proceed on assumptions or pick defaults yourself. Wrap up cleanly and STOP — the user's actual selections will arrive as the next user message.";
+const HOLD_PLAN =
+  "[AIOS shell] Your ExitPlanMode call was auto-dismissed by the headless harness, but the user IS reviewing your plan in an interactive approval card right now. Do not start implementing and do not re-plan. Wrap up cleanly and STOP — their approve/revise decision will arrive as the next user message.";
 const GOAL_PREFIX = (goal: string) =>
   `Ongoing goal (keep pursuing this across turns until I say it's done): ${goal}\n\n`;
 // ultracode = xhigh effort + workflows. Headless `claude -p` has no ultracode
@@ -379,9 +419,15 @@ const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string
  *  the live menu reads at a glance. The hover lift is the small tactile "quirk" —
  *  reduce-motion neutralizes the transform via the master guard in App.css. */
 const CTRL_PILL =
-  "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/50 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] transition-all duration-150 hover:-translate-y-px hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
+  "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
 const CTRL_PILL_OPEN =
-  "flex items-center gap-1.5 rounded-full border border-[var(--color-accent)]/55 bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] transition-all duration-150";
+  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur-md transition-all duration-150";
+/** The model pill leads the action group (nearest send — the most-changed
+ *  control), so it reads accent-tinted at rest (mockup 02's `.pill.model`):
+ *  a faint accent wash + edge, lifting on hover. Distinct from the neutral
+ *  CTRL_PILL without shouting like CTRL_PILL_OPEN. */
+const CTRL_PILL_MODEL =
+  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_38%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] hover:shadow-[var(--aios-glow-soft)]";
 /** The flashy "you're in an expensive mode" variant — the animated ultracode
  *  gradient (.aios-ultra owns bg/border/color) on the context + effort pills
  *  whenever ultracode / ultra effort is live, so the spend is unmissable. */
@@ -540,6 +586,108 @@ function isAskQuestionTool(t: ToolTurn): boolean {
   return t.name === "AskUserQuestion" && parseAskQuestions(t.input) != null;
 }
 
+/** One auto-allowed follow-up action the model suggested alongside its plan. */
+interface PlanAllowedPrompt {
+  tool?: string;
+  prompt?: string;
+}
+/** The parsed contents of an ExitPlanMode tool call — the plan the model wants
+ *  approved before it starts building. Shape verified from captured stream-json:
+ *  `{ plan: "<markdown>", planFilePath?: string, allowedPrompts?: [{tool,prompt}] }`. */
+interface PlanProposal {
+  plan: string;
+  planFilePath?: string;
+  allowedPrompts: PlanAllowedPrompt[];
+}
+
+/** Parse an ExitPlanMode tool input into a usable plan proposal. Returns null
+ *  when there's no plan text (so we fall back to the generic activity step rather
+ *  than render an empty card). */
+function parsePlanProposal(input: Record<string, unknown>): PlanProposal | null {
+  const plan = typeof input?.plan === "string" ? input.plan.trim() : "";
+  if (!plan) return null;
+  const planFilePath =
+    typeof input?.planFilePath === "string" ? input.planFilePath : undefined;
+  const allowedPrompts = Array.isArray(input?.allowedPrompts)
+    ? (input.allowedPrompts as unknown[])
+        .filter((p): p is Record<string, unknown> => typeof p === "object" && p != null)
+        .map((p) => ({
+          tool: typeof p.tool === "string" ? p.tool : undefined,
+          prompt: typeof p.prompt === "string" ? p.prompt : undefined,
+        }))
+    : [];
+  return { plan, planFilePath, allowedPrompts };
+}
+
+/** True when a tool turn is an ExitPlanMode proposal we can render interactively.
+ *  In headless stream-json mode there's no TTY for claude's native plan-approval
+ *  prompt, so the tool auto-dismisses (tool_result `"Exit plan mode?"`) and the
+ *  model stalls — exactly like AskUserQuestion. We render our own approve/refine
+ *  card and feed the verdict back as the next user turn. */
+function isPlanProposalTool(t: ToolTurn): boolean {
+  return t.name === "ExitPlanMode" && parsePlanProposal(t.input) != null;
+}
+
+// resolvePlan's verdict sentences — fixed sentinels so a REPLAYED transcript can
+// recover the decision (the in-memory verdict map dies with the pane, and
+// ExitPlanMode's recorded tool_result is always the meaningless auto-dismiss).
+const PLAN_APPROVE_SENTINEL = "I approve this plan";
+const PLAN_REJECT_SENTINEL = "Don't start building yet";
+
+/** Recover a plan card's verdict from the conversation itself: the first user
+ *  turn after the plan tool either starts with one of the fixed verdict
+ *  sentinels (→ resolved) or went another way (→ leave the card open). Without
+ *  this, reopening a chat re-armed already-approved plans — one more click
+ *  double-sent "go ahead and implement it now". */
+function inferPlanVerdict(turns: Turn[], toolId: string): "approved" | "rejected" | undefined {
+  const idx = turns.findIndex((t) => t.id === toolId);
+  if (idx < 0) return undefined;
+  for (let i = idx + 1; i < turns.length; i++) {
+    const t = turns[i];
+    if (t.kind !== "user") continue;
+    if (t.text.startsWith(PLAN_APPROVE_SENTINEL)) return "approved";
+    if (t.text.startsWith(PLAN_REJECT_SENTINEL)) return "rejected";
+    return undefined;
+  }
+  return undefined;
+}
+
+/** Edit / Write / MultiEdit / NotebookEdit — file-mutating tools that get a
+ *  prominent, always-visible change card (with the diff inline) instead of being
+ *  folded into the collapsed "N steps" activity group. (codex apply_patch is
+ *  normalized to `edit` upstream.) */
+function isFileEditTool(t: ToolTurn): boolean {
+  const n = t.name.toLowerCase();
+  return n === "edit" || n === "multiedit" || n === "write" || n === "notebookedit";
+}
+
+/** Total +adds / -dels for a file-edit tool, for the change-card header. */
+function editStat(turn: ToolTurn): { adds: number; dels: number } {
+  const name = turn.name.toLowerCase();
+  const inp = turn.input ?? {};
+  if (name === "write") {
+    const content = typeof inp.content === "string" ? inp.content : "";
+    return { adds: content ? content.split("\n").length : 0, dels: 0 };
+  }
+  const pairs =
+    name === "multiedit" && Array.isArray(inp.edits)
+      ? (inp.edits as Array<Record<string, unknown>>)
+      : [{ old_string: inp.old_string, new_string: inp.new_string }];
+  let adds = 0;
+  let dels = 0;
+  for (const e of pairs) {
+    const s = diffStat(
+      lineDiff(
+        typeof e.old_string === "string" ? e.old_string : "",
+        typeof e.new_string === "string" ? e.new_string : "",
+      ),
+    );
+    adds += s.adds;
+    dels += s.dels;
+  }
+  return { adds, dels };
+}
+
 /** Truncate the middle of a string so both ends stay visible. */
 function ellipsizeMid(s: string, max = 52): string {
   if (s.length <= max) return s;
@@ -561,10 +709,59 @@ function toolTarget(turn: ToolTurn): { label: string; full: string } {
   if (path) return { label: ellipsizeMid(baseName(path)), full: path };
 
   // shell → the command (first line)
-  if (name === "bash" || name === "bashoutput" || name === "exec_command" || name === "write_stdin") {
+  if (
+    name === "bash" ||
+    name === "powershell" ||
+    name === "bashoutput" ||
+    name === "exec_command" ||
+    name === "write_stdin"
+  ) {
     const cmd = str("command") ?? str("cmd") ?? str("chars") ?? "";
     const firstLine = cmd.split("\n")[0] ?? cmd;
     return { label: ellipsizeMid(firstLine, 60), full: cmd };
+  }
+
+  // MCP tools → "server · tool" (args on hover), instead of the raw
+  // mcp__server__toolName identifier flooding the row.
+  const mcp = mcpToolParts(turn.name);
+  if (mcp) {
+    const label = mcp.tool ? `${mcp.server} · ${mcp.tool}` : mcp.server;
+    const args = previewArgs(inp);
+    return { label: ellipsizeMid(label, 56), full: args ? `${label}\n${args}` : label };
+  }
+
+  // skills → "/name args", the way the user would have typed it
+  if (name === "skill" || name === "slashcommand") {
+    const skill = str("skill") ?? str("command") ?? "";
+    const args = str("args") ?? "";
+    const label = skill ? `/${skill}${args ? ` ${args}` : ""}` : args;
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  // workflows → the script's name (deterministic multi-agent runs)
+  if (name === "workflow") {
+    const label = str("name") ?? str("scriptPath") ?? "script";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  if (name === "toolsearch") {
+    const q = str("query") ?? "";
+    return { label: ellipsizeMid(q, 56), full: q };
+  }
+
+  if (name === "pushnotification") {
+    const label = str("title") ?? str("body") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  if (name === "sendmessage") {
+    const label = str("to") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  if (name === "taskcreate" || name === "taskupdate") {
+    const label = str("subject") ?? str("description") ?? str("taskId") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
   }
 
   // search / grep / glob → pattern (+ optional path)
@@ -580,7 +777,7 @@ function toolTarget(turn: ToolTurn): { label: string; full: string } {
     const url = str("url") ?? "";
     return { label: ellipsizeMid(url, 56), full: url };
   }
-  if (name === "websearch") {
+  if (name === "websearch" || name === "web_search") {
     const q = str("query") ?? "";
     return { label: ellipsizeMid(q, 56), full: q };
   }
@@ -636,8 +833,30 @@ function toolFilePath(turn: ToolTurn): string | null {
   }
 }
 
+/** `mcp__server__tool` → its parts, or null for non-MCP names. */
+function mcpToolParts(name: string): { server: string; tool: string } | null {
+  if (!name.startsWith("mcp__")) return null;
+  const rest = name.slice(5);
+  const sep = rest.indexOf("__");
+  if (sep < 0) return { server: rest, tool: "" };
+  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+}
+
+/** Humanize an unknown tool name: "EnterWorktree" → "Enter worktree",
+ *  "some_tool" → "Some tool" — so a tool we've never seen still reads as a
+ *  sentence in the activity row instead of a raw identifier. */
+function prettifyToolName(name: string): string {
+  const spaced = name
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim();
+  if (!spaced) return name;
+  return spaced[0].toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
 /** A short verb for the tool, Codex-style ("Read", "Ran", "Edited", "Searched"). */
 function toolVerb(name: string): string {
+  if (mcpToolParts(name)) return "MCP";
   switch (name.toLowerCase()) {
     case "read":
       return "Read";
@@ -649,6 +868,7 @@ function toolVerb(name: string): string {
     case "notebookedit":
       return "Edited";
     case "bash":
+    case "powershell":
     case "exec_command":
       return "Ran";
     case "bashoutput":
@@ -663,16 +883,58 @@ function toolVerb(name: string): string {
     case "webfetch_tool":
       return "Fetched";
     case "websearch":
+    case "web_search":
       return "Web search";
     case "task":
       return "Agent";
+    case "sendmessage":
+      return "Messaged agent";
     case "mcp":
     case "mcp_tool_call":
+    case "listmcpresourcestool":
+    case "readmcpresourcetool":
+    case "readmcpresourcedirtool":
       return "MCP";
     case "todowrite":
       return "Planned";
+    case "skill":
+    case "slashcommand":
+      return "Skill";
+    case "toolsearch":
+      return "Tool search";
+    case "workflow":
+      return "Workflow";
+    case "monitor":
+      return "Monitored";
+    case "schedulewakeup":
+      return "Scheduled wake";
+    case "croncreate":
+    case "crondelete":
+    case "cronlist":
+      return "Cron";
+    case "pushnotification":
+      return "Notified";
+    case "enterplanmode":
+      return "Entered plan mode";
+    case "exitplanmode":
+      return "Proposed plan";
+    case "enterworktree":
+      return "Entered worktree";
+    case "exitworktree":
+      return "Left worktree";
+    case "taskcreate":
+      return "Task added";
+    case "taskupdate":
+      return "Task updated";
+    case "taskget":
+    case "tasklist":
+      return "Tasks";
+    case "taskoutput":
+      return "Task output";
+    case "taskstop":
+      return "Stopped task";
     default:
-      return name;
+      return prettifyToolName(name);
   }
 }
 
@@ -688,6 +950,7 @@ function toolIcon(name: string) {
     case "multiedit":
       return Pencil;
     case "bash":
+    case "powershell":
     case "bashoutput":
     case "exec_command":
     case "write_stdin":
@@ -695,11 +958,32 @@ function toolIcon(name: string) {
     case "grep":
     case "glob":
     case "search":
+    case "toolsearch":
       return Search;
     case "webfetch":
     case "webfetch_tool":
     case "websearch":
+    case "web_search":
       return Globe;
+    case "todowrite":
+    case "taskcreate":
+    case "taskupdate":
+    case "taskget":
+    case "tasklist":
+      return ListChecks;
+    case "skill":
+    case "slashcommand":
+    case "workflow":
+      return Zap;
+    case "monitor":
+    case "schedulewakeup":
+    case "croncreate":
+    case "crondelete":
+    case "cronlist":
+      return Clock;
+    case "enterplanmode":
+    case "exitplanmode":
+      return MapIcon;
     case "mcp":
     case "mcp_tool_call":
       return Wrench;
@@ -886,8 +1170,10 @@ export function ChatPane({
   modelId,
   agentId,
   agentLabel,
+  initialGoal,
   onOpenUrl,
   onChangeCwd,
+  onSessionRecorded,
 }: {
   cwd?: string;
   paneKey?: string;
@@ -902,11 +1188,13 @@ export function ChatPane({
   modelId?: string;
   agentId?: string;
   agentLabel?: string;
+  /** Standing goal to seed the goal box on mount (re-seeded from a resumed Work Session). */
+  initialGoal?: string;
   /** Resume a prior chat session on mount (from the idle "continue" rail).
    *  engine/model carry the saved session's backend so a resumed codex thread
    *  boots on codex (not the default claude) — otherwise --resume sends a codex
    *  thread-id to the claude binary and the pane comes up blank. */
-  resume?: { id: string; title: string; engine?: string; model?: string };
+  resume?: { id: string; title: string; engine?: string; model?: string; findText?: string };
   /** Reattach to a still-live backgrounded session by its backend id (from the
    *  "running" tray) — replays its buffer and continues live instead of spawning. */
   reattach?: number;
@@ -916,10 +1204,35 @@ export function ChatPane({
    *  by App; the new cwd flows back as the `cwd` prop and restarts the session
    *  rooted there (claude/codex can only set cwd at process start). */
   onChangeCwd?: (dir: string) => void;
+  /** Report this chat's durable session id once recorded, so App can bind it to a
+   *  Work Session (multi-chat capture). Fires on first record (+ codex promote). */
+  onSessionRecorded?: (info: {
+    paneKey?: string;
+    sessionId: string;
+    title: string;
+    cwd?: string;
+    engine?: string;
+    model?: string;
+  }) => void;
 }) {
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
   const webChatRuntime = !nativeRuntime;
   const [turns, setTurns] = useState<Turn[]>([]);
+  // Conversation tree (Tier-3 P2 branching, API-tier only). Step (a): a LINEAR
+  // mirror of `turns` — nodes carry only structure (id + parentId), values resolve
+  // from `turns` by id (so a streaming text delta never rebuilds it). `treeTurns`
+  // below projects the active path and equals `turns` until a fork exists, so this
+  // is a no-op for every current flow. Forking + the switcher + active-path send
+  // land in the next steps.
+  const [treeNodes, setTreeNodes] = useState<TreeNode<string>[]>([]);
+  // selection (which child is active at each branch point); the ‹N/M› switcher
+  // writes it. pendingForkParentRef carries the fork point from a regenerate/edit
+  // to the mirror effect, which links the next new turn there (a sibling branch).
+  const [treeSel, setTreeSel] = useState<Selection>({});
+  const pendingForkParentRef = useRef<string | null>(null);
+  // the user turn being edited (API edit-fork): the next send forks a sibling
+  // branch from its parent, so editing a message branches instead of overwriting.
+  const pendingEditRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
   turnsRef.current = turns;
   const [runEventState, setRunEventState] = useState<RunEventState>(() =>
@@ -1000,19 +1313,25 @@ export function ChatPane({
   const [model, setModel] = useState<ChatModel>(() => {
     // Resuming a prior chat: honor its saved model/engine FIRST so a codex thread
     // doesn't boot on claude (which would mis-route --resume to the wrong binary).
-    if (resume?.model) {
-      const byId = CHAT_MODELS.find((m) => m.id === resume.model);
-      if (byId) return byId;
-    }
-    if (resume?.engine) {
-      const byEngine = CHAT_MODELS.find((m) => (m.engine ?? "claude") === resume.engine);
-      if (byEngine) return byEngine;
+    if (resume?.model || resume?.engine) {
+      // resolveChatModel covers BOTH the CLI catalog AND BYO-key API providers, so
+      // a resumed API chat (e.g. openrouter/deepseek) keeps its model instead of
+      // reverting to a CLI default (which would also mis-route the turn).
+      const m = resolveChatModel(resume.model, resume.engine);
+      if (m) return m;
     }
     // base = explicit prop → else the user's chosen-provider base (NOT a
     // hardcoded codex default; see baseModelId / PLAN §13). A stale saved id
     // falls back to the provider's own first model, never CHAT_MODELS[0]
     // (which is codex) — a claude user must not silently boot into codex.
     const s = loadSettings();
+    // Sticky API default: if the last pick was a BYO-key provider, boot a new chat
+    // on that model (resolveChatModel handles the API catalog; the CLI helpers
+    // below only run for CLI providers).
+    if (isApiProviderId(s.chatProvider)) {
+      const apiM = resolveChatModel(s.chatModel, s.chatProvider);
+      if (apiM) return apiM;
+    }
     const preferred = modelId ?? baseModelId(s.chatProvider, s.chatModel);
     return (
       CHAT_MODELS.find((m) => m.id === preferred) ??
@@ -1050,6 +1369,44 @@ export function ChatPane({
     );
   }, [availEngines]);
 
+  // BYO-key API tier (Tier 4): which providers have a key configured (keychain or
+  // env). Drives which API models the picker offers — ollama (keyless) always shows.
+  const [configuredApi, setConfiguredApi] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    listConfiguredProviders().then((s) => {
+      if (alive) setConfiguredApi(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  // The API catalog as picker rows (id = native model id, engine = provider id →
+  // chat_start maps it to the API engine). Never disabled (gated on configured).
+  const apiModels = useMemo<ChatModel[]>(
+    () =>
+      availableApiModels(configuredApi).map((q) => ({
+        id: q.model.id,
+        label: q.model.label,
+        engine: q.providerId,
+      })),
+    [configuredApi],
+  );
+  // The "retry with ▾" menu list: installed CLI models + the configured API models
+  // (so it isn't just the static CLI catalog — the reported "can't see the models"
+  // was partly the menu omitting API models too). CLI entries are limited to the
+  // CURRENT engine family: retry resumes this conversation's id, and a claude
+  // uuid handed to codex (or vice versa) can't resolve — the "retry" silently
+  // became a contextless new session. API-tier targets stay allowed for every
+  // engine: they rebuild context from OUR durable store, not the CLI's.
+  const retryMenuModels = useMemo<ChatModel[]>(() => {
+    const curEngine = model.engine ?? "claude";
+    const cli = pickerModels.filter(
+      (m) => !m.disabled && (m.engine ?? "claude") === curEngine,
+    );
+    return [...cli, ...apiModels];
+  }, [pickerModels, apiModels, model.engine]);
+
   // Sticky controls: seed from the last-picked values (settings) so the composer
   // pills persist across panes + restarts, like the model does. null/unknown →
   // the built-in default.
@@ -1071,23 +1428,13 @@ export function ChatPane({
   useEffect(() => {
     activeModelRef.current = model;
   }, [model.id, model.engine]);
+  // one interactive-tool hold (AskUserQuestion/ExitPlanMode) per turn — reset on
+  // each result + each fresh dispatch (see the hold block in handleEvent).
+  const holdSentRef = useRef(false);
 
-  // ── live usage bar (Phase 1) ───────────────────────────────────────────────
-  // The active engine's 5h/7d rate-limit windows, ticked as you talk: codex
-  // pushes account/rateLimits/updated, claude re-reads usage.json after each turn
-  // (both arrive as synthetic `usage` events from chat.rs). Seeded once on mount.
-  type UsageWindow = keyof UsageSnapshot;
-  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
-  const [usageWindow, setUsageWindow] = useState<UsageWindow>("fiveHour");
-  // Snapshot each provider the first time it appears in this chat. The strip
-  // paints that baseline separately from usage added while this pane is alive.
-  const usageBaselineRef = useRef<Record<string, UsageSnapshot>>({});
-  const rememberUsage = useCallback((provider: string, next: UsageSnapshot) => {
-    if (!usageBaselineRef.current[provider]) {
-      usageBaselineRef.current[provider] = next;
-    }
-    setUsage(next);
-  }, []);
+  // Live usage still flows to the parent (the pet + the sidebar usage panel) via
+  // onPetUsage in the `usage` event handler below; the composer no longer paints
+  // its own strip — the sidebar reading is the canonical one.
   // cumulative $ spent this chat session (summed across result events).
 
   // ── message queue / steering (Phase 2) ─────────────────────────────────────
@@ -1103,7 +1450,7 @@ export function ChatPane({
 
   // mode chips
   const [planMode, setPlanMode] = useState(false);
-  const [goal, setGoal] = useState<string>("");
+  const [goal, setGoal] = useState<string>(initialGoal ?? "");
   // inline /goal editor (replaces the off-brand native window.prompt). null = closed.
   const [goalDraft, setGoalDraft] = useState<string | null>(null);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
@@ -1290,12 +1637,18 @@ export function ChatPane({
   }, []);
 
   // ── chat-session recording (for the /resume list) ─────────────────────────
-  // claude's own session id, parsed from the `system`/init event each (re)start.
-  // We need it to call recordChatSession() so this chat shows up in /resume.
-  const claudeSessionIdRef = useRef<string | null>(null);
+  // This conversation's PERMANENT identity: the store id when resuming (claude's
+  // --resume forks a fresh session_id every restart — the fork is tracked as a
+  // resume POINTER on the store entry by the backend, never adopted as identity,
+  // else one conversation fragments into a new history entry per reopen), or
+  // the first init's session_id for a fresh chat.
+  const claudeSessionIdRef = useRef<string | null>(resume?.id ?? null);
   // true once we've recorded this chat (on the first user send of the session),
-  // so subsequent sends don't re-upsert. Reset on /clear and on resume.
-  const recordedRef = useRef(false);
+  // so subsequent sends don't re-upsert. A pane mounted on an EXISTING
+  // conversation (resume prop) starts true — it's already in the list, and
+  // re-recording on the next send used to RENAME the session to whatever you
+  // typed next. Reset on /clear and set by the /resume picker.
+  const recordedRef = useRef(Boolean(resume?.id));
   // Codex openers are often just "hi". Keep its title promotable until the
   // first meaningful prompt lands, then leave the topic stable.
   const codexTitleLockedRef = useRef(Boolean(resume));
@@ -1316,8 +1669,6 @@ export function ChatPane({
   inputRef.current = input;
 
   const empty = turns.length === 0;
-  const usageProvider = usageProviderKey(model);
-  const usageLabel = usageProviderLabel(model);
 
   // ── per-turn wall-clock times (unix ms) ────────────────────────────────────
   // Live turns are stamped on arrival; resumed turns are seeded with their REAL
@@ -1425,6 +1776,8 @@ export function ChatPane({
 
   // ── image attach: paste a screenshot / pick a file → temp file + thumbnail ──
   const [images, setImages] = useState<ImageChip[]>([]);
+  // an attached image opened full-size to confirm/remove before sending.
+  const [previewImage, setPreviewImage] = useState<ImageChip | null>(null);
   // Live mirror of `images` so an async send can read the freshest paths after
   // awaiting in-flight saves (the closure-captured `images` would be stale).
   const imagesRef = useRef<ImageChip[]>([]);
@@ -1618,6 +1971,46 @@ export function ChatPane({
 
   const handleEvent = useCallback((ev: ChatEvent) => {
     setRunEventState((state) => reduceRunEvents(state, ev));
+    // ---- interactive-tool hold (AskUserQuestion / ExitPlanMode) --------------
+    // Headless claude auto-dismisses both tools the instant they're called, and
+    // the model reads that as "the user isn't answering" — it then proceeds on
+    // assumptions before the card is even clickable. The moment the tool_use
+    // arrives, soft-steer a SILENT hold into the running turn telling the model
+    // the user is answering in our UI. One hold per turn; sub-agent calls
+    // (parent_tool_use_id) are excluded — their asks aren't interactive here.
+    if (
+      ev.type === "assistant" &&
+      typeof ev.parent_tool_use_id !== "string" &&
+      (activeModelRef.current.engine ?? "claude") === "claude"
+    ) {
+      const blocks = Array.isArray(ev.message?.content) ? ev.message.content : [];
+      const askUse = blocks.some((b) => b?.type === "tool_use" && b.name === "AskUserQuestion");
+      const planUse = blocks.some((b) => b?.type === "tool_use" && b.name === "ExitPlanMode");
+      if ((askUse || planUse) && !holdSentRef.current) {
+        const sid = sessionIdRef.current;
+        if (sid != null) {
+          holdSentRef.current = true;
+          chatSteer(sid, planUse ? HOLD_PLAN : HOLD_ASK, true).catch(() => {
+            holdSentRef.current = false;
+          });
+        }
+        // A question/plan the user can't see is a stall, not a prompt: if this
+        // chat is out of sight, raise the same clickable needs-input alert the
+        // approval card gets, deep-linking back to the pane.
+        const backendId = sessionIdRef.current;
+        if (hiddenRef.current && backendId != null && backendId > 0) {
+          pushNotification({
+            kind: "chat.needs_input",
+            level: "warning",
+            priority: "high",
+            sourceLabel: "chat",
+            title: planUse ? "plan awaiting your review" : "chat has questions for you",
+            body: `${chatTitleRef.current || "a background chat"} is waiting on your ${planUse ? "plan decision" : "answers"}.`,
+            target: { type: "chat", sessionId: backendId, title: chatTitleRef.current || "chat" },
+          });
+        }
+      }
+    }
     // ---- control protocol: tool approval requests + acks --------------------
     // claude → us, non-bypass modes: a `control_request` whose request.subtype
     // is `can_use_tool`. We surface an inline approval card; the reply goes back
@@ -1746,6 +2139,8 @@ export function ChatPane({
         thinkingTurnId.current = null;
         setStreaming(false);
         setBackendBusy(false);
+        // turn closed → the next AskUserQuestion/ExitPlanMode may hold again.
+        holdSentRef.current = false;
         // prefer claude's reported duration; fall back to our wall-clock measure
         const wall =
           turnStartRef.current != null ? Date.now() - turnStartRef.current : undefined;
@@ -1789,7 +2184,14 @@ export function ChatPane({
           return;
         }
         // cost intentionally omitted — the user runs on subs, $ figures are noise.
-        const foot = [resultText, dur, tokStr].filter(Boolean).join(" · ");
+        // A lone duration with no tokens + no message is the COMPACTION completion
+        // (claude reports no usage for it) — a bare "30s" footer in an otherwise
+        // empty AIOS frame reads as broken. Emit an EMPTY footer so the blocks
+        // builder drops the result block (no hollow frame); durationMs still rides
+        // the turn for the activity line. Mirrors the replay path (chatStream.ts),
+        // which already skips these empty-success footers.
+        const okEmptyMetric = !Boolean(ev.is_error) && !resultText && !tokStr;
+        const foot = okEmptyMetric ? "" : [resultText, dur, tokStr].filter(Boolean).join(" · ");
         // always emit a result turn (carries durationMs for the activity line),
         // even if the human-readable footer would be empty.
         onPetResult({
@@ -1836,7 +2238,6 @@ export function ChatPane({
                 provider: "codex",
                 pct: snap.fiveHour.pct,
               });
-              rememberUsage(usageProviderKey(current), snap);
             }
           });
           return;
@@ -1852,10 +2253,6 @@ export function ChatPane({
                 ? sd.pct
                 : null,
         });
-        rememberUsage(ev.provider ?? "claude", {
-          fiveHour: { pct: fh.pct ?? null, resetsAt: fh.resets_at ?? null },
-          sevenDay: { pct: sd.pct ?? null, resetsAt: sd.resets_at ?? null },
-        });
         return;
       }
 
@@ -1863,21 +2260,18 @@ export function ChatPane({
       // so the first user send can recordChatSession() into the /resume list.
       case "system": {
         if (ev.session_id) {
-          const prev = claudeSessionIdRef.current;
-          // claude's `--resume` emits a FRESH session_id and writes continued
-          // turns to a new <id>.jsonl. If we were already recorded (a resume),
-          // re-key the store entry to the new id — otherwise the next resume
-          // reads the old transcript (truncated at the fork) and re-forks again.
-          if (prev && prev !== ev.session_id && recordedRef.current) {
-            const m = activeModelRef.current;
-            const title = resume?.title ?? "chat";
-            // re-keying on a resume fork is bookkeeping, not real activity →
-            // don't bump mtime (preserve the session's genuine recency order).
-            recordChatSession(ev.session_id, title, cwd ?? null, m.engine ?? "claude", m.id, false).catch((e) => reportDiag("chat.session", e, { action: "record" }));
+          // Adopt the engine session id as this conversation's identity ONLY
+          // when we don't have one yet (a fresh chat / post-/clear restart).
+          // A resumed conversation keeps its STORE id: claude's --resume forks
+          // a fresh session_id every restart, and the backend records the fork
+          // as a resume pointer on the store entry (chat.rs ingest_line) —
+          // adopting each fork here is what used to fragment one conversation
+          // into a frozen old history entry + a new-turns-only entry per reopen.
+          if (claudeSessionIdRef.current == null) {
+            claudeSessionIdRef.current = ev.session_id;
+            setOpenSessionId(ev.session_id);
+            setRunEventsKey(runEventsStorageKey(ev.session_id));
           }
-          claudeSessionIdRef.current = ev.session_id;
-          setOpenSessionId(ev.session_id);
-          setRunEventsKey(runEventsStorageKey(ev.session_id));
         }
         setClaudeReady(true);
         return;
@@ -1887,7 +2281,8 @@ export function ChatPane({
       default:
         return;
     }
-  }, [rememberUsage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── session lifecycle: one channel + one session per mount ─────────────────
   // `restartKey` lets `/clear` tear down + re-spin the session without changing
@@ -1937,44 +2332,108 @@ export function ChatPane({
     // On reattach the backend reports the session's real engine/model so we can
     // re-sync `model` state — otherwise a reattached codex run stays on the
     // default claude state (wrong stop-strategy, steer hidden, wrong usage).
+    const spawnFresh = () =>
+      chatStart(chan, {
+        engine: model.engine ?? "claude",
+        cwd: cwd ?? null,
+        model: model.disabled ? null : model.id,
+        permissionMode: permission.id,
+        // ultracode isn't a real --effort value; run it as xhigh (the
+        // "+ workflows" half is applied per-message via ULTRA_PREFIX).
+        effort: effectiveBudget === "ultracode" ? "xhigh" : effort.id,
+        fast: effectiveBudget === "lean",
+        resume: resumeId,
+      }).then((id) => ({
+        id,
+        busy: false,
+        engine: null as string | null,
+        model: null as string | null,
+        claudeId: null as string | null,
+        title: "",
+      }));
+    // set when a reattach target turned out to be dead (backend registry is
+    // in-memory — every app restart empties it) and we degraded to a fresh
+    // session. The reattach-specific bindings below must be skipped then.
+    let reattachFellBack = false;
     const startup =
       reattach != null
-        ? chatReattach(reattach, chan).then((info) => ({
-            id: reattach,
-            busy: info.busy,
-            engine: info.engine,
-            model: info.model,
-          }))
-        : chatStart(chan, {
-            engine: model.engine ?? "claude",
-            cwd: cwd ?? null,
-            model: model.disabled ? null : model.id,
-            permissionMode: permission.id,
-            // ultracode isn't a real --effort value; run it as xhigh (the
-            // "+ workflows" half is applied per-message via ULTRA_PREFIX).
-            effort: effectiveBudget === "ultracode" ? "xhigh" : effort.id,
-            fast: effectiveBudget === "lean",
-            resume: resumeId,
-          }).then((id) => ({
-            id,
-            busy: false,
-            engine: null as string | null,
-            model: null as string | null,
-          }));
+        ? chatReattach(reattach, chan)
+            .then((info) => ({
+              id: reattach,
+              busy: info.busy,
+              engine: info.engine,
+              model: info.model,
+              claudeId: info.claude_id,
+              title: info.title,
+            }))
+            .catch((err) => {
+              // Dead background session (clicked a stale done-notification, or
+              // the app restarted). Retrying the same dead id forever was a
+              // hard dead end — degrade to a fresh session instead, resuming
+              // the conversation when the caller told us which one it was.
+              reportDiag("chat.reattach", err, { action: "fallback-fresh" });
+              reattachFellBack = true;
+              if (!disposed) {
+                setStartupNote(
+                  resumeId
+                    ? "that background run already ended — reopened the conversation from history"
+                    : "that background run already ended — started a fresh session",
+                );
+                // repaint the transcript from the durable store (the mount
+                // repaint skips reattach panes — the buffer replay we didn't
+                // get was supposed to be the painter).
+                if (resumeId) {
+                  readChatHistory(resumeId)
+                    .then((page) => {
+                      if (disposed || !page.lines.length) return;
+                      forceBottomRef.current = true;
+                      setTurns(replayHistoryToTurns(page.lines, uid));
+                    })
+                    .catch(() => {});
+                }
+              }
+              return spawnFresh();
+            })
+        : spawnFresh();
 
     startup
-      .then(({ id, busy, engine: liveEngine, model: liveModel }) => {
+      .then(({ id, busy, engine: liveEngine, model: liveModel, claudeId, title: liveTitle }) => {
         if (disposed) {
           // only kill a freshly-spawned session we're abandoning; never a reattach.
-          if (reattach == null) chatStop(id).catch((e) => reportDiag("chat.stop", e, { action: "stop" }));
+          if (reattach == null || reattachFellBack) chatStop(id).catch((e) => reportDiag("chat.stop", e, { action: "stop" }));
           return;
         }
         // Reattach: mark this session bound (so the model re-sync below can't
         // re-replay it) and re-sync `model` state to the session's REAL
         // engine/model so stop-strategy, steer visibility, and usage provider
         // all match the engine that's actually running (not default claude).
-        if (reattach != null) {
+        if (reattach != null && !reattachFellBack) {
           reattachBoundRef.current = reattach;
+          // Adopt the conversation's identity from the backend (the store id —
+          // chat.rs pins it across --resume forks). A detached session always
+          // had at least one send (that's the only way it got backgrounded), so
+          // it's already recorded: without this the next send re-recorded the
+          // replayed init's fork id as a brand-new history entry named after
+          // whatever you typed next.
+          if (claudeId) {
+            claudeSessionIdRef.current = claudeId;
+            setOpenSessionId(claudeId);
+            setRunEventsKey(runEventsStorageKey(claudeId));
+            recordedRef.current = true;
+            codexTitleLockedRef.current = true;
+            if (liveTitle) setResumedTitle(liveTitle);
+            // Re-stamp the pane binding in App: kind.reattach is one-shot (dead
+            // after this process exits) — kind.resume is what survives an app
+            // restart and reopens this conversation with its transcript.
+            onSessionRecorded?.({
+              paneKey,
+              sessionId: claudeId,
+              title: liveTitle || "chat",
+              cwd: cwd ?? undefined,
+              engine: liveEngine ?? "claude",
+              model: liveModel ?? undefined,
+            });
+          }
           if (liveEngine) {
             const restored =
               (liveModel ? CHAT_MODELS.find((m) => m.id === liveModel) : undefined) ??
@@ -2045,6 +2504,9 @@ export function ChatPane({
     chatHandles.set(paneKey, {
       busy: () => activeRunRef.current,
       stop: () => stopChatRef.current(),
+      // queued follow-ups die with the pane (they live in pane state) — the
+      // close dialog reads this to warn instead of silently discarding them.
+      queued: () => queuedRef.current.length,
       detach: (notify: boolean) => {
         const id = sessionIdRef.current;
         if (id != null) {
@@ -2059,41 +2521,25 @@ export function ChatPane({
     };
   }, [paneKey]);
 
-  // Seed the usage bar once on mount (and on engine switch) so it shows BEFORE
-  // the first turn ticks it — claude reads usage.json, codex reads logs_2.sqlite.
-  // After this, live `usage` events keep it moving as you talk.
-  useEffect(() => {
-    let alive = true;
-    const provider = usageProviderKey(model);
-    const label = model.engine ?? "claude";
-    const fn = label === "codex" ? codexRate : idleRate;
-    fn()
-      .then((r) => {
-        const next = normalizeUsage(r, provider, model);
-        if (alive && hasUsageData(next)) {
-          rememberUsage(provider, next);
-        }
-      })
-      .catch((e) => reportDiag("chat.load", e, { action: "usage" }));
-    return () => {
-      alive = false;
-    };
-  }, [model.engine, model.id, rememberUsage]);
-
   // Queue flush: when a turn finishes (streaming → false) and messages are
   // queued, fire the next one. dispatch via a ref so this effect isn't a dep of
   // the (changing) dispatch closure. One per turn → the queue drains in order.
+  // ALSO fires on started/claudeReady: a message queued while the session was
+  // still booting ("your message is queued and will send automatically") never
+  // saw a streaming transition, so keying off streaming alone stranded it in
+  // the tray forever — the promise was a lie until the session-up transition
+  // flushed it too.
   const dispatchRef = useRef<(text: string) => void>(() => {});
   useEffect(() => {
     if (streaming) return;
-    if (!started) return;
+    if (!started || !claudeReady) return;
     if (queuedRef.current.length === 0) return;
     if (sessionIdRef.current == null) return;
     const [next, ...rest] = queuedRef.current;
     setQueued(rest);
     setQueuedIdx((idx) => (rest.length === 0 ? 0 : Math.min(idx, rest.length - 1)));
     dispatchRef.current(next.text);
-  }, [streaming]);
+  }, [streaming, started, claudeReady]);
 
   // autoscroll on new content — but with a STICKY pause. The moment you scroll
   // up (wheel, scrollbar, touch) we stop yanking you down and hold there until
@@ -2107,10 +2553,14 @@ export function ChatPane({
   const lastScrollHeightRef = useRef(0);
   const lastScrollTopRef = useRef(0);
   const lastArrowDownRef = useRef(0);
+  // one-shot: a bulk repaint (open-from-history / resume) sets this so the next
+  // layout jumps to the BOTTOM — the latest message — instead of the first.
+  const forceBottomRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
   const syncJumpVisibility = useCallback((el: HTMLDivElement | null, paused = pausedRef.current) => {
     if (!el) {
       setShowJump(paused);
+      setRailWin(null);
       return;
     }
     setShowJump(
@@ -2121,6 +2571,15 @@ export function ChatPane({
           clientHeight: el.clientHeight,
         }) > 24,
     );
+    // content-space scroll window driving the custom rail thumb (native bar
+    // hidden). State-driven so the thumb re-renders to the new position on every
+    // scroll; the thumb has NO CSS position transition (see its className), so each
+    // update lands instantly — that easing is what made it "follow late" before.
+    setRailWin(
+      el.scrollHeight > el.clientHeight + 1
+        ? { top: el.scrollTop / el.scrollHeight, size: el.clientHeight / el.scrollHeight }
+        : null,
+    );
   }, []);
   const setPaused = useCallback((p: boolean) => {
     pausedRef.current = p;
@@ -2128,24 +2587,30 @@ export function ChatPane({
   }, [syncJumpVisibility]);
   useLayoutEffect(() => {
     const el = scrollRef.current;
+    // a freshly loaded conversation jumps straight to the bottom (latest message),
+    // bypassing the near-bottom check — one-shot, then normal autoscroll resumes.
+    const forceBottom = forceBottomRef.current;
+    if (forceBottom) forceBottomRef.current = false;
     if (
       el &&
-      shouldAutoscroll(
-        {
-          scrollHeight: el.scrollHeight,
-          scrollTop: el.scrollTop,
-          clientHeight: el.clientHeight,
-          previousScrollHeight: lastScrollHeightRef.current || undefined,
-        },
-        pausedRef.current,
-        // wide stick threshold so a fast token stream can't overshoot the bottom
-        // and silently fall off; the scroll/wheel handlers still pause the moment
-        // the user scrolls up, so this only affects auto-pinning.
-        AUTOSCROLL_STICK_THRESHOLD_PX,
-      )
+      (forceBottom ||
+        shouldAutoscroll(
+          {
+            scrollHeight: el.scrollHeight,
+            scrollTop: el.scrollTop,
+            clientHeight: el.clientHeight,
+            previousScrollHeight: lastScrollHeightRef.current || undefined,
+          },
+          pausedRef.current,
+          // wide stick threshold so a fast token stream can't overshoot the bottom
+          // and silently fall off; the scroll/wheel handlers still pause the moment
+          // the user scrolls up, so this only affects auto-pinning.
+          AUTOSCROLL_STICK_THRESHOLD_PX,
+        ))
     ) {
       programmaticRef.current = true;
       el.scrollTop = el.scrollHeight;
+      if (forceBottom) pausedRef.current = false;
     }
     if (el) {
       lastScrollHeightRef.current = el.scrollHeight;
@@ -2161,44 +2626,43 @@ export function ChatPane({
     // Content/stream changes already re-fire this; the running clock must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turns, streaming, liveStart, syncJumpVisibility]);
-  useEffect(() => {
+  // Scroll handling rides the element's React onScroll/onWheel props (bound to the
+  // LIVE node on every render), NOT a one-shot addEventListener that captured the
+  // element at mount — that stale capture is why the rail thumb never tracked
+  // wheel-scrolls (drag worked only because it calls syncJumpVisibility directly).
+  const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => {
-      // swallow the one scroll event our own pin just emitted
-      if (programmaticRef.current) {
-        programmaticRef.current = false;
-        lastScrollTopRef.current = el.scrollTop;
-        return;
-      }
-      const intent: ScrollIntent =
-        el.scrollTop < lastScrollTopRef.current ? "up" : el.scrollTop > lastScrollTopRef.current ? "down" : "unknown";
-      const nextPaused = nextAutoscrollPaused(
-        pausedRef.current,
-        {
-          scrollHeight: el.scrollHeight,
-          scrollTop: el.scrollTop,
-          clientHeight: el.clientHeight,
-        },
-        intent,
-      );
-      setPaused(nextPaused);
+    // our own programmatic pins shouldn't be read as a user "scroll up" intent,
+    // but the rail thumb must STILL track them.
+    const wasProgrammatic = programmaticRef.current;
+    programmaticRef.current = false;
+    if (wasProgrammatic) {
       lastScrollHeightRef.current = el.scrollHeight;
       lastScrollTopRef.current = el.scrollTop;
-      syncJumpVisibility(el, nextPaused);
-    };
-    // scrolling up = user taking the wheel → pause immediately, even before the
-    // distance math catches up (mid-stream the content keeps growing below).
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) setPaused(true);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("wheel", onWheel, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", onWheel);
-    };
+      syncJumpVisibility(el);
+      return;
+    }
+    const intent: ScrollIntent =
+      el.scrollTop < lastScrollTopRef.current ? "up" : el.scrollTop > lastScrollTopRef.current ? "down" : "unknown";
+    const nextPaused = nextAutoscrollPaused(
+      pausedRef.current,
+      { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight },
+      intent,
+    );
+    setPaused(nextPaused);
+    lastScrollHeightRef.current = el.scrollHeight;
+    lastScrollTopRef.current = el.scrollTop;
+    syncJumpVisibility(el, nextPaused);
   }, [setPaused, syncJumpVisibility]);
+  // scrolling up = user taking the wheel → pause immediately, even before the
+  // distance math catches up (mid-stream the content keeps growing below).
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (e.deltaY < 0) setPaused(true);
+    },
+    [setPaused],
+  );
   const jumpToLatest = useCallback(() => {
     const el = scrollRef.current;
     if (el) {
@@ -2236,25 +2700,42 @@ export function ChatPane({
   // collapses to a one-line verdict and never re-submits. Keyed by the claude
   // tool_use id (stable across re-renders).
   const [askAnswered, setAskAnswered] = useState<Record<string, string>>({});
+  // AskUserQuestion cards the user stopped before answering → render a
+  // "cancelled" verdict instead of a dead, unanswerable prompt.
+  const [askCancelled, setAskCancelled] = useState<Record<string, boolean>>({});
+
+  // ── ExitPlanMode (plan approval) ────────────────────────────────────────────
+  // tool-turn id → the verdict the user gave ("approved" | "rejected"), so the
+  // plan card collapses and never re-submits. Same lifecycle as askAnswered.
+  const [planResolved, setPlanResolved] = useState<Record<string, "approved" | "rejected">>({});
+  // plan cards the user stopped before deciding → a quiet "cancelled" verdict.
+  const [planCancelled, setPlanCancelled] = useState<Record<string, boolean>>({});
+  // Response branching: per user-turn id, which regenerated response variant is
+  // showing (unset = the latest). Drives the ‹N/M› switcher in the AIOS frame.
+  const [activeVariant, setActiveVariant] = useState<Record<string, number>>({});
 
   // ── approval resolution ─────────────────────────────────────────────────────
 
   const resolveApproval = useCallback(
     (requestId: string, toolName: string, decision: ApprovalDecision) => {
       const id = sessionIdRef.current;
-      if (id != null) {
-        // chat.ts owns the exact control_response shape (buildApprovalLine).
-        chatSendRaw(id, buildApprovalLine(requestId, decision, toolName)).catch(
-          () => {},
-        );
-      }
-      setTurns((prev) =>
-        prev.map((t) =>
-          t.kind === "approval" && t.requestId === requestId
-            ? { ...t, decision }
-            : t,
-        ),
-      );
+      if (id == null) return;
+      // chat.ts owns the exact control_response shape (buildApprovalLine).
+      // Mark the card resolved only once the decision actually reached the
+      // engine — collapsing it on a failed send showed "allowed" for a command
+      // the model never got permission to run.
+      chatSendRaw(id, buildApprovalLine(requestId, decision, toolName))
+        .then(() => {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.kind === "approval" && t.requestId === requestId
+                ? { ...t, decision }
+                : t,
+            ),
+          );
+          resolveNeedsInputNotification(id);
+        })
+        .catch((e) => reportDiag("chat.approval", e, { action: "resolve" }));
     },
     [],
   );
@@ -2310,8 +2791,25 @@ export function ChatPane({
         }
       }
       if (!opts?.skipUserBubble) {
-        setTurns((prev) => [...prev, { kind: "user", id: uid(), text: display, createdAt: Date.now() }]);
+        // ride the consumed attachments along on the turn so the bubble can render
+        // them (thumbnails / snippet chips) — they were invisible before: sent to
+        // the model but dropped from the transcript.
+        setTurns((prev) => [
+          ...prev,
+          {
+            kind: "user",
+            id: uid(),
+            text: display,
+            createdAt: Date.now(),
+            images: opts?.imagePaths?.length ? opts.imagePaths : undefined,
+            snippets: snips.length ? snips.map((s) => ({ id: s.id, text: s.text })) : undefined,
+          },
+        ]);
       }
+      // sending always snaps to the bottom — your just-sent message must be in
+      // view even if you'd scrolled up to read history (one-shot, consumed by the
+      // autoscroll layout effect; it also clears the paused flag).
+      forceBottomRef.current = true;
       setStreaming(true);
       setBackendBusy(true);
       streamingTurnId.current = null;
@@ -2368,7 +2866,28 @@ export function ChatPane({
           });
         return;
       }
-      chatSend(id, wire, opts?.imagePaths).catch((err) => {
+      // API tier (Tier-4 branching): send the ACTIVE root→leaf path so the model
+      // sees only the active branch.
+      //   · regenerate (skipUserBubble) → up to the prompt being re-answered
+      //   · edit-fork → up to the edited turn's PARENT + the edit (a sibling branch)
+      //   · normal send → the full active path + this new user turn
+      const editId = !opts?.skipUserBubble ? pendingEditRef.current : null;
+      pendingEditRef.current = null;
+      if (isApiProviderId(model.engine) && editId) {
+        const en = treeNodesRef.current.find((n) => n.id === editId);
+        pendingForkParentRef.current = en ? en.parentId : null;
+      }
+      const apiMessages: ApiMessage[] | undefined = isApiProviderId(model.engine)
+        ? opts?.skipUserBubble
+          ? messagesUpToLastUser(activeTurnsRef.current)
+          : (() => {
+              const at = activeTurnsRef.current;
+              const idx = editId ? at.findIndex((t) => t.id === editId) : -1;
+              const base = idx >= 0 ? at.slice(0, idx) : at;
+              return [...turnsToApiMessages(base), { role: "user", content: wire }];
+            })()
+        : undefined;
+      chatSend(id, wire, opts?.imagePaths, apiMessages).catch((err) => {
         setTurns((prev) => [
           ...prev,
           { kind: "result", id: uid(), text: `send failed: ${err}`, ok: false },
@@ -2407,15 +2926,84 @@ export function ChatPane({
       });
       const display = lines.join("\n");
       setAskAnswered((prev) => ({ ...prev, [toolId]: display }));
-      // skip the default user bubble — the collapsed card already shows the
-      // answer, so a second identical bubble would be noise. The wire gets a
-      // short preamble so the model reads it as a direct reply to its prompt.
-      dispatch(display, {
-        skipUserBubble: true,
-        wirePrefix: "Here are my answers to your questions:\n",
-      });
+      if (sessionIdRef.current == null) return;
+      resolveNeedsInputNotification(sessionIdRef.current);
+      // IMPORTANT: the claude CLI auto-dismisses AskUserQuestion in headless /
+      // stream-json mode — there's no TTY for its native picker, so the model never
+      // actually BLOCKS on the tool. It gets a "dismissed" result back (we counter
+      // that with a silent hold steer the moment the tool_use arrives — see
+      // HOLD_ASK). Answers go back as a plain user message. If the turn is still
+      // in flight, STEER the answers straight into it (the hold told the model to
+      // wait for exactly this); queue is the fallback so nothing is dropped.
+      const answerText = `Here are my answers to your questions:\n${display}`;
+      const queueIt = () =>
+        setQueued((items) => {
+          const next = queueMessage(items, answerText);
+          setQueuedIdx(next.selected);
+          return next.items;
+        });
+      if (streaming) {
+        const sid = sessionIdRef.current;
+        const engine = model.engine ?? "claude";
+        if (sid != null && (engine === "claude" || engine === "codex")) {
+          chatSteer(sid, answerText).catch(queueIt);
+        } else {
+          queueIt();
+        }
+      } else {
+        // skip the default user bubble — the collapsed card already shows the answer.
+        dispatch(answerText, { skipUserBubble: true });
+      }
     },
-    [askAnswered, dispatch],
+    [askAnswered, dispatch, streaming, model.engine],
+  );
+
+  // Resolve an ExitPlanMode card: record the verdict (so the card collapses) and
+  // feed it back as the next user turn. Like AskUserQuestion, the CLI auto-dismisses
+  // ExitPlanMode in headless mode (tool_result `"Exit plan mode?"`) and the model
+  // stalls — so the verdict goes back as a plain follow-up message the model reads
+  // as text. Approving also drops plan-mode locally so the next turn isn't plan-
+  // prefixed (the model should now BUILD, not keep planning).
+  const resolvePlan = useCallback(
+    (toolId: string, decision: "approve" | "reject", feedback?: string) => {
+      if (planResolved[toolId]) return;
+      setPlanResolved((prev) => ({
+        ...prev,
+        [toolId]: decision === "approve" ? "approved" : "rejected",
+      }));
+      const note = feedback?.trim();
+      // built on the fixed sentinels so inferPlanVerdict can recover the
+      // decision from a replayed transcript.
+      const text =
+        decision === "approve"
+          ? `${PLAN_APPROVE_SENTINEL} — go ahead and implement it now.${note ? `\n\nA few notes before you start:\n${note}` : ""}`
+          : `${PLAN_REJECT_SENTINEL} — keep refining the plan.${note ? `\n\nHere's what to change:\n${note}` : "\n\nReconsider the approach and propose an updated plan."}`;
+      if (decision === "approve") setPlanMode(false);
+      if (sessionIdRef.current == null) return;
+      resolveNeedsInputNotification(sessionIdRef.current);
+      const queueIt = () =>
+        setQueued((items) => {
+          const next = queueMessage(items, text);
+          setQueuedIdx(next.selected);
+          return next.items;
+        });
+      if (streaming) {
+        // a turn is still in flight → STEER the verdict straight into it (the
+        // silent hold told the model to wait for exactly this); queue as the
+        // fallback so the decision is never dropped.
+        const sid = sessionIdRef.current;
+        const engine = model.engine ?? "claude";
+        if (sid != null && (engine === "claude" || engine === "codex")) {
+          chatSteer(sid, text).catch(queueIt);
+        } else {
+          queueIt();
+        }
+      } else {
+        // skip the default user bubble — the collapsed card already shows the verdict.
+        dispatch(text, { skipUserBubble: true });
+      }
+    },
+    [planResolved, dispatch, streaming, model.engine],
   );
 
   // Switch the working directory this chat operates in. A running engine can't
@@ -2440,9 +3028,12 @@ export function ChatPane({
       setResumeId(null);
       claudeSessionIdRef.current = null;
       recordedRef.current = false;
+      // fresh session in the new dir → the old conversation no longer lives in
+      // this pane; un-stamp so a restart doesn't restore it here.
+      onSessionRecorded?.({ paneKey, sessionId: "", title: "" });
       onChangeCwd?.(next);
     },
-    [cwd, onChangeCwd],
+    [cwd, onChangeCwd, onSessionRecorded, paneKey],
   );
 
   // Queue a message instead of sending it (used while a turn is streaming). It
@@ -2498,12 +3089,14 @@ export function ChatPane({
     });
   }, [queuedIdx]);
 
-  // Explicitly inject one highlighted pending message into a live codex turn.
-  // If the backend cannot steer yet, leave it queued so normal auto-send wins.
+  // Explicitly inject one highlighted pending message into the live turn. Both
+  // codex (native `turn/steer`) and claude (soft-inject onto stdin) support this;
+  // if the backend can't steer yet (no active turn), keep it queued so normal
+  // auto-send wins.
   const steerQueued = useCallback(
     (queuedId: string) => {
       const item = queuedRef.current.find((q) => q.id === queuedId);
-      if (!item || model.engine !== "codex") return;
+      if (!item || (model.engine !== "codex" && model.engine !== "claude")) return;
       const id = sessionIdRef.current;
       if (id == null) return;
       chatSteer(id, item.text)
@@ -2562,11 +3155,17 @@ export function ChatPane({
       if (sid && (firstRecord || promoteCodex)) {
         if (firstRecord) recordedRef.current = true;
         if (promoteCodex) codexTitleLockedRef.current = true;
-        recordChatSession(sid, stableTitle, cwd ?? null, engine, model.id).catch(() => {
-          // failed to persist → allow a later send to retry
-          if (firstRecord) recordedRef.current = false;
-          if (promoteCodex) codexTitleLockedRef.current = false;
-        });
+        recordChatSession(sid, stableTitle, cwd ?? null, engine, model.id)
+          // tell an open History pane to refresh, so a chat recorded after it was
+          // opened (e.g. a new pane you then close) shows up without a manual reload.
+          .then(() => window.dispatchEvent(new Event("aios:history-changed")))
+          .catch(() => {
+            // failed to persist → allow a later send to retry
+            if (firstRecord) recordedRef.current = false;
+            if (promoteCodex) codexTitleLockedRef.current = false;
+          });
+        // report the durable id so App can bind this chat to a Work Session.
+        onSessionRecorded?.({ paneKey, sessionId: sid, title: stableTitle, cwd: cwd ?? undefined, engine, model: model.id });
         if (agentId) {
           saveScheduledAgentChatSession(agentId, {
             sessionId: sid,
@@ -2586,8 +3185,10 @@ export function ChatPane({
       setOverlay(null);
       const attachedMemoryBlock = memoryContextBlock(attachedMemories);
       setAttachedMemoryIds([]);
-      // images ride as native content blocks (opts.imagePaths), not text paths —
-      // the user bubble shows the text and a "[n image(s)]" hint when text-empty.
+      // images ride as native content blocks (opts.imagePaths). Keep the wire +
+      // "[n images]" fallback label EXACTLY as before so the model sees what it
+      // always has — the bubble now ALSO carries the paths and renders thumbnails,
+      // hiding that placeholder text when it's present (see UserBubble).
       const bubble = text || (imgPaths.length ? `[${imgPaths.length} image${imgPaths.length > 1 ? "s" : ""}]` : "");
       dispatch(bubble, { wirePrefix: attachedMemoryBlock, imagePaths: imgPaths });
     },
@@ -2596,10 +3197,18 @@ export function ChatPane({
 
   const send = useCallback(() => sendText(input), [sendText, input]);
 
+  // Soft-steer the running turn with the composer draft: codex via native
+  // `turn/steer`, claude via a stdin soft-inject (folds in at its next step, or
+  // lands as the next turn — no in-flight work lost). Engines that can't steer
+  // fall back to queueing. The ⌥⏎ modifier routes to interruptAndRedirect instead.
   const steerDraft = useCallback(() => {
     const text = input.trim();
     const id = sessionIdRef.current;
-    if (!text || model.engine !== "codex" || id == null) return;
+    if (!text || id == null) return;
+    if (model.engine !== "codex" && model.engine !== "claude") {
+      enqueue(text);
+      return;
+    }
     chatSteer(id, text)
       .then(() => {
         setTurns((prev) => [...prev, { kind: "user", id: uid(), text, steered: true, createdAt: Date.now() }]);
@@ -2608,6 +3217,18 @@ export function ChatPane({
       })
       .catch(() => enqueue(text));
   }, [input, model.engine, enqueue]);
+
+  // Interrupt-and-redirect: stop the in-flight turn (verified claude/codex
+  // interrupt — the process survives), then let the queue-flush effect fire the
+  // draft the instant the turn ends. Used by the ⌥⏎ steer modifier when you want
+  // the model to drop what it's doing and pivot, not fold the note in gently.
+  const interruptAndRedirect = useCallback(() => {
+    const text = input.trim();
+    const id = sessionIdRef.current;
+    if (!text || id == null) return;
+    enqueue(text); // auto-fires on the interrupt's `result` (see the flush effect)
+    chatInterrupt(id).catch((e) => reportDiag("chat.interrupt", e, { action: "steer-redirect" }));
+  }, [input, enqueue]);
 
   // Keep a fresh ref to sendText so the external submitter (registered once per
   // paneKey) always calls the latest closure without re-registering.
@@ -2671,9 +3292,26 @@ export function ChatPane({
       // transcript regenerates what's on screen, not a stale lastSent ref.
       const last = text ?? lastSentRef.current;
       if (!last || streaming || sessionIdRef.current == null) return;
+      // the new response is a fresh VARIANT of the last user turn — clear any
+      // explicit variant pick for it so the latest (new) one shows, not a pinned
+      // older response (response-branching switcher reset).
+      const lastUser = [...turnsRef.current].reverse().find((t) => t.kind === "user");
+      if (isApiProviderId(model.engine)) {
+        // API branching: the regenerated answer FORKS from the last user turn (a
+        // new sibling branch, newest = shown). The mirror links it on arrival.
+        pendingForkParentRef.current = lastUser?.id ?? null;
+      } else if (lastUser) {
+        // CLI tier: the old display-variant reset (clear any pinned older answer).
+        setActiveVariant((prev) => {
+          if (prev[lastUser.id] == null) return prev;
+          const next = { ...prev };
+          delete next[lastUser.id];
+          return next;
+        });
+      }
       dispatch(last, { skipUserBubble: true });
     },
-    [streaming, dispatch],
+    [streaming, dispatch, model],
   );
 
   // the failure card's retry: pre-session (startup failed) a resend has nothing
@@ -2686,18 +3324,61 @@ export function ChatPane({
     regenerate();
   }, [regenerate]);
 
-  // edit-and-resend: load a past message back into the composer to tweak + send.
-  const editMessage = useCallback((text: string) => {
-    setOverlay(null);
-    setInput(text);
-    setTimeout(() => {
-      const ta = taRef.current;
-      if (ta) {
-        ta.focus();
-        ta.setSelectionRange(ta.value.length, ta.value.length);
+  // retry-with-model: re-run the last turn on a DIFFERENT model. The engine is
+  // bound at session start (the session effect keys on model.id), so there's no
+  // per-send model — we resume the live conversation under the new model (which
+  // restarts the session) and regenerate once it's ready. Same model → a plain
+  // regenerate. NOTE: full context-fidelity across the swap rides on the CLI
+  // honoring `--resume` together with a new `--model`; the display always rewinds
+  // cleanly (the new answer lands as a ‹N/M› variant).
+  const pendingRetryRef = useRef<string | null>(null);
+  const retryWithModel = useCallback(
+    (m: ChatModel, text: string) => {
+      if (streaming || sessionIdRef.current == null) return;
+      if (m.id === model.id) {
+        regenerate(text);
+        return;
       }
-    }, 0);
-  }, []);
+      // resume the LIVE backend conversation so the new model keeps context
+      // (resumeId isn't otherwise synced to the running session — this is the
+      // one path that needs it). Both setState calls batch → one restart.
+      const rid = claudeSessionIdRef.current;
+      if (rid) setResumeId(rid);
+      pendingRetryRef.current = text;
+      setModel(m);
+    },
+    [streaming, model.id, regenerate],
+  );
+  // Fire the queued retry once the resumed/new-model session is live (claudeReady
+  // flips true after the restart). No pending retry → no-op, so this is inert on
+  // every other (re)start.
+  useEffect(() => {
+    if (started && claudeReady && !streaming && pendingRetryRef.current != null) {
+      const text = pendingRetryRef.current;
+      pendingRetryRef.current = null;
+      regenerate(text);
+    }
+  }, [started, claudeReady, streaming, regenerate]);
+
+  // edit-and-resend: load a past message back into the composer to tweak + send.
+  const editMessage = useCallback(
+    (id: string, text: string) => {
+      setOverlay(null);
+      setInput(text);
+      // API tier: remember which turn we're editing so the next send FORKS a new
+      // branch from its parent (keeping the original as a sibling). CLI tier just
+      // refills the composer (can't branch).
+      if (isApiProviderId(model.engine)) pendingEditRef.current = id;
+      setTimeout(() => {
+        const ta = taRef.current;
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+      }, 0);
+    },
+    [model],
+  );
 
   const finalizeStreaming = useCallback(
     (note: string, mode: "interrupt" | "kill-and-restart" = "interrupt") => {
@@ -2746,6 +3427,28 @@ export function ChatPane({
   const stop = useCallback(() => {
     if (sessionIdRef.current == null) return;
     stoppingRef.current = true;
+    // any AskUserQuestion still open when the user stops is now moot — mark it
+    // cancelled so the card shows that instead of a dead, unanswerable prompt.
+    setAskCancelled((prev) => {
+      let next = prev;
+      for (const t of turnsRef.current) {
+        if (t.kind === "tool" && isAskQuestionTool(t) && !next[t.id]) {
+          next = { ...next, [t.id]: true };
+        }
+      }
+      return next;
+    });
+    // an unresolved plan card is likewise moot once stopped — show a cancelled
+    // verdict rather than a dead, undecidable proposal.
+    setPlanCancelled((prev) => {
+      let next = prev;
+      for (const t of turnsRef.current) {
+        if (t.kind === "tool" && isPlanProposalTool(t) && !next[t.id]) {
+          next = { ...next, [t.id]: true };
+        }
+      }
+      return next;
+    });
     const strategy = stopStrategy(model.engine);
     finalizeStreaming(
       strategy === "kill-and-restart"
@@ -2781,7 +3484,6 @@ export function ChatPane({
     setOverlay(null);
     setQueued([]);
     setQueuedIdx(0);
-    usageBaselineRef.current = {};
     setResumeId(null);
     setResumedTitle(null);
     // fresh chat → forget the prior session id + recording flag so the next
@@ -2790,8 +3492,12 @@ export function ChatPane({
     setOpenSessionId(null);
     recordedRef.current = false;
     codexTitleLockedRef.current = false;
+    // Un-stamp the pane↔conversation binding in App: the user explicitly
+    // dropped this thread, so an app restart must NOT resurrect it into this
+    // pane (sessionId "" = clear, by contract with handleSessionRecorded).
+    onSessionRecorded?.({ paneKey, sessionId: "", title: "" });
     setRestartKey((k) => k + 1);
-  }, [runEventsKey]);
+  }, [runEventsKey, onSessionRecorded, paneKey]);
 
   // ── /resume: reopen a past chat session ────────────────────────────────────
   // Loads the chat-only session list (lazy, on picker open). On selection we
@@ -2829,6 +3535,72 @@ export function ChatPane({
     });
   }, []);
 
+  // A freshly-spawned RESUMED pane (resume prop set at mount — open-from-history
+  // or resume-last) must repaint its transcript: claude `--resume` continues the
+  // thread but never re-emits the past turns, so without this the pane is empty.
+  // (The /resume picker repaints via resumeSession; this covers the new-pane path.)
+  // Repaint from OUR durable store first (full fidelity), fall back to the engine
+  // transcript for foreign/legacy chats.
+  const mountRepaintedRef = useRef(false);
+  useEffect(() => {
+    // reattach panes paint from the live buffer replay, not history — with both
+    // set (a notification target carrying its history fallback), painting here
+    // too would double every turn. The reattach-failure path repaints itself.
+    if (mountRepaintedRef.current || !resume?.id || reattach != null) return;
+    mountRepaintedRef.current = true;
+    const id = resume.id;
+    // P7b deep-link: a History-pane search result carries its query, so once the
+    // transcript is painted we open the find bar on it — the find machinery then
+    // scrolls to + highlights the first matching message. (No-match → find bar
+    // just opens empty-handed and the forced bottom stands.)
+    const deepLink = () => {
+      const q = resume.findText?.trim();
+      if (q && q.length >= 2) {
+        setFindOpen(true);
+        setFindQuery(q);
+      }
+    };
+    const fromTranscript = () =>
+      readChatTranscript(id)
+        .then((rows) => {
+          if (rows.length) {
+            forceBottomRef.current = true;
+            setTurns(transcriptToTurns(rows));
+            deepLink();
+          }
+        })
+        .catch(() => {});
+    const linearReplay = () =>
+      readChatHistory(id)
+        .then((page) => {
+          if (page.lines.length) {
+            forceBottomRef.current = true;
+            setTurns(replayHistoryToTurns(page.lines, uid));
+            deepLink();
+          } else void fromTranscript();
+        })
+        .catch(() => void fromTranscript());
+    // API chats may have a TREE sidecar (branches) — restore the exact tree so
+    // reopening preserves the active branch + switchers; else replay linearly.
+    if (isApiProviderId(model.engine)) {
+      loadChatTree(id)
+        .then((json) => {
+          const tree = json ? deserializeTree(json) : null;
+          if (tree) {
+            forceBottomRef.current = true;
+            setTurns(tree.turns);
+            setTreeNodes(tree.nodes);
+            setTreeSel(tree.selection);
+            deepLink();
+          } else void linearReplay();
+        })
+        .catch(() => void linearReplay());
+    } else {
+      void linearReplay();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const resumeSession = useCallback(
     (session: ChatSessionInfo) => {
       // reset turn/stream bookkeeping; mark as already-recorded (it's in the
@@ -2850,7 +3622,7 @@ export function ChatPane({
       recordedRef.current = true;
       codexTitleLockedRef.current = true;
       const resumeModel =
-        CHAT_MODELS.find((m) => session.model && m.id === session.model) ??
+        resolveChatModel(session.model, session.engine) ??
         CHAT_MODELS.find((m) => (m.engine ?? "claude") === (session.engine || "claude"));
       if (resumeModel) setModel(resumeModel);
       setResumeId(session.id);
@@ -2875,16 +3647,28 @@ export function ChatPane({
       readChatHistory(session.id)
         .then((page) => {
           if (page.lines.length) {
+            forceBottomRef.current = true;
             setTurns(replayHistoryToTurns(page.lines, uid));
           } else {
             void repaintFromTranscript();
           }
         })
         .catch(() => void repaintFromTranscript());
+      // Tell App which conversation this pane now hosts, so layout persistence
+      // reopens it (transcript + --resume) after an app restart — the /resume
+      // picker was the one resume path that never re-stamped the pane.
+      onSessionRecorded?.({
+        paneKey,
+        sessionId: session.id,
+        title: session.title,
+        cwd: session.cwd || undefined,
+        engine: session.engine || undefined,
+        model: session.model || undefined,
+      });
       // bump restartKey too so re-picking the SAME session still re-spins
       setRestartKey((k) => k + 1);
     },
-    [transcriptToTurns],
+    [transcriptToTurns, onSessionRecorded, paneKey],
   );
 
   // ── slash + @ overlays ─────────────────────────────────────────────────────
@@ -3220,10 +4004,13 @@ export function ChatPane({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // mid-turn Enter is explicit now: Codex steers the active turn; engines
-      // without true steering queue the follow-up for the next turn.
+      // mid-turn Enter is explicit: codex + claude steer the active turn (soft
+      // inject); ⌥⏎ / ⌃⏎ interrupts and redirects instead (drop the turn, pivot
+      // to this message). Other engines just queue for the next turn.
       if (activeRun) {
-        if (model.engine === "codex") steerDraft();
+        const canSteer = model.engine === "codex" || model.engine === "claude";
+        if (canSteer && (e.altKey || e.ctrlKey)) interruptAndRedirect();
+        else if (canSteer) steerDraft();
         else enqueue(input);
       }
       else send();
@@ -3283,8 +4070,12 @@ export function ChatPane({
   });
   // model · effort · access · context now live as interactive pills in the
   // action row, so the passive summary row drops them — it carries only ambient
-  // context (cwd · engine) + transient state (images, queue, plan, goal).
-  const summaryChips = contextChips.filter((chip) => !CONTROL_CHIP_IDS.has(chip.id));
+  // context (cwd) + transient state (images, queue, plan, goal). `engine` is also
+  // dropped: the model pill already names the backend ("sonnet 4.6" ⇒ claude), so
+  // a standalone ">_ claude" tag was pure redundancy.
+  const summaryChips = contextChips.filter(
+    (chip) => !CONTROL_CHIP_IDS.has(chip.id) && chip.id !== "engine",
+  );
   const contextBuckets = contextLedger({
     draft: input,
     goal,
@@ -3382,30 +4173,7 @@ export function ChatPane({
                 <span className="truncate">run: {runPhase}</span>
               </span>
             )}
-            {attachedMemories.length > 0 && (
-              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]">
-                <Brain size={12} className="shrink-0 text-[var(--color-muted)]" />
-                <span className="truncate">{attachedMemories.length} memories attached</span>
-              </span>
-            )}
-            {snippets.map((s) => (
-              <span
-                key={s.id}
-                className="fade-in-up inline-flex max-w-[230px] items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]"
-                title={s.text}
-              >
-                <Quote size={12} className="shrink-0 text-[var(--color-muted)]" />
-                <span className="truncate">{s.text.replace(/\s+/g, " ").slice(0, 42)}</span>
-                <button
-                  type="button"
-                  onClick={() => setSnippets((prev) => prev.filter((x) => x.id !== s.id))}
-                  className="ml-0.5 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                  title="remove this context snippet"
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
+            {/* memories + quoted snippets moved to the composer's attachment tray */}
           </div>
         )}
 
@@ -3416,7 +4184,7 @@ export function ChatPane({
           }${contextLedgerWarning ? "text-[var(--color-warning)]" : "text-[var(--color-faint)]"}`}
           title="estimated tokens added by the next send; exact billing comes from provider usage"
         >
-          <span>{estimatedContextTokens.toLocaleString()} est tok</span>
+          <span><NumberTicker value={estimatedContextTokens} /> est tok</span>
           {/* a single bucket equals the total — listing it was pure noise */}
           {contextBuckets.length > 1 &&
             contextBuckets.map((bucket) => (
@@ -3695,31 +4463,73 @@ export function ChatPane({
           </div>
         )}
 
-        <div className="flash-composer relative rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/80 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-200 focus-within:border-[var(--color-accent)]/50 focus-within:ring-1 focus-within:ring-[var(--color-accent)]/20">
-          {/* attached-image thumbnails (paste a screenshot / + attach) */}
-          {images.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-3 pt-3">
+        <div className={`flash-composer glass-strong glow-focus relative rounded-2xl transition-all duration-200 ${streaming ? "glow-live" : ""}`}>
+          {/* signature lit top edge — the dual accent→cyan hairline across the
+              composer's lip (mockup 02). Themeable: blends the runtime accent
+              toward cyan, so it re-tints with the chosen accent. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-3.5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-accent),color-mix(in_srgb,var(--color-accent)_45%,var(--aios-accent-2)),transparent)] opacity-90"
+          />
+          {/* a slow neon light laps the composer's edge — the "alive console"
+              signature (Magic UI BorderBeam; static accent ring on reduce-motion). */}
+          <BorderBeam duration={streaming ? 4 : 9} size={90} />
+          {/* ── attachment tray ── images (click to preview before sending),
+              quoted text snippets, and attached memories — one consistent row. */}
+          {(images.length > 0 || snippets.length > 0 || attachedMemories.length > 0) && (
+            <div className="flex flex-wrap items-center gap-2 px-3 pt-3">
               {images.map((im) => (
-                <div
-                  key={im.id}
-                  className="group relative h-14 w-14 overflow-hidden rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]"
+                <TiltCard key={im.id} className="rounded-xl" max={10}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setPreviewImage(im)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setPreviewImage(im); }}
+                    title="click to preview before sending"
+                    className="group relative h-16 w-16 cursor-zoom-in overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={im.url} alt="attachment" className="h-full w-full object-cover" />
+                    {im.path == null && (
+                      <div className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]/60">
+                        <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeImage(im.id); }}
+                      title="remove"
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-[var(--color-bg)]/85 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                </TiltCard>
+              ))}
+              {snippets.map((s) => (
+                <span
+                  key={s.id}
+                  className="fade-in-up inline-flex max-w-[230px] items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/60 px-2.5 py-1.5 font-sans text-[11.5px] text-[var(--color-text-2)] backdrop-blur"
+                  title={s.text}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={im.url} alt="" className="h-full w-full object-cover" />
-                  {im.path == null && (
-                    <div className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]/60">
-                      <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
-                    </div>
-                  )}
+                  <Quote size={12} className="shrink-0 text-[var(--color-accent)]" />
+                  <span className="truncate">{s.text.replace(/\s+/g, " ").slice(0, 42)}</span>
                   <button
                     type="button"
-                    onClick={() => removeImage(im.id)}
-                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-[var(--color-bg)]/80 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
+                    onClick={() => setSnippets((prev) => prev.filter((x) => x.id !== s.id))}
+                    className="ml-0.5 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    title="remove this quote"
                   >
                     <X size={11} />
                   </button>
-                </div>
+                </span>
               ))}
+              {attachedMemories.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/60 px-2.5 py-1.5 font-sans text-[11.5px] text-[var(--color-text-2)] backdrop-blur">
+                  <Brain size={12} className="shrink-0 text-[var(--color-accent)]" />
+                  <span className="truncate">{attachedMemories.length} memories attached</span>
+                </span>
+              )}
             </div>
           )}
           <input
@@ -3781,7 +4591,7 @@ export function ChatPane({
               {ghost && (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-5 pt-4 pb-2 font-sans text-[15px] leading-relaxed text-transparent"
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-3 pb-2 font-sans text-[14px] leading-relaxed text-transparent"
                 >
                   {input}
                   <span className="text-[var(--color-faint)]">{ghost}</span>
@@ -3798,17 +4608,22 @@ export function ChatPane({
                   streaming
                     ? model.engine === "codex"
                       ? "steer the model… (won't interrupt)"
-                      : "queue a follow-up…"
+                      : model.engine === "claude"
+                        ? `steer the model… ⏎ inject · ${ALT}⏎ interrupt & redirect`
+                        : "queue a follow-up…"
                     : planMode
                       ? "describe the task to plan…"
                       : "ask, or describe a task — / for commands, @ for files"
                 }
                 spellCheck={false}
-                className="relative block w-full resize-none bg-transparent px-5 pt-4 pb-2 font-sans text-[15px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+                className="relative block w-full resize-none bg-transparent px-4 pt-3 pb-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
               />
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
+          {/* zoned divider — a lit hairline separating the input hero from the
+              control bar (Neon Glass composer layout "01 · Zoned"). */}
+          <div className="mx-3 h-px bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] to-transparent" />
+          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5 pt-2">
             {/* LEFT — the agent-control pills (access · context · effort ·
                 model). On the fresh hero they stagger in; the action buttons
                 (tools · send) sit in their own right-aligned group. */}
@@ -3978,12 +4793,17 @@ export function ChatPane({
                 </MenuItem>
               ))}
             </Dropdown>
-            {/* model selector (rightmost, nearest send — the most-changed pill) */}
+            </div>
+            {/* RIGHT — tools + actions, right-aligned. The model pill LEADS this
+                group (nearest send — the most-changed control), then collapse ·
+                tools · voice · send. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* model selector — sits next to send */}
             <Dropdown
               open={openMenu === "model"}
               onToggle={() => setOpenMenu(openMenu === "model" ? null : "model")}
               align="right"
-              triggerClassName={openMenu === "model" ? CTRL_PILL_OPEN : CTRL_PILL}
+              triggerClassName={openMenu === "model" ? CTRL_PILL_OPEN : CTRL_PILL_MODEL}
               label={`model — ${model.label}`}
               trigger={
                 <>
@@ -4001,11 +4821,18 @@ export function ChatPane({
                   { engine: "codex", label: "codex" },
                   { engine: "claude", label: "claude" },
                   { engine: "opencode", label: "other" },
+                  // BYO-key API tier (Tier 4) — only groups with a configured key
+                  // (or keyless ollama) have rows, so empty ones drop out below.
+                  { engine: "anthropic", label: "anthropic · api" },
+                  { engine: "openrouter", label: "openrouter · api" },
+                  { engine: "openai", label: "openai · api" },
+                  { engine: "ollama", label: "ollama · local" },
                 ];
+                const allModels = [...pickerModels, ...apiModels];
                 const groups = order
                   .map((g) => ({
                     ...g,
-                    rows: pickerModels.filter((m) => (m.engine ?? "claude") === g.engine),
+                    rows: allModels.filter((m) => (m.engine ?? "claude") === g.engine),
                   }))
                   .filter((g) => g.rows.length > 0);
                 groups.sort(
@@ -4026,23 +4853,34 @@ export function ChatPane({
                     const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
                     return (
                       <MenuItem
-                        key={m.id}
-                        active={m.id === model.id}
+                        // identity is (engine, id): an API model id can collide
+                        // with a CLI one (claude-opus-4-8 is both the claude CLI
+                        // and the Anthropic API), so key + active compare both.
+                        key={`${m.engine ?? "claude"}:${m.id}`}
+                        active={
+                          m.id === model.id &&
+                          (m.engine ?? "claude") === (model.engine ?? "claude")
+                        }
                         disabled={m.disabled}
                         title={m.note}
                         onClick={() => {
                           if (m.disabled) return;
                           setModel(m);
-                          // picking a model sets it as the global default (sticks
-                          // across panes + restarts). engine omitted = claude.
-                          // defaultAi is derived from the provider so "send to AI"
-                          // routing can never drift onto a different engine.
-                          const provider = `${m.engine ?? "claude"}-cli`;
-                          saveSettings({
-                            chatModel: m.id,
-                            chatProvider: provider,
-                            defaultAi: defaultAiForProvider(provider),
-                          });
+                          // Picking a model sets the global default (sticks across
+                          // panes + restarts). For API providers we persist the bare
+                          // provider id (the model-init restores it; the CLI helpers
+                          // fall back gracefully) and leave defaultAi — the "send to
+                          // AI" route — untouched since it's CLI-only.
+                          if (isApiProviderId(m.engine)) {
+                            saveSettings({ chatModel: m.id, chatProvider: m.engine });
+                          } else {
+                            const provider = `${m.engine ?? "claude"}-cli`;
+                            saveSettings({
+                              chatModel: m.id,
+                              chatProvider: provider,
+                              defaultAi: defaultAiForProvider(provider),
+                            });
+                          }
                           setOpenMenu(null);
                         }}
                       >
@@ -4072,10 +4910,6 @@ export function ChatPane({
                 ]);
               })()}
             </Dropdown>
-            </div>
-            {/* RIGHT — tools + actions, right-aligned (collapse · tools · voice ·
-                send), kept apart from the control pills on the left. */}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {!empty && (
               <button
                 type="button"
@@ -4148,9 +4982,13 @@ export function ChatPane({
                 {hasDraft && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (action.mode === "steer") steerDraft();
-                      else enqueue(input);
+                    onClick={(e) => {
+                      // ⌥/⌃ click interrupts & redirects (parity with ⌥⏎); a plain
+                      // click soft-steers, or queues on engines that can't steer.
+                      if (action.mode === "steer") {
+                        if (e.altKey || e.ctrlKey) interruptAndRedirect();
+                        else steerDraft();
+                      } else enqueue(input);
                     }}
                     disabled={action.disabled}
                     className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3 text-[12px] font-medium text-[var(--color-bg)] transition-all hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
@@ -4172,16 +5010,18 @@ export function ChatPane({
               </>
             ) : (
               <Magnet>
-                <button
-                  type="button"
-                  onClick={send}
-                  disabled={action.disabled}
-                  className="aios-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
-                  title={action.title}
-                >
-                  <ArrowUp size={16} />
-                  {action.label}
-                </button>
+                <HoverBorderGradient radius="rounded-full">
+                  <button
+                    type="button"
+                    onClick={send}
+                    disabled={action.disabled}
+                    className="press aios-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] enabled:shadow-[0_0_20px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
+                    title={action.title}
+                  >
+                    <ArrowUp size={16} />
+                    {action.label}
+                  </button>
+                </HoverBorderGradient>
               </Magnet>
             )}
             </div>
@@ -4228,6 +5068,7 @@ export function ChatPane({
       moveQueued,
       steerQueued,
       steerDraft,
+      interruptAndRedirect,
       planMode,
       goal,
       overlay,
@@ -4256,6 +5097,83 @@ export function ChatPane({
   // tokens/cost footer renders only when that segment had no tool activity (the
   // activity line already shows the duration otherwise). File artifacts written
   // by Write/Edit/NotebookEdit are collected per activity group.
+  // Response branching: segment the transcript into response variants (a run of
+  // non-user turns between user turns; regenerate appends a fresh run = a variant).
+  // ── conversation tree (Tier-3 P2 branching) — mirror declared with `turns` ──
+  const isApiChat = isApiProviderId(model.engine);
+  // Mirror of the committed nodes, read in the effect so the whole computation
+  // (incl. consuming the fork token) stays OUTSIDE a setState updater — StrictMode
+  // double-invokes updaters, which would eat the fork token.
+  const treeNodesRef = useRef<TreeNode<string>[]>([]);
+  treeNodesRef.current = treeNodes;
+  useEffect(() => {
+    if (!isApiChat) return;
+    const prev = treeNodesRef.current;
+    const turnIds = new Set(turns.map((t) => t.id));
+    // A REPLACE (clear / resume) — not all prior nodes still present — rebuilds a
+    // linear chain (branch structure isn't persisted yet).
+    if (prev.length === 0 || !prev.every((n) => turnIds.has(n.id))) {
+      setTreeNodes(
+        turns.map((t, i) => ({ id: t.id, parentId: i > 0 ? turns[i - 1]!.id : null, value: t.id })),
+      );
+      return;
+    }
+    // APPEND the new turns. Each chains from the active leaf, EXCEPT the first
+    // after a regenerate/edit, which forks from the recorded parent (a sibling).
+    const known = new Set(prev.map((n) => n.id));
+    const fresh = turns.filter((t) => !known.has(t.id));
+    if (fresh.length === 0) return;
+    const forkParent = pendingForkParentRef.current;
+    pendingForkParentRef.current = null;
+    const ap = activePath(prev, treeSel);
+    let leaf = ap.length > 0 ? ap[ap.length - 1]!.id : null;
+    const additions = fresh.map((t, i) => {
+      const parent = i === 0 && forkParent != null ? forkParent : leaf;
+      leaf = t.id;
+      return { id: t.id, parentId: parent, value: t.id };
+    });
+    setTreeNodes([...prev, ...additions]);
+  }, [turns, isApiChat, treeSel]);
+  // Render source: the active root→leaf path (API sessions), else `turns` verbatim.
+  // For a linear chat the path === turns; after a fork it's the active branch only.
+  const treeTurns = useMemo(() => {
+    if (!isApiChat) return turns;
+    const byId = new Map(turns.map((t) => [t.id, t]));
+    return activePath(treeNodes, treeSel)
+      .map((n) => byId.get(n.id))
+      .filter((t): t is Turn => t != null);
+  }, [isApiChat, turns, treeNodes, treeSel]);
+  // The active-path turns, for the send (dispatch reads this ref so it isn't a dep).
+  const activeTurnsRef = useRef<Turn[]>([]);
+  activeTurnsRef.current = treeTurns;
+  // Persist the conversation tree (API branching) so branches survive a reload —
+  // the durable event log is linear and can't represent the tree. Debounced (so
+  // streaming deltas don't thrash), keyed by the engine session id.
+  useEffect(() => {
+    if (!isApiChat) return;
+    const sid = claudeSessionIdRef.current;
+    if (!sid || treeNodes.length === 0) return;
+    const t = setTimeout(() => {
+      const byId = new Map(turns.map((x) => [x.id, x]));
+      void saveChatTree(sid, JSON.stringify(serializeTree(treeNodes, treeSel, byId))).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [isApiChat, treeNodes, treeSel, turns]);
+
+  const variantInfo = useMemo(() => computeResponseVariants(turns), [turns]);
+  // API branching is governed by the tree (treeTurns is already the active path);
+  // the old display-variant hiding only applies to the CLI tier.
+  const hiddenTurnIds = useMemo(
+    () => (isApiChat ? new Set<string>() : hiddenVariantTurnIds(variantInfo, activeVariant)),
+    [isApiChat, variantInfo, activeVariant],
+  );
+  // the transcript renders ONLY the active variant's turns; the rest stay in the
+  // store + the model's context (display-level branching), just hidden here.
+  const visibleTurns = useMemo(
+    () => (hiddenTurnIds.size === 0 ? treeTurns : treeTurns.filter((t) => !hiddenTurnIds.has(t.id))),
+    [treeTurns, hiddenTurnIds],
+  );
+
   const blocks = useMemo<RenderBlock[]>(() => {
     const out: RenderBlock[] = [];
     let pending: ToolTurn[] = [];
@@ -4276,15 +5194,32 @@ export function ChatPane({
       return null;
     };
 
-    for (const t of turns) {
+    for (const t of visibleTurns) {
       if (t.kind === "tool") {
+        // A sub-agent's OWN tool calls (parentId set) always stay inside the
+        // activity group so they nest under their Agent row — never hoisted out as
+        // a top-level ask/change card (that's what made the flat "mess"). Only the
+        // MAIN agent's asks/edits get promoted to their own prominent cards.
+        const isChild = t.parentId != null;
         // AskUserQuestion is an INTERACTIVE prompt, not background activity — it
         // gets its own prominent card (with answer buttons) instead of being
         // folded into a collapsed "Worked for Xs ›" group where its questions
         // would be buried and unanswerable.
-        if (isAskQuestionTool(t)) {
+        if (!isChild && isPlanProposalTool(t)) {
+          // ExitPlanMode is an INTERACTIVE approval gate, not background activity —
+          // promote it to a prominent plan card (same treatment as AskUserQuestion)
+          // instead of burying it in the collapsed "Worked for Xs ›" group as a
+          // dead, auto-dismissed step.
+          flushTools();
+          out.push({ kind: "plan", id: t.id, turn: t });
+        } else if (!isChild && isAskQuestionTool(t)) {
           flushTools();
           out.push({ kind: "ask", id: t.id, turn: t });
+        } else if (!isChild && isFileEditTool(t)) {
+          // file edits get a prominent, always-visible change card — never folded
+          // into the collapsed activity group (where the diff used to flash + hide).
+          flushTools();
+          out.push({ kind: "change", id: t.id, turn: t });
         } else {
           pending.push(t);
         }
@@ -4311,6 +5246,31 @@ export function ChatPane({
     }
     flushTools();
     return out;
+  }, [visibleTurns]);
+
+  // P4d — every file the AI edited/created this chat, aggregated for the roll-up.
+  const changedFiles = useMemo(() => {
+    const map = new Map<
+      string,
+      { path: string; name: string; edits: number; adds: number; dels: number }
+    >();
+    for (const t of turns) {
+      if (t.kind !== "tool" || !isFileEditTool(t)) continue;
+      const inp = t.input ?? {};
+      const path =
+        (typeof inp.file_path === "string" && inp.file_path) ||
+        (typeof inp.path === "string" && inp.path) ||
+        (typeof inp.notebook_path === "string" && inp.notebook_path) ||
+        "";
+      if (!path) continue;
+      const { adds, dels } = editStat(t);
+      const e = map.get(path) ?? { path, name: baseName(path), edits: 0, adds: 0, dels: 0 };
+      e.edits += 1;
+      e.adds += adds;
+      e.dels += dels;
+      map.set(path, e);
+    }
+    return [...map.values()];
   }, [turns]);
 
   // index of the final activity group — only IT shows the live "Working…" timer
@@ -4423,7 +5383,14 @@ export function ChatPane({
 
   // ── conversation minimap — one tick per block, click to jump ───────────
   const [mapTicks, setMapTicks] = useState<
-    { id: string; kind: RenderBlock["kind"]; frac: number; err: boolean }[]
+    {
+      id: string;
+      kind: RenderBlock["kind"];
+      frac: number;
+      err: boolean;
+      at: number | null;
+      label: string;
+    }[]
   >([]);
   useEffect(() => {
     if (blocks.length < 9) {
@@ -4434,8 +5401,20 @@ export function ChatPane({
     const raf = requestAnimationFrame(() => {
       const root = scrollRef.current;
       if (!root) return;
+      // Markers live in CONTENT space (offsetTop / scrollHeight) — the same space
+      // as the custom rail thumb, a window of height clientHeight/scrollHeight that
+      // slides over them. The native scrollbar is hidden, so the rail is the single
+      // self-consistent indicator: bottom markers fall INSIDE the thumb window when
+      // you scroll there, never below it (the prior "marker below the bar" bug).
       const H = Math.max(1, root.scrollHeight);
-      const out: { id: string; kind: RenderBlock["kind"]; frac: number; err: boolean }[] = [];
+      const out: {
+        id: string;
+        kind: RenderBlock["kind"];
+        frac: number;
+        err: boolean;
+        at: number | null;
+        label: string;
+      }[] = [];
       for (const b of blocks) {
         const el = blockElsRef.current.get(b.id);
         if (!el) continue;
@@ -4444,12 +5423,62 @@ export function ChatPane({
           kind: b.kind,
           frac: Math.min(1, el.offsetTop / H),
           err: b.kind === "result" && b.turn.ok === false,
+          at: blockTime(b),
+          label: tickLabel(b),
         });
       }
       setMapTicks(out);
     });
     return () => cancelAnimationFrame(raf);
   }, [blocks]);
+
+  // ── scrubber interaction (P6): drag the minimap to scroll, hover for a
+  // time+snippet bubble, day-boundary hairlines on the rail ─────────────────
+  const railRef = useRef<HTMLDivElement>(null);
+  const scrubbingRef = useRef(false);
+  const [scrubBubble, setScrubBubble] = useState<{
+    frac: number;
+    at: number | null;
+    label: string;
+  } | null>(null);
+  // current scroll position as content-space fractions → the custom rail thumb.
+  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
+  // current scroll position as content-space fractions → the custom rail thumb.
+  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
+  // Updated on every scroll via syncJumpVisibility; the thumb has no CSS position
+  // transition, so it tracks the scroll 1:1 instead of easing in late.
+  const [railWin, setRailWin] = useState<{ top: number; size: number } | null>(null);
+  const dayMarks = useMemo(
+    () => dayBoundaries(mapTicks).map((i) => ({ frac: mapTicks[i].frac })),
+    [mapTicks],
+  );
+  const railFrac = (clientY: number): number => {
+    const r = railRef.current?.getBoundingClientRect();
+    if (!r || r.height === 0) return 0;
+    return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+  };
+  const railBubbleAt = (frac: number) => {
+    const near = nearestTick(mapTicks, frac);
+    setScrubBubble({ frac, at: near?.at ?? null, label: near?.label ?? "" });
+  };
+  const railScrubTo = (clientY: number) => {
+    const frac = railFrac(clientY);
+    const root = scrollRef.current;
+    if (root) {
+      programmaticRef.current = true;
+      // map the cursor fraction straight to the scroll window's TOP so the thumb
+      // tracks the pointer 1:1 (scrollbar feel), not offset by half a viewport
+      // (the old "center the point" math felt laggy/disconnected when dragging).
+      root.scrollTop = Math.max(
+        0,
+        Math.min(frac * root.scrollHeight, root.scrollHeight - root.clientHeight),
+      );
+      // sync the thumb synchronously from the new scrollTop (don't wait on the
+      // async scroll event, which is what made the drag feel sluggish).
+      setPaused(true);
+    }
+    railBubbleAt(frac);
+  };
 
   // ── per-turn token sparkline (last 24 result turns) ─────────────────────
   const tokenHistory = useMemo(() => {
@@ -4461,6 +5490,12 @@ export function ChatPane({
     }
     return out.slice(-24);
   }, [turns]);
+
+  // ── cumulative session usage (Tier 3) — messages · tokens · age, no $ ────
+  // The session-level companion to the per-turn sparkline + live "ctx" readout.
+  // Recomputed when the transcript changes; age reads Date.now() at render (so it
+  // advances as you interact — close enough without a dedicated idle timer).
+  const usage = useMemo(() => sessionUsage(turns), [turns]);
 
   // ── smart starter deck — the hero's cards read the workspace ────────────
   // One shallow readDir on the empty hero probes what kind of place this is:
@@ -4540,6 +5575,26 @@ export function ChatPane({
     const id = b.kind === "activity" ? b.tools[0]?.id : b.turn.id;
     const t = id != null ? turnTimesRef.current.get(id) : undefined;
     return t != null && Number.isFinite(t) ? t : null;
+  };
+
+  /** Time that may ANCHOR a day separator. Only the turn-level blocks carry a
+   *  trustworthy wall-clock (their own transcript `createdAt`): user, assistant,
+   *  result, compaction. Activity / thinking / change / ask are always *inside*
+   *  an assistant turn and fall back to arrival stamps — on a resumed chat those
+   *  re-arrive "today" while the prose keeps its original date, which used to
+   *  flip the day mid-turn (…jun 19 → today → jun 19…) and split one turn into
+   *  two frames. Anchoring only on turn-level blocks makes mid-turn blocks
+   *  inherit the surrounding day instead of inventing one. */
+  const dayAnchorTime = (b: RenderBlock): number | null => {
+    if (
+      b.kind === "user" ||
+      b.kind === "assistant" ||
+      b.kind === "result" ||
+      b.kind === "compaction"
+    ) {
+      return blockTime(b);
+    }
+    return null;
   };
 
   // ── render ──────────────────────────────────────────────────────────────────
@@ -4739,13 +5794,19 @@ export function ChatPane({
       data-chat-pane
       tabIndex={-1}
       onKeyDown={onPaneKeyDown}
-      className="relative flex h-full min-h-0 w-full flex-col bg-[var(--color-bg)] outline-none"
+      className="aios-stage relative flex h-full min-h-0 w-full flex-col outline-none"
     >
+      {/* quiet dot-grid texture on the chat ground — behind the aurora + content */}
+      <DotPattern className="-z-10" gap={26} />
       <div
         ref={scrollRef}
-        className="relative min-h-0 flex-1 overflow-y-auto"
+        className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onMouseUp={onTranscriptMouseUp}
-        onScroll={() => snipTip && setSnipTip(null)}
+        onScroll={() => {
+          handleScroll();
+          if (snipTip) setSnipTip(null);
+        }}
+        onWheel={handleWheel}
       >
         {/* floating "attach selection" affordance — one click turns the
             selected reply text into a context snippet on the next send. */}
@@ -4766,27 +5827,111 @@ export function ChatPane({
             add as context
           </button>
         )}
-        <div className="chat-col mx-auto flex flex-col gap-5 px-6 py-8">
+        <div className="chat-col mx-auto flex flex-col gap-4 px-6 py-7">
           {resumedTitle && (
             <div className="flex justify-center">
               <ResumedNote title={resumedTitle} onClear={() => setResumedTitle(null)} />
             </div>
           )}
+          {changedFiles.length > 0 && <ChangedFilesBar files={changedFiles} />}
           {(() => {
             // same elements as before, built in a loop so a quiet day rule can
             // slip in whenever the wall-clock day changes mid-transcript
             // (resumed sessions span days; "yesterday" deserves a seam).
+            //
+            // 02 Framed Turns: the run of non-user blocks following a user
+            // message (thinking · activity · change · prose · result) collapses
+            // into ONE assistant TurnFrame. User → its own you-card; compaction
+            // + day seams stay standalone (between frames). The frame is
+            // non-positioned, so child `offsetTop` (minimap geometry) is intact.
             const out: React.ReactNode[] = [];
             let prevDay: string | null = null;
             let actIdx = -1; // running activity-group index → cinema segment
+            let group: {
+              firstId: string;
+              nodes: React.ReactNode[];
+              steps: number;
+              workedMs: number;
+              hasResult: boolean;
+              hasContent: boolean; // a block that actually renders (prose/thinking w/ text, tools/change/ask/approval)
+            } | null = null;
+            const flushGroup = (isTail = false) => {
+              if (!group) return;
+              const g = group;
+              group = null;
+              const live = isTail && streaming && !g.hasResult;
+              // Drop a hollow frame: no real content AND no result block at all (e.g.
+              // a degenerate empty assistant turn). A `/compact` no longer reaches
+              // here — its empty footer is dropped at the source (see the result
+              // event handler), so no result block is created. Keep live frames.
+              if (!live && !g.hasContent && !g.hasResult) return;
+              // response branching: if this prompt has >1 response variant (you
+              // regenerated), show a ‹N/M› switcher in the frame header. Only the
+              // ACTIVE variant's blocks were rendered (the rest are filtered out of
+              // visibleTurns), so this group IS the active variant.
+              // API branching: the ‹N/M› switcher is driven by the TREE — sibling
+              // answers under the user turn. Switching re-selects the active child,
+              // which re-renders the active path (the other branch + its whole
+              // continuation hide). CLI tier keeps the old display-variant switcher.
+              let variantNav:
+                | { index: number; count: number; onPrev: () => void; onNext: () => void }
+                | undefined;
+              if (isApiChat) {
+                const pos = siblingPosition(treeNodes, g.firstId);
+                variantNav =
+                  pos.count > 1
+                    ? {
+                        index: pos.index,
+                        count: pos.count,
+                        onPrev: () => setTreeSel((sel) => stepBranch(treeNodes, sel, g.firstId, -1)),
+                        onNext: () => setTreeSel((sel) => stepBranch(treeNodes, sel, g.firstId, 1)),
+                      }
+                    : undefined;
+              } else {
+                const vinfo = variantInfo.byTurnId.get(g.firstId);
+                const vUser = vinfo?.userId;
+                const vCount = vUser ? variantInfo.countByUser.get(vUser) ?? 1 : 1;
+                variantNav =
+                  vUser && vCount > 1
+                    ? {
+                        index: vinfo!.variant,
+                        count: vCount,
+                        onPrev: () =>
+                          setActiveVariant((prev) => ({
+                            ...prev,
+                            [vUser]: Math.max(0, activeVariantIndex(prev, vUser, vCount) - 1),
+                          })),
+                        onNext: () =>
+                          setActiveVariant((prev) => ({
+                            ...prev,
+                            [vUser]: Math.min(vCount - 1, activeVariantIndex(prev, vUser, vCount) + 1),
+                          })),
+                      }
+                    : undefined;
+              }
+              out.push(
+                <TurnFrame
+                  key={`turn-${g.firstId}`}
+                  modelLabel={model.label}
+                  steps={g.steps}
+                  workedMs={g.workedMs}
+                  live={live}
+                  variantNav={variantNav}
+                >
+                  {g.nodes}
+                </TurnFrame>,
+              );
+            };
             blocks.forEach((b, i) => {
               if (b.kind === "activity") actIdx += 1;
               const segForBlock = Math.min(actIdx < 0 ? 0 : actIdx, cinemaSegStarts.length - 1);
               const t = blockTime(b);
-              if (t != null) {
-                const day = new Date(t).toDateString();
+              const anchor = dayAnchorTime(b);
+              if (anchor != null) {
+                const day = new Date(anchor).toDateString();
                 if (prevDay != null && day !== prevDay) {
-                  out.push(<DaySeparator key={`day-${b.id}`} at={t} />);
+                  flushGroup();
+                  out.push(<DaySeparator key={`day-${b.id}`} at={anchor} />);
                 }
                 prevDay = day;
               }
@@ -4814,7 +5959,24 @@ export function ChatPane({
                     streaming={streaming}
                     isLast={b.id === lastUserId}
                     onRegenerate={() => regenerate(b.turn.text)}
+                    onRetryModel={(m) => retryWithModel(m, b.turn.text)}
+                    retryModels={retryMenuModels}
+                    currentModelId={model.id}
                     onEdit={editMessage}
+                    variantNav={(() => {
+                      // edit-fork: this user turn has alternate edited versions
+                      // (tree siblings). Switching swaps the prompt + its branch.
+                      if (!isApiChat) return undefined;
+                      const pos = siblingPosition(treeNodes, b.turn.id);
+                      return pos.count > 1
+                        ? {
+                            index: pos.index,
+                            count: pos.count,
+                            onPrev: () => setTreeSel((s) => stepBranch(treeNodes, s, b.turn.id, -1)),
+                            onNext: () => setTreeSel((s) => stepBranch(treeNodes, s, b.turn.id, 1)),
+                          }
+                        : undefined;
+                    })()}
                   />
                 ) : b.kind === "assistant" ? (
                   <AssistantBubble
@@ -4832,12 +5994,33 @@ export function ChatPane({
                   <ThinkingBlock turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
                 ) : b.kind === "approval" ? (
                   <ApprovalCard turn={b.turn} onResolve={resolveApproval} />
+                ) : b.kind === "change" ? (
+                  <ChangeCard turn={b.turn} />
                 ) : b.kind === "ask" ? (
                   <AskQuestionCard
                     turn={b.turn}
-                    answered={askAnswered[b.turn.id]}
-                    disabled={streaming}
+                    // live: the in-memory answer collapses the card instantly.
+                    // replayed-from-history: the recorded tool_result lands on the
+                    // turn (turn.result), so an answered chat reopens as answered
+                    // instead of an open prompt.
+                    answered={
+                      askAnswered[b.turn.id] ??
+                      (b.turn.result && !b.turn.isError ? b.turn.result : undefined)
+                    }
+                    cancelled={askCancelled[b.turn.id]}
                     onAnswer={answerAskQuestion}
+                  />
+                ) : b.kind === "plan" ? (
+                  <PlanProposalCard
+                    turn={b.turn}
+                    // live verdicts come from memory; replayed/resumed chats
+                    // recover theirs from the verdict sentinel in the next user
+                    // turn (ExitPlanMode's own tool_result is always the
+                    // meaningless auto-dismiss) — so an already-approved plan
+                    // never re-arms its buttons on reopen.
+                    resolved={planResolved[b.turn.id] ?? inferPlanVerdict(turns, b.turn.id)}
+                    cancelled={planCancelled[b.turn.id]}
+                    onResolve={resolvePlan}
                   />
                 ) : (
                   <ResultFooter turn={b.turn} onRetry={retryTurn} />
@@ -4850,25 +6033,64 @@ export function ChatPane({
                 b.kind === "user" ||
                 b.kind === "approval" ||
                 b.kind === "ask" ||
+                b.kind === "plan" ||
+                b.kind === "change" ||
                 b.kind === "compaction" ||
                 b.kind === "result";
               const setBlockEl = (el: HTMLElement | null) => {
                 if (el) blockElsRef.current.set(b.id, el);
                 else blockElsRef.current.delete(b.id);
               };
-              const blockClass = findCurrentId === b.id ? "find-current" : "";
-              out.push(
-                animates ? (
-                  <BlurFade key={b.id} ref={setBlockEl} className={blockClass}>
-                    {inner}
-                  </BlurFade>
-                ) : (
-                  <div key={b.id} ref={setBlockEl} className={blockClass}>
-                    {inner}
-                  </div>
-                ),
+              const blockClass = `chat-block${findCurrentId === b.id ? " find-current" : ""}`;
+              const node = animates ? (
+                <BlurFade key={b.id} ref={setBlockEl} className={blockClass}>
+                  {inner}
+                </BlurFade>
+              ) : (
+                <div key={b.id} ref={setBlockEl} className={blockClass}>
+                  {inner}
+                </div>
               );
+              if (b.kind === "user") {
+                // a user message closes the assistant turn and stands alone
+                flushGroup();
+                out.push(node);
+              } else if (b.kind === "compaction") {
+                // a system event between turns — never inside an assistant frame
+                flushGroup();
+                out.push(node);
+              } else {
+                // accumulate into the current assistant frame
+                if (!group) {
+                  group = {
+                    firstId: b.id,
+                    nodes: [],
+                    steps: 0,
+                    workedMs: 0,
+                    hasResult: false,
+                    hasContent: false,
+                  };
+                }
+                group.nodes.push(node);
+                if (b.kind === "result") {
+                  group.hasResult = true;
+                  if (b.turn.durationMs != null) {
+                    group.workedMs = Math.max(group.workedMs, b.turn.durationMs);
+                  }
+                } else {
+                  // a block that renders something keeps the frame alive; an empty
+                  // assistant/thinking turn (no text) does not.
+                  const emptyText =
+                    (b.kind === "assistant" || b.kind === "thinking") && !b.turn.text.trim();
+                  if (!emptyText) group.hasContent = true;
+                  if (b.kind === "activity") {
+                    group.steps += b.tools.length;
+                    if (b.durationMs != null) group.workedMs += b.durationMs;
+                  }
+                }
+              }
             });
+            flushGroup(true);
             return out;
           })()}
           {/* turn in flight with neither streamed text nor a live activity group
@@ -4880,7 +6102,14 @@ export function ChatPane({
               (blocks[lastActivityIdx] as Extract<RenderBlock, { kind: "activity" }>)
                 .durationMs == null
             ) && (
-              <WorkingLine elapsedMs={liveStart != null ? now - liveStart : 0} />
+              <WorkingLine
+                elapsedMs={liveStart != null ? now - liveStart : 0}
+                label={
+                  lastSentRef.current?.trim().startsWith("/compact")
+                    ? "Compacting context…"
+                    : undefined
+                }
+              />
             )}
         </div>
       </div>
@@ -4951,28 +6180,90 @@ export function ChatPane({
       )}
       {/* conversation minimap — long chats get a tick rail (same bottom
           clearance convention as the jump pill); click a tick to jump */}
-      {mapTicks.length > 0 && (
-        <div className="absolute bottom-24 right-1 top-3 z-20 w-2" aria-hidden>
-          {mapTicks.map((mt) => (
-            <button
-              key={mt.id}
-              type="button"
-              tabIndex={-1}
-              onClick={() => scrollToBlock(mt.id)}
-              className={`absolute right-0 rounded-full transition-all hover:scale-y-150 ${
-                mt.err
-                  ? "h-[3px] w-2 bg-[var(--color-danger)]"
-                  : mt.kind === "user"
-                    ? "h-[3px] w-2 bg-[var(--color-accent)]/70"
-                    : mt.kind === "approval"
-                      ? "h-[3px] w-2 bg-[var(--color-warning)]/80"
-                      : mt.kind === "assistant"
-                        ? "h-[2px] w-1.5 bg-[var(--color-text-2)]/45"
-                        : "h-[2px] w-1 bg-[var(--color-border-strong)]"
-              }`}
-              style={{ top: `${mt.frac * 100}%` }}
+      {(mapTicks.length > 0 || railWin) && (
+        <div
+          ref={railRef}
+          className="group/rail absolute bottom-24 right-0 top-3 z-20 w-5 cursor-ns-resize"
+          onPointerDown={(e) => {
+            scrubbingRef.current = true;
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+            railScrubTo(e.clientY);
+          }}
+          onPointerMove={(e) => {
+            if (scrubbingRef.current) railScrubTo(e.clientY);
+            else railBubbleAt(railFrac(e.clientY));
+          }}
+          onPointerUp={(e) => {
+            scrubbingRef.current = false;
+            try {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+          }}
+          onPointerLeave={() => {
+            if (!scrubbingRef.current) setScrubBubble(null);
+          }}
+        >
+          {/* current scroll window — content-space thumb; THIS is the scrollbar
+              (native bar hidden). Markers slide inside it as you scroll. */}
+          {railWin && (
+            <div
+              // NO position transition (only `transition-colors` for the hover
+              // tint): the thumb's top/height come straight from scroll state, so an
+              // ease would make it trail the scroll — the old "follows late" lag.
+              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--aios-glow-soft)] transition-colors group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
+              style={{ top: `${railWin.top * 100}%`, height: `${Math.max(railWin.size * 100, 6)}%` }}
+            />
+          )}
+          {/* day-boundary hairlines */}
+          {dayMarks.map((dm, i) => (
+            <div
+              key={`day${i}`}
+              className="pointer-events-none absolute right-0.5 h-px w-3.5 bg-[var(--color-border)]"
+              style={{ top: `${dm.frac * 100}%` }}
             />
           ))}
+          {/* one tick per block — click to jump */}
+          {mapTicks.map((mt) => {
+            const s = markerStyle(mt.kind, mt.err);
+            return (
+              <button
+                key={mt.id}
+                type="button"
+                tabIndex={-1}
+                onClick={() => scrollToBlock(mt.id)}
+                className="absolute right-1 rounded-full transition-transform hover:scale-x-150"
+                style={{
+                  top: `${mt.frac * 100}%`,
+                  height: s.major ? 3 : 2,
+                  width: s.major ? 8 : 5,
+                  backgroundColor: s.color,
+                  opacity: s.major ? 0.75 : 0.45,
+                }}
+              />
+            );
+          })}
+          {/* hover / drag bubble: time + snippet of the nearest turn */}
+          {scrubBubble && (
+            <div
+              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--aios-shadow-pop)]"
+              style={{ top: `${scrubBubble.frac * 100}%` }}
+            >
+              {scrubBubble.at != null && (
+                <div className="font-mono text-[10px] text-[var(--color-faint)]">
+                  {fmtTickTime(scrubBubble.at)}
+                </div>
+              )}
+              <div className="max-w-[240px] truncate font-sans text-[11px] text-[var(--color-text-2)]">
+                {scrubBubble.label || "—"}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* jump-to-latest pill — appears when autoscroll is paused or viewport is off-bottom */}
@@ -4981,21 +6272,39 @@ export function ChatPane({
           type="button"
           onClick={jumpToLatest}
           title="scroll to bottom"
-          className="absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
+          className="glass-strong absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)]"
         >
           <ArrowDown size={15} />
         </button>
       )}
-      <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 px-6 pb-5 pt-3 backdrop-blur">
+      <div className="shrink-0 border-t border-[var(--color-border)]/50 bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/95 to-[var(--color-bg)]/70 px-5 pb-3.5 pt-2 backdrop-blur-md">
         <div className="chat-col mx-auto">
           {/* context readout — out of the cramped composer, model-aware window
               (opus 4.8 = 1M, sonnet/haiku = 200K, codex = 272K) */}
-          {(ctxTokens != null || tokenHistory.length >= 3) && (
-            <div className="mb-1.5 flex items-center justify-between px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]">
+          {(usage.messages > 0 || ctxTokens != null || tokenHistory.length >= 3) && (
+            <div className="mb-1.5 flex items-center justify-between gap-2 px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]">
               {/* per-turn token sparkline — the result turns already carry
                   tokens; this is the session's rhythm at a glance */}
               {tokenHistory.length >= 3 ? (
                 <TokenSparkline values={tokenHistory} />
+              ) : (
+                <span />
+              )}
+              {/* cumulative session readout — messages · tokens · age (no $). */}
+              {usage.messages > 0 ? (
+                (() => {
+                  const age = formatAge(usage.startedAt, Date.now());
+                  return (
+                    <span
+                      className="truncate text-[var(--color-muted)]"
+                      title={`${usage.messages} message${usage.messages === 1 ? "" : "s"} · ${usage.tokens.toLocaleString()} tokens processed this session${age ? ` · started ${age} ago` : ""}`}
+                    >
+                      {usage.messages} msg{usage.messages === 1 ? "" : "s"}
+                      {usage.tokens > 0 ? ` · ${formatTokens(usage.tokens)}` : ""}
+                      {age && age !== "just now" ? ` · ${age}` : ""}
+                    </span>
+                  );
+                })()
               ) : (
                 <span />
               )}
@@ -5018,13 +6327,6 @@ export function ChatPane({
               )}
             </div>
           )}
-          <UsageStrip
-            usage={usage}
-            baseline={usageBaselineRef.current[usageProvider] ?? null}
-            window={usageWindow}
-            onWindowChange={setUsageWindow}
-            engine={usageLabel}
-          />
           {isComposerCollapsed ? (
             <button
               type="button"
@@ -5046,6 +6348,13 @@ export function ChatPane({
         </div>
       </div>
     </div>
+    {previewImage && (
+      <ImagePreview
+        image={previewImage}
+        onClose={() => setPreviewImage(null)}
+        onRemove={() => { removeImage(previewImage.id); setPreviewImage(null); }}
+      />
+    )}
     {goalDraft !== null && (
       <GoalEditorOverlay
         value={goalDraft}
@@ -5060,12 +6369,6 @@ export function ChatPane({
   );
 }
 
-/**
- * The live usage strip under the composer: the active engine's 5h rate-limit
- * window as a thin bar (color-coded), the 7d window + reset as faint text, and
- * cumulative session cost. Ticks AS YOU TALK — codex pushes rate-limit updates,
- * claude re-reads usage.json after each turn (both arrive as `usage` events).
- */
 /** Tiny per-turn token trace (last ≤24 result turns): faint polyline, latest
  *  point accented. Pure render — the bounded history memo lives in the pane. */
 function TokenSparkline({ values }: { values: number[] }) {
@@ -5101,107 +6404,6 @@ function TokenSparkline({ values }: { values: number[] }) {
   );
 }
 
-function UsageStrip({
-  usage,
-  baseline,
-  window,
-  onWindowChange,
-  engine,
-}: {
-  usage: { fiveHour: { pct: number | null; resetsAt: number | null }; sevenDay: { pct: number | null; resetsAt: number | null } } | null;
-  baseline: { fiveHour: { pct: number | null; resetsAt: number | null }; sevenDay: { pct: number | null; resetsAt: number | null } } | null;
-  window: "fiveHour" | "sevenDay";
-  onWindowChange: (window: "fiveHour" | "sevenDay") => void;
-  engine: string;
-}) {
-  // a window whose reset time has PASSED rolled over — the cached used%
-  // belongs to the previous window (the "5h 78% · resets now" bug). Render
-  // the truth: 0% used, fresh window, until the next live report.
-  const rawResets = usage?.[window].resetsAt ?? null;
-  const expired = rawResets != null && rawResets * 1000 <= Date.now();
-  const rawPct = usage?.[window].pct ?? null;
-  const current = expired ? (rawPct != null ? 0 : null) : rawPct;
-  const initial = expired ? 0 : (baseline?.[window].pct ?? current);
-  // nothing yet (claude before its statusline tick / codex before its first
-  // rate-limit push) → say so quietly instead of hiding the whole strip.
-  if (current == null)
-    return (
-      <div
-        className="mb-2 flex items-center gap-2 px-1 font-mono text-[10px] text-[var(--color-faint)]"
-        title={"the 5h/7d rate-limit windows appear after the engine's first usage report\nclaude: written by the aios statusline hook (~/.aios/state/usage.json)\ncodex: pushed live by the CLI"}
-      >
-        <span className="shrink-0 lowercase tracking-wide text-[var(--color-muted)]">{engine}</span>
-        <span>5h/7d usage · waiting for the engine's first report</span>
-      </div>
-    );
-  const stack = current != null && initial != null ? usageStack(current, initial) : null;
-  const reset = expired ? "fresh window" : rawResets ? resetIn(rawResets) : "";
-  const remaining = stack ? 100 - stack.total : null;
-  const paceRisk =
-    (engine === "codex" || engine === "spark") && usage && !expired
-      ? usagePaceRisk({
-          pct: current,
-          resetsAt: rawResets,
-          windowSeconds: window === "fiveHour" ? 5 * 3600 : 7 * 24 * 3600,
-        })
-      : null;
-  return (
-    <div className="mb-2 flex items-center gap-2.5 px-1 font-mono text-[10px] tabular-nums text-[var(--color-faint)]">
-      <span className="shrink-0 lowercase tracking-wide text-[var(--color-muted)]">{engine}</span>
-      <span className="flex shrink-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel)]">
-        {(["fiveHour", "sevenDay"] as const).map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onWindowChange(id)}
-            className={`px-1.5 py-0.5 transition-colors ${
-              window === id
-                ? "bg-[var(--color-panel-2)] text-[var(--color-text-2)]"
-                : "text-[var(--color-faint)] hover:text-[var(--color-muted)]"
-            }`}
-          >
-            {id === "fiveHour" ? "5h" : "7d"}
-          </button>
-        ))}
-      </span>
-      {stack ? (
-        <>
-          <span className="flex-1">
-            <span className="flex h-1 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
-              <span
-                className="block h-full bg-[var(--color-muted)] transition-[width] duration-700"
-                style={{ width: `${stack.baseline}%` }}
-              />
-              <span
-                className="block h-full bg-[var(--color-accent)] transition-[width] duration-700"
-                style={{ width: `${stack.session}%` }}
-              />
-            </span>
-          </span>
-          <span className="shrink-0 text-[var(--color-text-2)]">
-            {engine === "codex" ? `${Math.round(remaining!)}% left` : `${Math.round(stack.total)}% total`}
-          </span>
-          <span className="shrink-0 text-[var(--color-accent)]">+{Math.round(stack.session)}% chat</span>
-          {paceRisk && (
-            <span
-              className={`shrink-0 rounded border px-1.5 py-0.5 ${
-                paceRisk.level === "danger"
-                  ? "border-[color-mix(in_srgb,var(--color-danger)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-[var(--color-danger)]"
-                  : "border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)] text-[var(--color-warning)]"
-              }`}
-              title={paceRisk.detail}
-            >
-              {paceRisk.title}
-            </span>
-          )}
-          {reset && <span className="shrink-0">{expired ? reset : `resets ${reset}`}</span>}
-        </>
-      ) : (
-        <span className="flex-1" />
-      )}
-    </div>
-  );
-}
 
 // ── sub-views ────────────────────────────────────────────────────────────────
 
@@ -5282,15 +6484,38 @@ function ActivityGroup({
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
   const open = forceOpen || (userToggled ?? live);
 
-  // dedup artifacts by path (an Edit + later Write on the same file → one card)
+  // split sub-agent (Task) children out of the flat list so each nests under its
+  // Agent row instead of dumping flat (the old "mess"). topLevel = the main
+  // agent's own calls + the Agent rows; childrenById = each agent's tool calls.
+  const { topLevel, childrenById } = useMemo(() => partitionTools(tools), [tools]);
+  // per-sub-agent summaries for the live fleet strip (the at-a-glance dashboard).
+  const fleet = useMemo(() => deriveFleet(tools), [tools]);
+
+  // dedup artifacts by path (an Edit + later Write on the same file → one card).
+  // top-level only — a sub-agent's edits show inline in its nested rows, so they
+  // don't also pile up as loose cards down here.
   const artifacts = useMemo(() => {
     const seen = new Map<string, Artifact>();
-    for (const t of tools) {
+    for (const t of topLevel) {
       const a = artifactFromTool(t);
       if (a) seen.set(a.path, a);
     }
     return [...seen.values()];
-  }, [tools]);
+  }, [topLevel]);
+
+  // a sub-agent (Task) → a nested AgentStep carrying its children (recursive, so
+  // deeper fan-outs nest too); every other tool → a leaf ActivityStep.
+  const renderNode = (t: ToolTurn): React.ReactNode =>
+    isAgentTurn(t) ? (
+      <AgentStep
+        turn={t}
+        childTools={childrenById.get(t.id) ?? []}
+        live={live}
+        renderChild={renderNode}
+      />
+    ) : (
+      <ActivityStep turn={t} live={live} />
+    );
 
   const n = tools.length;
   const label = live
@@ -5300,7 +6525,7 @@ function ActivityGroup({
       : `${n} step${n === 1 ? "" : "s"}`;
 
   return (
-    <div className="group/actg flex flex-col gap-1.5">
+    <div className="group/actg relative flex flex-col gap-1.5">
       <button
         type="button"
         onClick={() => setUserToggled(!open)}
@@ -5314,9 +6539,12 @@ function ActivityGroup({
             className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
           />
         )}
-        <span className={live ? "animate-pulse" : undefined}>{label}</span>
+        {live ? <CadencedShimmer>{label}</CadencedShimmer> : <span>{label}</span>}
         {live && phase && <RunRail phase={phase} />}
-        {!live && n > 0 && (
+        {/* step count only complements a "Worked for Xs" label — when there's no
+            duration the label IS the step count, so don't print it twice
+            (the "2 steps · 2 steps" dup). */}
+        {!live && durationMs != null && n > 0 && (
           <span className="text-[var(--color-faint)]">
             · {n} step{n === 1 ? "" : "s"}
           </span>
@@ -5324,12 +6552,16 @@ function ActivityGroup({
         {/* replay (run cinema) — sibling-positioned via the absolute span so
             it never nests a button inside this button; reveals on hover. */}
       </button>
+      {/* replay (run cinema) — absolutely positioned at the group's top-right so
+          it never reserves vertical space in flow (the invisible-but-present
+          block used to wedge a ~20px gap under every collapsed group). Reveals
+          on hover / keyboard focus. */}
       {!live && onReplay && (
         <button
           type="button"
           onClick={onReplay}
           title="replay this run (run cinema)"
-          className="-mt-1.5 ml-5 grid h-5 w-fit items-center gap-1 rounded px-1 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
+          className="absolute right-1 top-0.5 flex h-5 w-fit items-center gap-1 rounded px-1.5 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
         >
           ▶ replay
         </button>
@@ -5337,8 +6569,11 @@ function ActivityGroup({
 
       {open && n > 0 && (
         <div className="ml-[6px] flex flex-col gap-0.5 border-l border-[var(--color-border)] pl-3">
-          {tools.map((t) => (
-            <ActivityStep key={t.id} turn={t} live={live} />
+          {/* live fleet glance while a fan-out is in flight; the nested Agent rows
+              below are the permanent record. */}
+          {live && fleet.length > 0 && <FleetView agents={fleet} />}
+          {topLevel.map((t) => (
+            <div key={t.id}>{renderNode(t)}</div>
           ))}
         </div>
       )}
@@ -5463,7 +6698,13 @@ function toolDetail(turn: ToolTurn): React.ReactNode {
   const str = (k: string) =>
     typeof inp[k] === "string" ? (inp[k] as string) : undefined;
 
-  if (name === "bash" || name === "bashoutput" || name === "exec_command" || name === "write_stdin") {
+  if (
+    name === "bash" ||
+    name === "powershell" ||
+    name === "bashoutput" ||
+    name === "exec_command" ||
+    name === "write_stdin"
+  ) {
     const cmd = str("command") ?? str("cmd") ?? str("chars");
     if (!cmd) return null;
     return (
@@ -5576,7 +6817,7 @@ function CompactionCard({
       </button>
       <div className="disclose" data-open={expanded}>
         <div>
-          <div className="mt-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[11.5px] leading-relaxed text-[var(--color-text-2)]">
+          <div className="glass mt-2 rounded-lg px-3 py-2.5 text-[11.5px] leading-relaxed text-[var(--color-text-2)]">
             <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px] text-[var(--color-muted)]">
               {turn.trigger && <span>trigger: {turn.trigger}</span>}
               {pre != null && <span>before: {pre.toLocaleString()}</span>}
@@ -5603,58 +6844,88 @@ function CompactionCard({
 /** A red/green diff for an Edit's old → new strings. Long sides cap to a preview
  *  with a "+N more lines" tail (opcode/claude-code-webui pattern) so a big edit
  *  doesn't flood the transcript; click the tail to reveal the rest. */
-const DIFF_CAP = 14;
-function DiffBlock({ oldText, newText }: { oldText: string; newText: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-  const collapsible = oldLines.length + newLines.length > DIFF_CAP * 2;
-  const oldHead = collapsible ? oldLines.slice(0, DIFF_CAP) : oldLines;
-  const oldTail = collapsible ? oldLines.slice(DIFF_CAP) : [];
-  const newHead = collapsible ? newLines.slice(0, DIFF_CAP) : newLines;
-  const newTail = collapsible ? newLines.slice(DIFF_CAP) : [];
-  const hidden = oldTail.length + newTail.length;
+const DIFF_PREVIEW = 6;
+/** A real interleaved line diff (context + removed + added) for an Edit's
+ *  old → new strings, with a +adds/-dels stat (P4). Replaces the old all-red-then-
+ *  all-green dump. Long diffs cap to a preview with a "show more" tail. */
+function DiffBlock({
+  oldText,
+  newText,
+  embedded = false,
+}: {
+  oldText: string;
+  newText: string;
+  /** Inside a ChangeCard the card owns the frame + stat, so drop our own. */
+  embedded?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const diff = useMemo(() => refineDiff(lineDiff(oldText, newText)), [oldText, newText]);
+  const { adds, dels } = diffStat(diff);
+  const collapsible = diff.length > DIFF_PREVIEW;
+  const head = collapsible ? diff.slice(0, DIFF_PREVIEW) : diff;
+  const tail = collapsible ? diff.slice(DIFF_PREVIEW) : [];
 
-  const row = (l: string, key: string, kind: "old" | "new") => (
-    <div
-      key={key}
-      className={
-        kind === "old"
-          ? "whitespace-pre-wrap break-words bg-[var(--color-danger)]/10 px-2.5 text-[var(--color-danger)]"
-          : "whitespace-pre-wrap break-words bg-[var(--color-success)]/10 px-2.5 text-[var(--color-success)]"
-      }
-    >
-      <span className="select-none opacity-60">{kind === "old" ? "- " : "+ "}</span>
-      {l}
-    </div>
-  );
+  const row = (l: DiffLine, key: string) => {
+    const isDel = l.kind === "del";
+    const isAdd = l.kind === "add";
+    const lineBg = isDel
+      ? "bg-[var(--color-danger)]/10"
+      : isAdd
+        ? "bg-[var(--color-success)]/10"
+        : "";
+    const lineText = isDel
+      ? "text-[var(--color-danger)]"
+      : isAdd
+        ? "text-[var(--color-success)]"
+        : "text-[var(--color-text-2)]";
+    const segBg = isDel ? "bg-[var(--color-danger)]/30" : "bg-[var(--color-success)]/30";
+    const sign = isDel ? "-" : isAdd ? "+" : " ";
+    return (
+      <div key={key} className={`whitespace-pre-wrap break-words px-2.5 ${lineBg} ${lineText}`}>
+        <span className="select-none opacity-50">{sign} </span>
+        {l.segments
+          ? l.segments.map((s, si) =>
+              s.changed ? (
+                <span key={si} className={`rounded-[2px] ${segBg}`}>
+                  {s.text}
+                </span>
+              ) : (
+                <span key={si}>{s.text}</span>
+              ),
+            )
+          : l.text || " "}
+      </div>
+    );
+  };
 
-  return (
-    <pre className="overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] font-mono text-[11px] leading-relaxed">
-      {oldHead.map((l, i) => row(l, `o${i}`, "old"))}
-      {oldTail.length > 0 && (
-        // .disclose: the hidden tail GROWS open (grid-rows 0fr→1fr) instead of
-        // the old instant content swap that jumped the layout.
-        <div className="disclose" data-open={expanded}>
-          <div>{oldTail.map((l, i) => row(l, `ot${i}`, "old"))}</div>
+  const rows = (
+    <pre className="overflow-x-auto font-mono text-[11px] leading-relaxed">
+      {head.map((l, i) => row(l, `h${i}`))}
+      {tail.length > 0 && (
+        <div className="disclose" data-open={open}>
+          <div>{tail.map((l, i) => row(l, `t${i}`))}</div>
         </div>
       )}
-      {newHead.map((l, i) => row(l, `n${i}`, "new"))}
-      {newTail.length > 0 && (
-        <div className="disclose" data-open={expanded}>
-          <div>{newTail.map((l, i) => row(l, `nt${i}`, "new"))}</div>
-        </div>
-      )}
-      {hidden > 0 && (
+      {collapsible && (
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="block w-full px-2.5 py-0.5 text-left italic text-[var(--color-faint)] hover:text-[var(--color-muted)]"
+          onClick={() => setOpen((v) => !v)}
+          className="block w-full px-2.5 py-1 text-left text-[10.5px] italic text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
         >
-          {expanded ? "show less" : `… +${hidden} more line${hidden === 1 ? "" : "s"}`}
+          {open ? "collapse" : `expand · +${tail.length} more line${tail.length === 1 ? "" : "s"}`}
         </button>
       )}
     </pre>
+  );
+  if (embedded) return rows;
+  return (
+    <div className="overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1 font-mono text-[10.5px]">
+        <span className="text-[var(--color-success)]">+{adds}</span>
+        <span className="text-[var(--color-danger)]">-{dels}</span>
+      </div>
+      {rows}
+    </div>
   );
 }
 
@@ -5761,7 +7032,7 @@ function FileCard({ artifact }: { artifact: Artifact }) {
   return (
     <div
       title={err ? `${err} — ${artifact.path}` : `open ${artifact.path}`}
-      className={`group/file flex max-w-full items-center gap-2.5 rounded-lg border bg-[var(--color-panel-2)] px-3 py-2 text-left transition-colors ${
+      className={`group/file flex max-w-full items-center gap-2.5 rounded-lg border bg-[var(--color-panel-2)]/55 px-3 py-2 text-left backdrop-blur-md transition-colors ${
         err
           ? "border-[var(--color-danger)]/50"
           : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
@@ -5795,6 +7066,168 @@ function FileCard({ artifact }: { artifact: Artifact }) {
   );
 }
 
+/** Prominent, always-visible card for a file the AI edited or created (P4). Lives
+ *  in the transcript flow (not the collapsed activity group), so the change + its
+ *  diff are visible without a click; the header opens the file in a pane. Replaces
+ *  the old buried "Edited X ›" row + the separate "open" artifact card (the dup). */
+function ChangeCard({ turn }: { turn: ToolTurn }) {
+  const openInPane = useChatFileOpener();
+  const [err, setErr] = useState<string | null>(null);
+  const name0 = turn.name.toLowerCase();
+  const inp = turn.input ?? {};
+  const path =
+    (typeof inp.file_path === "string" && inp.file_path) ||
+    (typeof inp.path === "string" && inp.path) ||
+    (typeof inp.notebook_path === "string" && inp.notebook_path) ||
+    "";
+  const name = path ? baseName(path) : turn.name;
+  const verb = name0 === "write" ? "created" : "edited";
+  const { adds, dels } = editStat(turn);
+
+  const edits =
+    name0 === "multiedit" && Array.isArray(inp.edits)
+      ? (inp.edits as Array<Record<string, unknown>>).map((e) => ({
+          oldS: typeof e.old_string === "string" ? e.old_string : "",
+          newS: typeof e.new_string === "string" ? e.new_string : "",
+        }))
+      : name0 === "write"
+        ? []
+        : [
+            {
+              oldS: typeof inp.old_string === "string" ? inp.old_string : "",
+              newS: typeof inp.new_string === "string" ? inp.new_string : "",
+            },
+          ];
+  const writeContent =
+    name0 === "write" && typeof inp.content === "string" ? inp.content : "";
+  const writeLines = writeContent ? writeContent.split("\n") : [];
+
+  const open = () => {
+    if (!path) return;
+    setErr(null);
+    if (path.startsWith("/") || path.startsWith("~/")) {
+      if (openFileInPane(path, name)) return;
+      openPath(path).catch((e) => setErr(String(e)));
+      return;
+    }
+    openInPane(path);
+  };
+
+  return (
+    <div className="aios-spotlight glass overflow-hidden rounded-xl" onMouseMove={spotlightMove}>
+      <button
+        type="button"
+        onClick={open}
+        title={err ? `${err} — ${path}` : path ? `open ${path}` : undefined}
+        className="group/chg flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--color-panel-2)]/50"
+      >
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+          <FileCode size={13} />
+        </span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="truncate font-mono text-[12px] text-[var(--color-text)]">{name}</span>
+          <span className="shrink-0 font-sans text-[10.5px] text-[var(--color-faint)]">
+            {err ? "couldn’t open" : verb}
+          </span>
+        </span>
+        <span className="shrink-0 font-mono text-[10.5px]">
+          {adds > 0 && <span className="text-[var(--color-success)]">+{adds}</span>}
+          {adds > 0 && dels > 0 && <span className="px-1 text-[var(--color-faint)]">·</span>}
+          {dels > 0 && <span className="text-[var(--color-danger)]">-{dels}</span>}
+        </span>
+        <span className="shrink-0 font-sans text-[10.5px] text-[var(--color-faint)] opacity-0 transition-opacity group-hover/chg:opacity-100">
+          open ›
+        </span>
+      </button>
+      <div className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+        {writeContent ? (
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
+            {writeLines.slice(0, 40).join("\n")}
+            {writeLines.length > 40 && (
+              <span className="text-[var(--color-faint)]">{`\n… +${writeLines.length - 40} more lines`}</span>
+            )}
+          </pre>
+        ) : (
+          edits
+            .filter((e) => e.oldS || e.newS)
+            .map((e, i) => (
+              <div key={i} className={i > 0 ? "border-t border-[var(--color-border)]" : ""}>
+                <DiffBlock oldText={e.oldS} newText={e.newS} embedded />
+              </div>
+            ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** P4d — a roll-up of every file the AI edited/created this chat. Collapsed to a
+ *  one-line chip; expands to the file list, each row opening the file in a pane. */
+function ChangedFilesBar({
+  files,
+}: {
+  files: Array<{ path: string; name: string; edits: number; adds: number; dels: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const openInPane = useChatFileOpener();
+  const totalAdds = files.reduce((s, f) => s + f.adds, 0);
+  const totalDels = files.reduce((s, f) => s + f.dels, 0);
+  const openFile = (path: string, name: string) => {
+    if (path.startsWith("/") || path.startsWith("~/")) {
+      if (openFileInPane(path, name)) return;
+      openPath(path).catch(() => {});
+      return;
+    }
+    openInPane(path);
+  };
+  return (
+    <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left font-sans text-[12px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel-2)]"
+      >
+        <FileCode size={13} className="shrink-0 text-[var(--color-accent)]" />
+        <span className="font-medium">
+          {files.length} file{files.length === 1 ? "" : "s"} changed
+        </span>
+        <span className="ml-auto shrink-0 font-mono text-[10.5px]">
+          {totalAdds > 0 && <span className="text-[var(--color-success)]">+{totalAdds}</span>}
+          {totalAdds > 0 && totalDels > 0 && <span className="px-1 text-[var(--color-faint)]">·</span>}
+          {totalDels > 0 && <span className="text-[var(--color-danger)]">-{totalDels}</span>}
+        </span>
+        <ChevronRight
+          size={13}
+          className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      <div className="disclose" data-open={open}>
+        <div className="border-t border-[var(--color-border)]">
+          {files.map((f) => (
+            <button
+              key={f.path}
+              type="button"
+              onClick={() => openFile(f.path, f.name)}
+              title={`open ${f.path}`}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--color-panel-2)]"
+            >
+              <span className="truncate font-mono text-[11.5px] text-[var(--color-text)]">{f.name}</span>
+              {f.edits > 1 && (
+                <span className="shrink-0 font-sans text-[10px] text-[var(--color-faint)]">×{f.edits}</span>
+              )}
+              <span className="ml-auto shrink-0 font-mono text-[10.5px]">
+                {f.adds > 0 && <span className="text-[var(--color-success)]">+{f.adds}</span>}
+                {f.adds > 0 && f.dels > 0 && <span className="px-1 text-[var(--color-faint)]">·</span>}
+                {f.dels > 0 && <span className="text-[var(--color-danger)]">-{f.dels}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ArtifactActionButton({
   label,
   icon,
@@ -5820,11 +7253,11 @@ function ArtifactActionButton({
 }
 
 /** The bare live working line when a turn is in flight before any tool runs. */
-function WorkingLine({ elapsedMs }: { elapsedMs: number }) {
+function WorkingLine({ elapsedMs, label }: { elapsedMs: number; label?: string }) {
   return (
     <div className="flex items-center gap-1.5 font-sans text-[12.5px] text-[var(--color-muted)]">
       <Loader2 size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
-      <span className="animate-pulse">Working… {fmtClock(elapsedMs)}</span>
+      <span className="animate-pulse">{label ?? "Working…"} {fmtClock(elapsedMs)}</span>
     </div>
   );
 }
@@ -5840,7 +7273,7 @@ function ResultFooter({
   // a failure must NOT read like a benign "1.2s · 340 tok" footer.
   if (turn.ok === false) {
     return (
-      <div className="flex items-start gap-2 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/[0.06] px-3.5 py-2.5">
+      <div className="flex items-start gap-2 rounded-xl border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/[0.07] px-3.5 py-2.5 backdrop-blur-md shadow-[0_0_26px_-14px_var(--color-danger)]">
         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--color-danger)]" />
         <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-sans text-[12.5px] leading-relaxed text-[var(--color-text-2)]">
           {turn.text || "something went wrong."}
@@ -5885,12 +7318,94 @@ function turnClock(at: number): string {
  *  sessions span days; "yesterday" deserves a seam). */
 function DaySeparator({ at }: { at: number }) {
   return (
-    <div role="separator" aria-label={dayLabel(at)} className="flex items-center gap-3 py-0.5">
+    <div
+      role="separator"
+      aria-label={dayLabel(at)}
+      className="sticky top-0 z-10 -mx-1 flex items-center gap-3 bg-[var(--color-bg)]/80 px-1 py-1 backdrop-blur-sm"
+    >
       <span className="h-px flex-1 bg-[var(--color-border)]" />
       <span className="font-mono text-[10px] lowercase tracking-wide text-[var(--color-faint)]">
         {dayLabel(at)}
       </span>
       <span className="h-px flex-1 bg-[var(--color-border)]" />
+    </div>
+  );
+}
+
+/** 02 Framed Turns — one assistant response = one glass card. The render loop
+ *  groups the run of non-user blocks (thinking · activity · change · prose ·
+ *  result) following a user message into a single frame; this draws the card
+ *  chrome + the mono header strip (status dot · AIOS·model · worked/steps).
+ *  Non-positioned on purpose: the minimap reads child `offsetTop`, so a
+ *  positioned wrapper would shift every marker. */
+function TurnFrame({
+  modelLabel,
+  steps,
+  workedMs,
+  live,
+  variantNav,
+  children,
+}: {
+  modelLabel: string;
+  steps: number;
+  workedMs: number;
+  live: boolean;
+  variantNav?: { index: number; count: number; onPrev: () => void; onNext: () => void };
+  children: React.ReactNode;
+}) {
+  const stepLbl = steps > 0 ? `${steps} step${steps === 1 ? "" : "s"}` : "";
+  const meta = live
+    ? ""
+    : workedMs > 0
+      ? `worked ${fmtDuration(workedMs)}${stepLbl ? ` · ${stepLbl}` : ""}`
+      : stepLbl;
+  return (
+    <div className="aios-turn overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)]/70 px-3.5 py-2 font-mono text-[10.5px]">
+        <span
+          className="h-[7px] w-[7px] shrink-0 rounded-full"
+          style={
+            live
+              ? { background: "var(--color-accent)", boxShadow: "var(--aios-glow-soft)" }
+              : { background: "var(--color-success)", boxShadow: "0 0 7px var(--color-success-glow)" }
+          }
+        />
+        <span className="tracking-[0.06em] text-[var(--color-text-2)]">
+          AIOS · <span className="uppercase">{modelLabel}</span>
+        </span>
+        {variantNav && variantNav.count > 1 && (
+          <span
+            className="flex items-center gap-0.5 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_60%,transparent)] px-1 py-px"
+            title={`alternate answer ${variantNav.index + 1} of ${variantNav.count} to this message — regenerate re-rolls the SAME prompt (not a separate, continuable branch; that lands with BYO-key)`}
+          >
+            <button
+              type="button"
+              onClick={variantNav.onPrev}
+              disabled={variantNav.index <= 0}
+              title="previous response"
+              className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronRight size={11} className="rotate-180" />
+            </button>
+            <span className="px-0.5 tabular-nums text-[var(--color-text-2)]">
+              {variantNav.index + 1}/{variantNav.count}
+            </span>
+            <button
+              type="button"
+              onClick={variantNav.onNext}
+              disabled={variantNav.index >= variantNav.count - 1}
+              title="next response"
+              className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronRight size={11} />
+            </button>
+          </span>
+        )}
+        <span className="ml-auto text-[var(--color-faint)]">
+          {live ? <CadencedShimmer>streaming</CadencedShimmer> : meta}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 p-3.5">{children}</div>
     </div>
   );
 }
@@ -5901,7 +7416,11 @@ function UserBubble({
   streaming,
   isLast,
   onRegenerate,
+  onRetryModel,
+  retryModels,
+  currentModelId,
   onEdit,
+  variantNav,
 }: {
   turn: Extract<Turn, { kind: "user" }>;
   /** wall-clock of the turn (send time / transcript time); null = unknown. */
@@ -5909,8 +7428,78 @@ function UserBubble({
   streaming: boolean;
   isLast: boolean;
   onRegenerate: () => void;
-  onEdit: (text: string) => void;
+  /** retry this turn on a different model (restart-resume-regenerate). */
+  onRetryModel?: (m: ChatModel) => void;
+  /** the models offered in the retry menu (CLI available + API) — parent-supplied
+   *  so it includes the BYO-key models, not just the static CLI catalog. */
+  retryModels?: ChatModel[];
+  /** the model currently driving the session (marked in the retry menu). */
+  currentModelId?: string;
+  onEdit: (id: string, text: string) => void;
+  /** edit-fork branch switcher (API tier): this prompt has alternate edits. */
+  variantNav?: { index: number; count: number; onPrev: () => void; onNext: () => void };
 }) {
+  // The retry menu is rendered in a PORTAL at fixed coords anchored to its button
+  // — an in-flow dropdown gets clipped by the scrolling transcript (the reported
+  // "can't see the models"). `retryPos` holds the resolved screen position.
+  const retryBtnRef = useRef<HTMLButtonElement>(null);
+  const [retryPos, setRetryPos] = useState<{
+    right: number;
+    top?: number;
+    bottom?: number;
+    maxH: number;
+  } | null>(null);
+  const models = retryModels ?? [];
+  const openRetryMenu = () => {
+    const r = retryBtnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const right = Math.round(window.innerWidth - r.right);
+    const spaceAbove = r.top;
+    const spaceBelow = window.innerHeight - r.bottom;
+    // open upward when there's more room above (the common case — bubbles sit low),
+    // else downward; cap the height to the available space so it never clips.
+    setRetryPos(
+      spaceAbove >= spaceBelow
+        ? { right, bottom: Math.round(window.innerHeight - r.top + 4), maxH: Math.min(320, spaceAbove - 12) }
+        : { right, top: Math.round(r.bottom + 4), maxH: Math.min(320, spaceBelow - 12) },
+    );
+    setRetryOpen(true);
+  };
+  const [retryOpen, setRetryOpen] = useState(false);
+  // close the retry menu on any outside click, or Escape — ONLY Escape: closing
+  // on every keystroke dismissed the list before it could even be read.
+  useEffect(() => {
+    if (!retryOpen) return;
+    const close = () => setRetryOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [retryOpen]);
+  // attachments that rode this turn: a clicked image opens a read-only lightbox;
+  // a clicked snippet chip expands its full quoted text inline.
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [openSnip, setOpenSnip] = useState<string | null>(null);
+  const images = turn.images ?? [];
+  const snippets = turn.snippets ?? [];
+  // image-only sends carry a "[N images]" placeholder as their wire text (so the
+  // model's prompt is unchanged) — hide it here since the thumbnails say it better.
+  const isImgPlaceholder = images.length > 0 && /^\[\d+ images?\]$/.test(turn.text);
+  const showText = turn.text.length > 0 && !isImgPlaceholder;
+  const hasBody = showText || images.length > 0 || snippets.length > 0;
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
   return (
     <div className="group flex flex-col items-end gap-1">
       {turn.steered && (
@@ -5918,21 +7507,130 @@ function UserBubble({
           <Waypoints size={10} /> steered into the running turn
         </span>
       )}
-      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--color-accent-soft)] px-4 py-2.5 font-sans text-[14px] leading-relaxed text-[var(--color-text)]">
-        {turn.text}
-      </div>
-      <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-        {at != null && (
-          <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]" title={new Date(at).toLocaleString()}>
-            {turnClock(at)}
-          </span>
+      {/* 02 framed turn — your message is a compact accent-glass card with a
+          mono YOU·time strip (matches the AIOS frame's header language). */}
+      <div className="w-fit max-w-[82%] overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent-soft)_82%,transparent)] shadow-[var(--aios-glow-soft)] backdrop-blur-md">
+        <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-3.5 py-1.5 font-mono text-[10.5px]">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+          <span className="tracking-[0.05em] text-[var(--color-text-2)]">YOU</span>
+          {variantNav && variantNav.count > 1 && (
+            <span
+              className="flex items-center gap-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_50%,transparent)] px-1 py-px"
+              title={`prompt ${variantNav.index + 1} of ${variantNav.count} — edited versions of this message (each its own branch)`}
+            >
+              <button
+                type="button"
+                onClick={variantNav.onPrev}
+                disabled={variantNav.index <= 0}
+                title="previous prompt"
+                className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronRight size={11} className="rotate-180" />
+              </button>
+              <span className="px-0.5 tabular-nums text-[var(--color-text-2)]">
+                {variantNav.index + 1}/{variantNav.count}
+              </span>
+              <button
+                type="button"
+                onClick={variantNav.onNext}
+                disabled={variantNav.index >= variantNav.count - 1}
+                title="next prompt"
+                className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronRight size={11} />
+              </button>
+            </span>
+          )}
+          {at != null && (
+            <span
+              className="ml-auto text-[var(--color-faint)]"
+              title={new Date(at).toLocaleString()}
+            >
+              {turnClock(at)}
+            </span>
+          )}
+        </div>
+        {showText && (
+          <div className="whitespace-pre-wrap break-words px-3.5 py-2.5 font-sans text-[13.5px] leading-relaxed text-[var(--color-text)]">
+            {turn.text}
+          </div>
         )}
+        {(images.length > 0 || snippets.length > 0) && (
+          <div
+            className={`flex flex-col gap-2 px-3.5 pb-3 ${showText ? "border-t border-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] pt-2.5" : "pt-3"}`}
+          >
+            {images.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {images.map((path, i) => (
+                  <button
+                    key={`${path}:${i}`}
+                    type="button"
+                    onClick={() => setLightbox(fileSrc(path))}
+                    title="click to view"
+                    className="press group/img relative h-16 w-16 cursor-zoom-in overflow-hidden rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_50%,transparent)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={fileSrc(path)} alt="attachment" className="h-full w-full object-cover" />
+                    <span className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]/0 opacity-0 transition-opacity group-hover/img:bg-[var(--color-bg)]/30 group-hover/img:opacity-100">
+                      <ImageIcon size={15} className="text-[var(--color-text)] drop-shadow" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {snippets.map((s) => {
+              const open = openSnip === s.id;
+              return (
+                <div key={s.id} className="overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)]">
+                  <button
+                    type="button"
+                    onClick={() => setOpenSnip(open ? null : s.id)}
+                    className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left font-sans text-[11.5px] text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text)]"
+                    title={open ? "collapse" : "expand quoted snippet"}
+                  >
+                    <Quote size={12} className="shrink-0 text-[var(--color-accent)]" />
+                    <span className={open ? "flex-1" : "flex-1 truncate"}>{open ? "quoted snippet" : s.text.replace(/\s+/g, " ").slice(0, 60)}</span>
+                    <ChevronDown size={12} className={`shrink-0 text-[var(--color-muted)] transition-transform ${open ? "rotate-180" : ""}`} />
+                  </button>
+                  {open && (
+                    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
+                      {s.text}
+                    </pre>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!hasBody && (
+          <div className="px-3.5 py-2.5 font-sans text-[12px] italic text-[var(--color-faint)]">(empty message)</div>
+        )}
+      </div>
+      {lightbox &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setLightbox(null)}
+            className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-8 backdrop-blur-md"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox}
+              alt="attachment"
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[82vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
+            />
+          </div>,
+          document.body,
+        )}
+      <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <CopyButton text={turn.text} title="copy message" />
         <button
           type="button"
           title="edit & resend"
           disabled={streaming}
-          onClick={() => onEdit(turn.text)}
+          onClick={() => onEdit(turn.id, turn.text)}
           className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Pencil size={13} />
@@ -5948,6 +7646,66 @@ function UserBubble({
           >
             <RefreshCw size={13} />
           </button>
+        )}
+        {/* retry the last turn on a different model (restart-resume-regenerate);
+            opens upward — the last turn sits near the scroll bottom. */}
+        {isLast && onRetryModel && (
+          <>
+            <button
+              ref={retryBtnRef}
+              type="button"
+              title="retry with another model"
+              disabled={streaming}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (retryOpen) setRetryOpen(false);
+                else openRetryMenu();
+              }}
+              className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronDown size={13} />
+            </button>
+            {retryOpen &&
+              retryPos &&
+              createPortal(
+                <div
+                  className="fixed z-[200] w-52 overflow-auto rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] p-1 shadow-xl shadow-black/40 backdrop-blur"
+                  style={{
+                    right: retryPos.right,
+                    top: retryPos.top,
+                    bottom: retryPos.bottom,
+                    maxHeight: retryPos.maxH,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-2 pb-1 pt-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+                    retry with
+                  </div>
+                  {models.length === 0 && (
+                    <div className="px-2 py-1 text-[11px] text-[var(--color-faint)]">
+                      no other models available
+                    </div>
+                  )}
+                  {models.map((m) => (
+                    <button
+                      key={`${m.engine ?? "claude"}:${m.id}`}
+                      type="button"
+                      onClick={() => {
+                        setRetryOpen(false);
+                        onRetryModel(m);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-[12px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                    >
+                      <span className="truncate">{m.label}</span>
+                      {m.id === currentModelId && (
+                        <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">current</span>
+                      )}
+                    </button>
+                  ))}
+                </div>,
+                document.body,
+              )}
+          </>
         )}
       </div>
     </div>
@@ -5987,8 +7745,16 @@ function ThinkingBlock({
       <button
         type="button"
         onClick={() => setUserToggled(!open)}
-        className="-mx-1 flex w-fit items-center gap-1 rounded-md px-1 py-0.5 text-left font-sans text-[12.5px] leading-[1.5] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
+        className="-mx-1 flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-sans text-[12.5px] leading-[1.5] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
       >
+        {turn.streaming ? (
+          <Brain size={12} className="shrink-0 animate-pulse text-[var(--color-accent)]" />
+        ) : (
+          <ChevronRight
+            size={12}
+            className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
+          />
+        )}
         {turn.streaming ? (
           <CadencedShimmer>thinking</CadencedShimmer>
         ) : (
@@ -5996,12 +7762,6 @@ function ThinkingBlock({
             {turn.durationMs != null ? `thought for ${fmtDuration(turn.durationMs)}` : "thought"}
           </span>
         )}
-        {!turn.streaming ? (
-          <ChevronRight
-            size={12}
-            className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
-          />
-        ) : null}
       </button>
       {open && (
         <div className="ml-[6px] whitespace-pre-wrap break-words border-l border-[var(--color-border)] pl-3 font-sans text-[12.5px] italic leading-relaxed text-[var(--color-muted)]">
@@ -6241,7 +8001,7 @@ function CwdPicker({
           type="button"
           disabled={!path || path === cwd}
           onClick={() => path && onPick(path)}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] enabled:shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
         >
           <Check size={13} />
           {path === cwd ? "current folder" : "use this folder"}
@@ -6262,13 +8022,17 @@ function CwdPicker({
 function AskQuestionCard({
   turn,
   answered,
+  cancelled,
   disabled,
   onAnswer,
 }: {
   turn: ToolTurn;
   /** Formatted answer once submitted (collapses the card); undefined = open. */
   answered?: string;
-  /** True while a turn is streaming — block re-submits until the model is idle. */
+  /** True once the user stopped the turn before answering → cancelled verdict. */
+  cancelled?: boolean;
+  /** Reserved: block interaction (unused now — the card stays answerable while the
+   *  model waits, since answering is what unblocks it). */
   disabled?: boolean;
   onAnswer: (toolId: string, questions: AskQuestion[], picks: string[][]) => void;
 }) {
@@ -6291,6 +8055,16 @@ function AskQuestionCard({
         <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-[var(--color-text-2)]">
           {answered}
         </pre>
+      </div>
+    );
+  }
+
+  // stopped before answering → a quiet cancelled verdict.
+  if (cancelled) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-faint)]">
+        <X size={13} />
+        <span>question cancelled — stopped before answering</span>
       </div>
     );
   }
@@ -6459,6 +8233,149 @@ function AskQuestionCard({
 }
 
 /**
+ * Interactive plan-approval card for an `ExitPlanMode` tool call. In headless
+ * stream-json mode claude can't show its native plan picker (no TTY → the tool
+ * auto-dismisses and the model stalls), so we render the proposed plan ourselves
+ * with approve / keep-planning actions and feed the verdict back as the next user
+ * turn (see resolvePlan). Once decided the card collapses to a one-line verdict.
+ */
+function PlanProposalCard({
+  turn,
+  resolved,
+  cancelled,
+  onResolve,
+}: {
+  turn: ToolTurn;
+  /** Verdict once decided (collapses the card); undefined = still open. */
+  resolved?: "approved" | "rejected";
+  /** True once the user stopped the turn before deciding → cancelled verdict. */
+  cancelled?: boolean;
+  onResolve: (toolId: string, decision: "approve" | "reject", feedback?: string) => void;
+}) {
+  const proposal = useMemo(() => parsePlanProposal(turn.input), [turn.input]);
+  const [showNote, setShowNote] = useState(false);
+  const [note, setNote] = useState("");
+
+  if (!proposal) return null;
+
+  // already decided → collapsed verdict (mirrors AskQuestionCard's resolved state).
+  if (resolved) {
+    const ok = resolved === "approved";
+    return (
+      <div
+        className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 font-sans text-[12px] ${
+          ok
+            ? "border-[var(--color-success)]/30 text-[var(--color-success)]"
+            : "border-[var(--color-border)] text-[var(--color-muted)]"
+        }`}
+      >
+        {ok ? <CheckCheck size={13} /> : <ListChecks size={13} />}
+        <span className="font-medium">
+          {ok ? "plan approved — building" : "kept planning — asked for a revision"}
+        </span>
+      </div>
+    );
+  }
+
+  // stopped before deciding → a quiet cancelled verdict.
+  if (cancelled) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-faint)]">
+        <X size={13} />
+        <span>plan dismissed — stopped before deciding</span>
+      </div>
+    );
+  }
+
+  const fileName = proposal.planFilePath
+    ? proposal.planFilePath.split(/[\\/]/).filter(Boolean).pop()
+    : undefined;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]">
+      <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
+          <ListChecks size={14} />
+        </span>
+        <span className="font-sans text-[12.5px] font-medium text-[var(--color-text)]">
+          ready to build — review the plan
+        </span>
+      </div>
+
+      {/* the proposed plan, rendered as markdown (same renderer as assistant prose),
+          capped to a scroll box so a long plan doesn't flood the transcript. */}
+      <div className="mx-3.5 mb-2 mt-1 max-h-[22rem] overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 px-3 py-2.5 text-[12.5px] leading-relaxed text-[var(--color-text-2)]">
+        <Markdown text={proposal.plan} />
+      </div>
+
+      {proposal.allowedPrompts.length > 0 && (
+        <div className="mx-3.5 mb-2 flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-faint)]">
+            will run once you approve
+          </span>
+          {proposal.allowedPrompts.map((p, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-2 font-sans text-[11.5px] text-[var(--color-muted)]"
+            >
+              <span className="mt-0.5 shrink-0 rounded bg-[var(--color-bg)]/40 px-1.5 font-mono text-[9.5px] text-[var(--color-faint)]">
+                {p.tool ?? "tool"}
+              </span>
+              <span className="min-w-0">{p.prompt ?? ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showNote && (
+        <div className="mx-3.5 mb-2">
+          <textarea
+            autoFocus
+            value={note}
+            placeholder="optional notes for the model before it starts (or what to change)…"
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            className="block w-full resize-none rounded-lg border border-[var(--color-accent)]/50 bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-sans text-[12px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+          />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 px-3.5 pb-3 pt-1">
+        <button
+          type="button"
+          onClick={() => onResolve(turn.id, "approve", note)}
+          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)]"
+        >
+          <Check size={13} /> approve &amp; build
+        </button>
+        <button
+          type="button"
+          onClick={() => onResolve(turn.id, "reject", note)}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-panel)]"
+        >
+          <ListChecks size={13} /> keep planning
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowNote((v) => !v)}
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-sans text-[12px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+        >
+          {showNote ? "hide notes" : "add notes…"}
+        </button>
+        {fileName && (
+          <span
+            className="ml-auto inline-flex items-center gap-1 font-mono text-[10px] text-[var(--color-faint)]"
+            title={proposal.planFilePath}
+          >
+            <FileText size={11} /> {fileName}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Inline tool-approval card for a `can_use_tool` control request (non-bypass
  * modes). Allow once / Allow always / Deny → replied via the control protocol
  * (buildApprovalLine in chat.ts owns the exact shape). Once resolved the card
@@ -6481,7 +8398,7 @@ function ApprovalCard({
     const denied = turn.decision === "deny";
     return (
       <div
-        className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-sans text-[12px] ${
+        className={`flex items-center gap-2 rounded-xl border bg-[var(--color-panel-2)]/40 px-3.5 py-2 font-sans text-[12px] backdrop-blur-md ${
           denied
             ? "border-[var(--color-danger)]/30 text-[var(--color-danger)]"
             : "border-[var(--color-success)]/30 text-[var(--color-success)]"
@@ -6522,7 +8439,7 @@ function ApprovalCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--aios-glow-soft)]">
       <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-2">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
           <ShieldQuestion size={14} />
@@ -6595,6 +8512,64 @@ const HELP_TEXT = `**AIOS chat**
 /** Inline editor for /goal — a calm, themed popover scoped to the chat pane
  *  (replaces the off-brand native window.prompt). ⏎ saves · esc / backdrop
  *  cancels. Mounted inside PaneDropZone so it covers only this pane. */
+/** Full-size preview of an attached image — confirm it (or remove it) before
+ *  sending. Click the backdrop or press Esc to close; clicking the image itself
+ *  doesn't dismiss. Portaled to <body> so it floats above the whole app. */
+function ImagePreview({
+  image,
+  onClose,
+  onRemove,
+}: {
+  image: ImageChip;
+  onClose: () => void;
+  onRemove: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-5 bg-black/70 p-8 backdrop-blur-md"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image.url}
+        alt="attachment preview"
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
+      />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="glass-strong flex items-center gap-1.5 rounded-full p-1.5"
+      >
+        <span className="px-3 font-mono text-[11px] text-[var(--color-faint)]">
+          {image.path == null ? "saving…" : "ready to send"}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
+        >
+          <X size={13} /> remove
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)] transition-colors hover:bg-[var(--color-accent-hover)]"
+        >
+          <Check size={14} /> looks good
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function GoalEditorOverlay({
   value,
   onChange,
@@ -6701,7 +8676,7 @@ function splitFences(
   return out;
 }
 
-function Markdown({
+const Markdown = memo(function Markdown({
   text,
   onOpenUrl,
 }: {
@@ -6720,7 +8695,7 @@ function Markdown({
       )}
     </div>
   );
-}
+});
 
 /** Shell-ish fences get a "run in terminal" affordance. Single-statement blocks
  *  (no embedded newline once trimmed) seed + run directly; multi-line blocks open
@@ -6734,10 +8709,12 @@ function CodeBlock({ lang, body }: { lang: string; body: string }) {
   const cwd = useChatCwd();
   const isShell = SHELL_LANGS.has(lang.trim().toLowerCase());
   // Single-line shell snippet → safe to seed + auto-run. Multi-line scripts →
-  // seed the whole block but don't auto-fire (avoid running half a heredoc).
+  // don't auto-fire (avoid running half a heredoc); the block is copied to the
+  // clipboard on click so the fresh terminal is one paste away — before this
+  // the terminal opened completely blank and the code went nowhere.
   const seedCmd = code.includes("\n") ? undefined : code.trim();
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/70">
+    <div className="glass overflow-hidden rounded-xl">
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-1">
         <span className="font-mono text-[10.5px] text-[var(--color-faint)]">
           {lang || "code"}
@@ -6746,8 +8723,11 @@ function CodeBlock({ lang, body }: { lang: string; body: string }) {
           {isShell && code.trim() && (
             <button
               type="button"
-              onClick={() => spawnPane("terminal", { cwd: cwd ?? undefined, cmd: seedCmd })}
-              title={seedCmd ? "run in a new terminal pane" : "open a terminal here (multi-line — run it yourself)"}
+              onClick={() => {
+                if (!seedCmd) void navigator.clipboard.writeText(code).catch(() => {});
+                spawnPane("terminal", { cwd: cwd ?? undefined, cmd: seedCmd });
+              }}
+              title={seedCmd ? "run in a new terminal pane" : "open a terminal here (multi-line — copied, paste to run)"}
               className="flex items-center gap-1 rounded px-1 py-0.5 text-[10.5px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-accent)]"
             >
               <Terminal size={11} />
@@ -6813,8 +8793,67 @@ function MarkdownBlocks({
     listBuf = null;
   };
 
-  for (const raw of lines) {
-    const line = raw;
+  // `| a | b |` → ["a","b"] (tolerant of missing outer pipes).
+  const splitRow = (l: string): string[] =>
+    l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  // a `|---|:--:|` separator row: only pipes/dashes/colons/space, with both a
+  // dash and a pipe (so a bare `---` reads as a horizontal rule, not a table).
+  const isTableSep = (l: string | undefined): boolean =>
+    !!l && /^[\s|:-]+$/.test(l.trim()) && l.includes("-") && l.includes("|");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // table: a header row immediately followed by a |---| separator
+    if (line.includes("|") && isTableSep(lines[i + 1])) {
+      flushList();
+      const header = splitRow(line);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].trim() && lines[j].includes("|")) {
+        rows.push(splitRow(lines[j]));
+        j++;
+      }
+      const cell = "border border-[var(--color-border)] px-2.5 py-1 align-top";
+      out.push(
+        <div key={`tbl${key++}`} className="my-1 overflow-x-auto">
+          <table className="w-full border-collapse text-[12px]">
+            <thead>
+              <tr>
+                {header.map((c, ci) => (
+                  <th
+                    key={ci}
+                    className={`${cell} bg-[var(--color-panel)]/50 text-left font-semibold text-[var(--color-text)]`}
+                  >
+                    <Inline text={c} onOpenUrl={onOpenUrl} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={ri}>
+                  {header.map((_, ci) => (
+                    <td key={ci} className={`${cell} text-[var(--color-text-2)]`}>
+                      <Inline text={r[ci] ?? ""} onOpenUrl={onOpenUrl} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      i = j - 1;
+      continue;
+    }
+    // horizontal rule (--- / *** / ___ on their own line)
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushList();
+      out.push(
+        <hr key={`hr${key++}`} className="my-2 border-0 border-t border-[var(--color-border)]" />,
+      );
+      continue;
+    }
     // headings
     const h = line.match(/^(#{1,4})\s+(.*)$/);
     if (h) {
@@ -6833,6 +8872,20 @@ function MarkdownBlocks({
         >
           <Inline text={h[2]} onOpenUrl={onOpenUrl} />
         </div>,
+      );
+      continue;
+    }
+    // blockquote
+    const bq = line.match(/^\s*>\s?(.*)$/);
+    if (bq) {
+      flushList();
+      out.push(
+        <blockquote
+          key={`bq${key++}`}
+          className="border-l-2 border-[var(--color-border)] pl-3 text-[var(--color-muted)]"
+        >
+          <Inline text={bq[1]} onOpenUrl={onOpenUrl} />
+        </blockquote>,
       );
       continue;
     }
@@ -7136,7 +9189,7 @@ function Dropdown({
           <div
             ref={menuRef}
             role="menu"
-            className="scale-in glass fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 p-1 shadow-[var(--aios-shadow-pop)]"
+            className="scale-in fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel-2)_82%,transparent)] p-1 shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl"
             style={menuPos}
           >
             {children}
@@ -7167,17 +9220,23 @@ function MenuItem({
       onClick={onClick}
       disabled={disabled}
       role="menuitem"
-      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors ${
+      className={`relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors ${
         disabled
           ? "cursor-not-allowed text-[var(--color-faint)]"
           : active
-            ? "bg-[var(--color-accent-soft)] text-[var(--color-text)]"
+            ? "bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-text)] shadow-[inset_0_0_24px_-14px_var(--color-accent)]"
             : "text-[var(--color-text-2)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
       }`}
     >
+      {active && !disabled && (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+        />
+      )}
       <span className="min-w-0 flex-1">{children}</span>
       {active && !disabled && (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+        <Check size={13} className="shrink-0 text-[var(--color-accent)]" />
       )}
     </button>
   );
@@ -7309,24 +9368,14 @@ function ResumePicker({
    *  opening upward there clipped the list at the pane edge, user-reported). */
   drop?: "up" | "down";
 }) {
-  const byProject = sessions.reduce<Array<{ key: string; label: string; items: ChatSessionInfo[] }>>(
-    (groups, session) => {
-      const label = baseName(session.cwd || "") || "unknown project";
-      const key = `${label}:${session.cwd || ""}`;
-      const group = groups.find((g) => g.key === key);
-      if (group) {
-        group.items.push(session);
-      } else {
-        groups.push({ key, label, items: [session] });
-      }
-      return groups;
-    },
-    [],
-  );
+  // grouped by DATE (today / yesterday / this week / this month / older) — the
+  // SAME buckets as the History pane, so the two surfaces read consistently.
+  // (Each row still shows its project in the meta line; sorted recent-first.)
+  const byDate = groupByDate([...sessions].sort((a, b) => b.mtime - a.mtime), Date.now());
   let rowIndex = 0;
   return (
     <div
-      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--aios-shadow-pop)] ${
+      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md ${
         drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
       }`}
     >
@@ -7375,13 +9424,13 @@ function ResumePicker({
               : `no sessions match “${query}”`}
           </div>
         ) : (
-          byProject.map((group) => (
-            <div key={group.key}>
-              <div className="sticky top-0 z-10 flex items-center justify-between border-y border-[var(--color-border)] bg-[var(--color-panel-2)]/95 px-3 py-1 font-sans text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)] backdrop-blur first:border-t-0">
-                <span className="truncate">{group.label}</span>
-                <span className="font-mono tracking-normal">{group.items.length}</span>
+          byDate.map((grp) => (
+            <div key={grp.group}>
+              <div className="sticky top-0 z-10 flex items-center justify-between border-y border-[var(--color-border)] bg-[var(--color-panel-2)]/95 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] backdrop-blur first:border-t-0">
+                <span className="truncate">{grp.group}</span>
+                <span className="tracking-normal">{grp.entries.length}</span>
               </div>
-              {group.items.map((s) => {
+              {grp.entries.map((s) => {
                 const i = rowIndex++;
                 return (
                   <ResumeRow
