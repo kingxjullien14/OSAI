@@ -22,7 +22,7 @@
  *   7. `/` slash menu (clear / plan / model / help)
  *   8. `@` file-mention picker sourced from cwd
  */
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Channel } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -52,6 +52,7 @@ import {
   Loader2,
   Mic,
   Pencil,
+  Pin,
   RefreshCw,
   RotateCcw,
   Search,
@@ -101,11 +102,16 @@ import {
   type WebChatTurn,
 } from "../lib/chat";
 import { detectAvailableEngines } from "../lib/providerDetect";
-import { availableApiModels, isApiProviderId } from "../lib/providers";
+import {
+  availableApiModels,
+  dynamicModelsFor,
+  isApiProviderId,
+  subscribeModelCatalog,
+} from "../lib/providers";
 import { listConfiguredProviders } from "../lib/apiKeys";
 import { activePath, siblingPosition, stepBranch, type Selection, type TreeNode } from "../lib/chatTree";
 import { turnsToApiMessages, messagesUpToLastUser, type ApiMessage } from "../lib/apiMessages";
-import { saveScheduledAgentChatSession } from "../lib/scheduledAgents";
+import { createScheduledAgent, saveScheduledAgentChatSession } from "../lib/scheduledAgents";
 import { fileSrc, homeDir, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { ALT, SHIFT, chord } from "../lib/platform";
@@ -143,6 +149,7 @@ import {
   openViewerFileInPane,
   revealFileInPane,
   setChatBusy,
+  setPaneAttention,
   spawnPane,
 } from "../lib/paneBus";
 import { isHttpPaneTarget, isPaneFileTarget, resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
@@ -248,6 +255,14 @@ function blockSearchText(b: RenderBlock): string {
         .map((t) => `${t.name} ${JSON.stringify(t.input ?? {})} ${t.result ?? ""}`)
         .join("\n");
   }
+}
+
+/** djb2 — stable tiny hash for pin identity across reloads (turn ids are
+ *  minted per mount, so they can't key persistence; the answer TEXT can). */
+function hashText(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
 }
 
 /** First non-blank line of a string, capped — the scrubber's hover snippet. */
@@ -491,6 +506,31 @@ function tokensFromUsage(usage: unknown): number | undefined {
       : 0;
   const total = inT + outT + cacheRead + cacheCreate;
   return total > 0 ? total : undefined;
+}
+
+/** OUTPUT tokens from a result `usage` — the honest per-turn "what it wrote".
+ *  The in+cache sum re-counts the whole context once per STEP of the turn
+ *  (verified from captured logs: a tool-heavy turn "weighed" 2.5M), so as a
+ *  per-turn stat it's noise; output is the signal. */
+function outputTokensFromUsage(usage: unknown): number | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const u = usage as Record<string, unknown>;
+  return typeof u.output_tokens === "number" && u.output_tokens > 0
+    ? u.output_tokens
+    : undefined;
+}
+
+/** Context size (prompt the model saw) from a PER-CALL usage object:
+ *  input + cache-read + cache-write. Only meaningful on per-call usage
+ *  (assistant message events); a result event's usage sums every call in the
+ *  turn — reading it as context is what produced the "492% ctx" readout. */
+function contextFromUsage(usage: unknown): number {
+  if (!usage || typeof usage !== "object") return 0;
+  const u = usage as Record<string, unknown>;
+  const num = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+  return (
+    num("input_tokens") + num("cache_read_input_tokens") + num("cache_creation_input_tokens")
+  );
 }
 
 /** basename for a path, for the @-mention picker labels. */
@@ -1096,6 +1136,16 @@ const ChatFileOpenContext = createContext<ChatFileOpener | null>(null);
  *  without threading cwd through every layer. */
 const ChatCwdContext = createContext<string | null>(null);
 
+/** Lets deep leaf renderers (markdown checklists) hand a note to the live
+ *  composer machinery: steered into a running turn when the engine can take it,
+ *  sent as the next message otherwise. Null outside a live pane (e.g. plan-file
+ *  previews), where the affordance simply doesn't render. */
+const ChatSubmitContext = createContext<((text: string) => void) | null>(null);
+
+function useChatSubmit(): ((text: string) => void) | null {
+  return useContext(ChatSubmitContext);
+}
+
 function useChatCwd(): string | null {
   return useContext(ChatCwdContext);
 }
@@ -1353,8 +1403,26 @@ export function ChatPane({
   }, []);
   // Only gray when detection actually returned something; null/empty = unknown
   // (off-Tauri / failed) → don't disable anything.
+  // re-render the pickers when the launch-time catalog sweep lands (new models
+  // become pickable without an app update — see model_catalog.rs).
+  const [catalogRev, bumpCatalogRev] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => subscribeModelCatalog(bumpCatalogRev), []);
   const pickerModels = useMemo<ChatModel[]>(() => {
-    if (!availEngines || availEngines.size === 0) return CHAT_MODELS;
+    // CLI claude picker gains the LIVE anthropic lineup (the CLI takes full
+    // model ids via --model): current-generation ids not already curated,
+    // capped so the menu stays a menu. Legacy families are filtered out —
+    // "new models show up" shouldn't mean "museum catalog".
+    void catalogRev;
+    const dynClaude: ChatModel[] = dynamicModelsFor("anthropic")
+      .filter(
+        (m) =>
+          !CHAT_MODELS.some((c) => c.id === m.id) &&
+          !/^claude-(instant|[123])/.test(m.id),
+      )
+      .slice(0, 8)
+      .map((m) => ({ id: m.id, label: m.label.toLowerCase(), engine: "claude" }));
+    const base = [...CHAT_MODELS, ...dynClaude];
+    if (!availEngines || availEngines.size === 0) return base;
     // "not installed" alone was a dead end (audit: disabled rows never said
     // WHY) — the tooltip now names the missing CLI + the one-liner to get it.
     const hint: Record<string, string> = {
@@ -1362,12 +1430,12 @@ export function ChatPane({
       codex: "not installed — needs the codex CLI: npm i -g @openai/codex",
       opencode: "not installed — needs the opencode CLI: npm i -g opencode-ai",
     };
-    return CHAT_MODELS.map((m) =>
+    return base.map((m) =>
       m.disabled || availEngines.has(m.engine ?? "claude")
         ? m
         : { ...m, disabled: true, note: m.note ?? hint[m.engine ?? "claude"] ?? "not installed" },
     );
-  }, [availEngines]);
+  }, [availEngines, catalogRev]);
 
   // BYO-key API tier (Tier 4): which providers have a key configured (keychain or
   // env). Drives which API models the picker offers — ollama (keyless) always shows.
@@ -1383,6 +1451,7 @@ export function ChatPane({
   }, []);
   // The API catalog as picker rows (id = native model id, engine = provider id →
   // chat_start maps it to the API engine). Never disabled (gated on configured).
+  // catalogRev: availableApiModels reads the live-catalog overlay internally.
   const apiModels = useMemo<ChatModel[]>(
     () =>
       availableApiModels(configuredApi).map((q) => ({
@@ -1390,7 +1459,8 @@ export function ChatPane({
         label: q.model.label,
         engine: q.providerId,
       })),
-    [configuredApi],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [configuredApi, catalogRev],
   );
   // The "retry with ▾" menu list: installed CLI models + the configured API models
   // (so it isn't just the static CLI catalog — the reported "can't see the models"
@@ -1431,6 +1501,14 @@ export function ChatPane({
   // one interactive-tool hold (AskUserQuestion/ExitPlanMode) per turn — reset on
   // each result + each fresh dispatch (see the hold block in handleEvent).
   const holdSentRef = useRef(false);
+  // true once this engine's assistant events carried per-call usage (claude
+  // does) — the ctx readout then ignores the result event's summed usage.
+  const sawCallUsageRef = useRef(false);
+  // per-turn 5h-window burn: last tick's pct + a rolling window of positive
+  // deltas → the "≈N%/turn" readout in the composer stats row.
+  const lastUsagePctRef = useRef<number | null>(null);
+  const turnBurnRef = useRef<number[]>([]);
+  const [turnBurnPct, setTurnBurnPct] = useState<number | null>(null);
 
   // Live usage still flows to the parent (the pet + the sidebar usage panel) via
   // onPetUsage in the `usage` event handler below; the composer no longer paints
@@ -1978,6 +2056,21 @@ export function ChatPane({
     // arrives, soft-steer a SILENT hold into the running turn telling the model
     // the user is answering in our UI. One hold per turn; sub-agent calls
     // (parent_tool_use_id) are excluded — their asks aren't interactive here.
+    // ---- context readout source of truth --------------------------------------
+    // Each MAIN-agent assistant event carries its own API call's usage — in +
+    // cache read/write = the prompt the model actually saw on that call. The
+    // result event's usage SUMS every call in the turn (a 10-step turn re-reads
+    // the context 10×), which is what made the old readout claim "492% ctx".
+    // Sub-agent events are excluded (their context isn't this pane's context).
+    if (ev.type === "assistant" && typeof ev.parent_tool_use_id !== "string") {
+      const ctx = contextFromUsage(
+        (ev.message as { usage?: unknown } | undefined)?.usage,
+      );
+      if (ctx > 0) {
+        sawCallUsageRef.current = true;
+        setCtxTokens(ctx);
+      }
+    }
     if (
       ev.type === "assistant" &&
       typeof ev.parent_tool_use_id !== "string" &&
@@ -2151,21 +2244,21 @@ export function ChatPane({
         const dur = durationMs != null ? fmtDuration(durationMs) : "";
         const costNum =
           typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : undefined;
-        const tokens = tokensFromUsage(ev.usage);
+        // per-turn footer = OUTPUT tokens (what the model wrote). The full
+        // in+cache sum re-counts the context once per step, so a tool-heavy
+        // turn read as millions of "tok" — total volume stays in the tooltip
+        // via the session aggregate instead.
+        const tokens = outputTokensFromUsage(ev.usage) ?? tokensFromUsage(ev.usage);
         const tokStr =
           tokens != null ? `${tokens.toLocaleString()} tok` : "";
-        // context size = the prompt the model saw this turn (input + cached
-        // input). Drives the composer's running "Nk ctx" indicator, TUI-style.
-        const u = (ev.usage ?? {}) as Record<string, unknown>;
-        const ctx =
-          (typeof u.input_tokens === "number" ? u.input_tokens : 0) +
-          (typeof u.cache_read_input_tokens === "number"
-            ? u.cache_read_input_tokens
-            : 0) +
-          (typeof u.cache_creation_input_tokens === "number"
-            ? u.cache_creation_input_tokens
-            : 0);
-        if (ctx > 0) setCtxTokens(ctx);
+        // context-size fallback for engines whose assistant events carry no
+        // per-call usage (codex/API adapters emit one call per turn, so their
+        // result usage IS the context). claude's per-call source is the
+        // assistant-event block above.
+        if (!sawCallUsageRef.current) {
+          const ctx = contextFromUsage(ev.usage);
+          if (ctx > 0) setCtxTokens(ctx);
+        }
         // synthesized engine failures carry their message in ev.text; claude
         // passthrough ERRORS carry it in ev.result. On SUCCESS ev.result holds
         // the full assistant reply — reading it unconditionally duplicated the
@@ -2253,6 +2346,19 @@ export function ChatPane({
                 ? sd.pct
                 : null,
         });
+        // per-turn burn: the tick fires right after each turn, so the 5h-window
+        // pct delta between ticks ≈ what one turn costs. Rolling average of the
+        // last few positive deltas (a window reset drops pct — skip those).
+        if (typeof fh.pct === "number") {
+          const prev = lastUsagePctRef.current;
+          lastUsagePctRef.current = fh.pct;
+          if (prev != null && fh.pct > prev) {
+            const deltas = turnBurnRef.current;
+            deltas.push(fh.pct - prev);
+            if (deltas.length > 6) deltas.shift();
+            setTurnBurnPct(deltas.reduce((a, b) => a + b, 0) / deltas.length);
+          }
+        }
         return;
       }
 
@@ -2557,6 +2663,22 @@ export function ChatPane({
   // layout jumps to the BOTTOM — the latest message — instead of the first.
   const forceBottomRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
+  // while you're reading up (paused), count the blocks that land below — the
+  // jump pill wears the number so "something new arrived" is visible without
+  // yanking the viewport. Baseline = block count when the pause began; cleared
+  // by jump/unpause.
+  const pauseBaselineRef = useRef<number | null>(null);
+  const [newBelow, setNewBelow] = useState(0);
+  // render-time mirror of blocks.length for the (stable) setPaused callback —
+  // assigned right after the blocks memo below.
+  const blocksCountRef = useRef(0);
+  // current scroll position as content-space fractions → the custom rail thumb.
+  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
+  // Updated on every scroll via syncJumpVisibility; the thumb has no CSS position
+  // transition, so it tracks the scroll 1:1 instead of easing in late. Declared
+  // up here (not with the minimap) because syncJumpVisibility writes it and the
+  // minimap effect reads its size in a deps array — TDZ order matters.
+  const [railWin, setRailWin] = useState<{ top: number; size: number } | null>(null);
   const syncJumpVisibility = useCallback((el: HTMLDivElement | null, paused = pausedRef.current) => {
     if (!el) {
       setShowJump(paused);
@@ -2582,6 +2704,12 @@ export function ChatPane({
     );
   }, []);
   const setPaused = useCallback((p: boolean) => {
+    // arm/clear the "N new below" counter on pause transitions (see newBelow).
+    if (p && !pausedRef.current) pauseBaselineRef.current = blocksCountRef.current;
+    if (!p) {
+      pauseBaselineRef.current = null;
+      setNewBelow(0);
+    }
     pausedRef.current = p;
     syncJumpVisibility(scrollRef.current, p);
   }, [syncJumpVisibility]);
@@ -2704,6 +2832,62 @@ export function ChatPane({
   // "cancelled" verdict instead of a dead, unanswerable prompt.
   const [askCancelled, setAskCancelled] = useState<Record<string, boolean>>({});
 
+  // ── pinned answers ──────────────────────────────────────────────────────────
+  // Pin any assistant answer to a sticky strip at the top of the transcript —
+  // the one command/config you keep scrolling back for stays one click away.
+  // Persisted per conversation id, keyed by a TEXT hash (block ids are minted
+  // per mount, so a hash is what re-finds the same answer after a reload).
+  const [pins, setPins] = useState<{ h: string; preview: string }[]>([]);
+  useEffect(() => {
+    if (!openSessionId) {
+      setPins([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`aios.chat.pins.${openSessionId}`);
+      setPins(raw ? (JSON.parse(raw) as { h: string; preview: string }[]) : []);
+    } catch {
+      setPins([]);
+    }
+  }, [openSessionId]);
+  const persistPins = useCallback(
+    (next: { h: string; preview: string }[]) => {
+      setPins(next);
+      if (openSessionId) {
+        try {
+          localStorage.setItem(`aios.chat.pins.${openSessionId}`, JSON.stringify(next));
+        } catch {
+          /* quota — pins stay session-local */
+        }
+      }
+    },
+    [openSessionId],
+  );
+  const togglePinText = useCallback(
+    (text: string) => {
+      const h = hashText(text);
+      persistPins(
+        pins.some((p) => p.h === h)
+          ? pins.filter((p) => p.h !== h)
+          : [...pins, { h, preview: firstLine(text) }],
+      );
+    },
+    [pins, persistPins],
+  );
+  const pinnedHashes = useMemo(() => new Set(pins.map((p) => p.h)), [pins]);
+  // resolve pins to the CURRENT transcript's block ids for jump-to.
+  const pinResolved = useMemo(() => {
+    if (pins.length === 0) return [] as { h: string; preview: string; id: string | null }[];
+    const byHash = new Map<string, string>();
+    for (const t of turns) {
+      if (t.kind === "assistant" && t.text.trim()) {
+        const h = hashText(t.text);
+        if (!byHash.has(h)) byHash.set(h, t.id);
+      }
+    }
+    return pins.map((p) => ({ ...p, id: byHash.get(p.h) ?? null }));
+  }, [pins, turns]);
+
   // ── ExitPlanMode (plan approval) ────────────────────────────────────────────
   // tool-turn id → the verdict the user gave ("approved" | "rejected"), so the
   // plan card collapses and never re-submits. Same lifecycle as askAnswered.
@@ -2713,6 +2897,36 @@ export function ChatPane({
   // Response branching: per user-turn id, which regenerated response variant is
   // showing (unset = the latest). Drives the ‹N/M› switcher in the AIOS frame.
   const [activeVariant, setActiveVariant] = useState<Record<string, number>>({});
+
+  // ── needs-you attention (sidebar dot) ───────────────────────────────────────
+  // true while this chat is blocked on the human: an undecided approval card, or
+  // an unanswered question/plan in the CURRENT exchange (after the last user
+  // turn — an old ignored ask shouldn't nag forever).
+  const needsHuman = useMemo(() => {
+    let lastUser = -1;
+    for (let i = 0; i < turns.length; i++) if (turns[i].kind === "user") lastUser = i;
+    for (let i = 0; i < turns.length; i++) {
+      const t = turns[i];
+      if (t.kind === "approval" && !t.decision) return true;
+      if (i > lastUser && t.kind === "tool" && t.parentId == null) {
+        if (isAskQuestionTool(t) && !askAnswered[t.id] && !askCancelled[t.id]) return true;
+        if (
+          isPlanProposalTool(t) &&
+          !planResolved[t.id] &&
+          !planCancelled[t.id] &&
+          !inferPlanVerdict(turns, t.id)
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [turns, askAnswered, askCancelled, planResolved, planCancelled]);
+  useEffect(() => {
+    if (!paneKey) return;
+    setPaneAttention(paneKey, needsHuman);
+    return () => setPaneAttention(paneKey, false);
+  }, [needsHuman, paneKey]);
 
   // ── approval resolution ─────────────────────────────────────────────────────
 
@@ -3102,6 +3316,8 @@ export function ChatPane({
       chatSteer(id, item.text)
         .then(() => {
           removeQueued(queuedId);
+          // steering is a send — snap to your injected message and resume following.
+          forceBottomRef.current = true;
           setTurns((prev) => [...prev, { kind: "user", id: uid(), text: item.text, steered: true, createdAt: Date.now() }]);
         })
         .catch((e) => reportDiag("chat.steer", e, { action: "queued" })); // no active turn yet → keep queued for automatic send
@@ -3211,12 +3427,41 @@ export function ChatPane({
     }
     chatSteer(id, text)
       .then(() => {
+        // steering is a send — snap to your injected message and resume following.
+        forceBottomRef.current = true;
         setTurns((prev) => [...prev, { kind: "user", id: uid(), text, steered: true, createdAt: Date.now() }]);
         setInput("");
         setOverlay(null);
       })
       .catch(() => enqueue(text));
   }, [input, model.engine, enqueue]);
+
+  // Deep-leaf note submitter (markdown checklists → "send progress"): steer into
+  // the live turn when the engine can take it, queue mid-turn otherwise, plain
+  // send when idle. Provided via ChatSubmitContext.
+  const submitNote = useCallback(
+    (text: string) => {
+      const note = text.trim();
+      const id = sessionIdRef.current;
+      if (!note || id == null) return;
+      const engine = model.engine ?? "claude";
+      if (streaming && (engine === "claude" || engine === "codex")) {
+        chatSteer(id, note)
+          .then(() => {
+            setTurns((prev) => [
+              ...prev,
+              { kind: "user", id: uid(), text: note, steered: true, createdAt: Date.now() },
+            ]);
+          })
+          .catch(() => enqueue(note));
+      } else if (streaming) {
+        enqueue(note);
+      } else {
+        dispatch(note);
+      }
+    },
+    [streaming, model.engine, dispatch, enqueue],
+  );
 
   // Interrupt-and-redirect: stop the in-flight turn (verified claude/codex
   // interrupt — the process survives), then let the queue-flush effect fire the
@@ -3754,6 +3999,50 @@ export function ChatPane({
           setOverlay(null);
           setHandoffPanelOpen(true);
           setTimeout(() => taRef.current?.focus(), 0);
+        },
+      },
+      {
+        id: "agent",
+        label: "/agent",
+        desc: "hand this conversation to a scheduled agent to keep working",
+        icon: <Clock size={14} />,
+        run: () => {
+          setInput("");
+          setOverlay(null);
+          const sid = claudeSessionIdRef.current;
+          const firstUser = turnsRef.current.find((t) => t.kind === "user");
+          const title = (
+            chatTitleRef.current ||
+            (firstUser?.kind === "user"
+              ? resumeTitle(firstUser.text, model.engine ?? "claude").title
+              : "") ||
+            "chat"
+          ).slice(0, 60);
+          const agent = createScheduledAgent({
+            label: `continue: ${title}`,
+            mission:
+              goal.trim() ||
+              `Continue the work from the chat "${title}". Review the recent conversation, pick up exactly where it left off, and keep making concrete progress. Report what you did at the end of each run.`,
+            cwd: cwd ?? undefined,
+          });
+          if (!agent) return;
+          // bind the agent to THIS conversation so opening it resumes here.
+          if (sid) {
+            saveScheduledAgentChatSession(agent.id, {
+              sessionId: sid,
+              title,
+              updatedAt: Date.now(),
+            });
+          }
+          setTurns((prev) => [
+            ...prev,
+            {
+              kind: "result",
+              id: uid(),
+              text: `↳ handed off to scheduled agent “${agent.label}” — run or schedule it from the sidebar agents panel; it resumes this conversation`,
+              ok: true,
+            },
+          ]);
         },
       },
       {
@@ -5247,6 +5536,13 @@ export function ChatPane({
     flushTools();
     return out;
   }, [visibleTurns]);
+  blocksCountRef.current = blocks.length;
+  // while paused, surface how many blocks landed below the fold (the jump pill
+  // wears the number); cleared when the pause lifts (setPaused).
+  useEffect(() => {
+    if (pauseBaselineRef.current == null) return;
+    setNewBelow(Math.max(0, blocks.length - pauseBaselineRef.current));
+  }, [blocks.length]);
 
   // P4d — every file the AI edited/created this chat, aggregated for the roll-up.
   const changedFiles = useMemo(() => {
@@ -5397,16 +5693,20 @@ export function ChatPane({
       setMapTicks([]);
       return;
     }
-    // one rAF batches all the offsetTop reads after layout settles
+    // one rAF batches all the geometry reads after layout settles
     const raf = requestAnimationFrame(() => {
       const root = scrollRef.current;
       if (!root) return;
-      // Markers live in CONTENT space (offsetTop / scrollHeight) — the same space
-      // as the custom rail thumb, a window of height clientHeight/scrollHeight that
-      // slides over them. The native scrollbar is hidden, so the rail is the single
-      // self-consistent indicator: bottom markers fall INSIDE the thumb window when
-      // you scroll there, never below it (the prior "marker below the bar" bug).
+      // Markers live in CONTENT space (offset within the scroll run / scrollHeight)
+      // — the same space as the custom rail thumb, a window of height
+      // clientHeight/scrollHeight that slides over them. Positions are measured
+      // with getBoundingClientRect relative to the scroll container, NOT
+      // offsetTop: any ancestor with a transform/filter/backdrop-filter becomes
+      // an offsetParent and silently REBASES offsetTop — the Neon Glass
+      // TurnFrame's backdrop-blur did exactly that, compressing every tick into
+      // the top of the rail. Rect math can't be rebased.
       const H = Math.max(1, root.scrollHeight);
+      const rootTop = root.getBoundingClientRect().top - root.scrollTop;
       const out: {
         id: string;
         kind: RenderBlock["kind"];
@@ -5418,10 +5718,11 @@ export function ChatPane({
       for (const b of blocks) {
         const el = blockElsRef.current.get(b.id);
         if (!el) continue;
+        const top = el.getBoundingClientRect().top - rootTop;
         out.push({
           id: b.id,
           kind: b.kind,
-          frac: Math.min(1, el.offsetTop / H),
+          frac: Math.min(1, Math.max(0, top / H)),
           err: b.kind === "result" && b.turn.ok === false,
           at: blockTime(b),
           label: tickLabel(b),
@@ -5430,7 +5731,46 @@ export function ChatPane({
       setMapTicks(out);
     });
     return () => cancelAnimationFrame(raf);
-  }, [blocks]);
+    // railWin?.size ≈ clientHeight/scrollHeight — re-measure when the content/
+    // viewport ratio shifts (pane resize, images landing) even if the block
+    // list itself didn't change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks, railWin?.size]);
+
+  // ── conversation outline — the ticks as a clickable table of contents ────
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const outlineEntries = useMemo(
+    () =>
+      mapTicks.filter(
+        (t) =>
+          t.kind === "user" ||
+          t.kind === "plan" ||
+          t.kind === "ask" ||
+          t.kind === "compaction" ||
+          t.err,
+      ),
+    [mapTicks],
+  );
+  // the entry the viewport is currently on (nearest at-or-above the window top)
+  const outlineCurrentId = useMemo(() => {
+    if (!railWin) return outlineEntries[0]?.id ?? null;
+    const mid = railWin.top + railWin.size * 0.35;
+    let cur: string | null = null;
+    for (const t of outlineEntries) {
+      if (t.frac <= mid) cur = t.id;
+      else break;
+    }
+    return cur ?? outlineEntries[0]?.id ?? null;
+  }, [outlineEntries, railWin]);
+  // Esc closes the outline (transcript-level listener; the panel has no input).
+  useEffect(() => {
+    if (!outlineOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOutlineOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [outlineOpen]);
 
   // ── scrubber interaction (P6): drag the minimap to scroll, hover for a
   // time+snippet bubble, day-boundary hairlines on the rail ─────────────────
@@ -5441,13 +5781,6 @@ export function ChatPane({
     at: number | null;
     label: string;
   } | null>(null);
-  // current scroll position as content-space fractions → the custom rail thumb.
-  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
-  // current scroll position as content-space fractions → the custom rail thumb.
-  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
-  // Updated on every scroll via syncJumpVisibility; the thumb has no CSS position
-  // transition, so it tracks the scroll 1:1 instead of easing in late.
-  const [railWin, setRailWin] = useState<{ top: number; size: number } | null>(null);
   const dayMarks = useMemo(
     () => dayBoundaries(mapTicks).map((i) => ({ frac: mapTicks[i].frac })),
     [mapTicks],
@@ -5475,7 +5808,15 @@ export function ChatPane({
       );
       // sync the thumb synchronously from the new scrollTop (don't wait on the
       // async scroll event, which is what made the drag feel sluggish).
-      setPaused(true);
+      // Dragging INTO the bottom zone re-arms following (same contract as
+      // wheel-scrolling back down); anywhere else pauses.
+      setPaused(
+        distanceFromBottom({
+          scrollHeight: root.scrollHeight,
+          scrollTop: root.scrollTop,
+          clientHeight: root.clientHeight,
+        }) > AUTOSCROLL_STICK_THRESHOLD_PX,
+      );
     }
     railBubbleAt(frac);
   };
@@ -5789,6 +6130,7 @@ export function ChatPane({
   return (
     <ChatCwdContext.Provider value={cwd ?? null}>
     <ChatFileOpenContext.Provider value={openChatFile}>
+    <ChatSubmitContext.Provider value={submitNote}>
     <PaneDropZone onPath={insertPath} label="drop to add to message">
     <div
       data-chat-pane
@@ -5808,24 +6150,46 @@ export function ChatPane({
         }}
         onWheel={handleWheel}
       >
-        {/* floating "attach selection" affordance — one click turns the
-            selected reply text into a context snippet on the next send. */}
+        {/* floating selection affordance — attach as context, or jump straight
+            into a follow-up about exactly this passage. */}
         {snipTip && (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setSnippets((prev) => [...prev, { id: uid(), text: snipTip.text }]);
-              setSnipTip(null);
-              window.getSelection()?.removeAllRanges();
-            }}
-            className="scale-in absolute z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 px-2.5 py-1 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] transition-colors hover:border-[var(--color-accent)]/50"
+          <div
+            className="scale-in absolute z-30 flex -translate-x-1/2 items-center overflow-hidden rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
             style={{ left: snipTip.x, top: Math.max(snipTip.y - 34, 4) }}
-            title="attach the selected text as a context snippet on your next message"
           >
-            <Quote size={11} className="text-[var(--color-muted)]" />
-            add as context
-          </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setSnippets((prev) => [...prev, { id: uid(), text: snipTip.text }]);
+                setSnipTip(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-accent)]"
+              title="attach the selected text as a context snippet on your next message"
+            >
+              <Quote size={11} className="text-[var(--color-muted)]" />
+              add as context
+            </button>
+            <span className="h-4 w-px shrink-0 bg-[var(--color-border)]" />
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                // quote the passage AND put the cursor in the composer — a
+                // drill-down follow-up becomes one gesture.
+                setSnippets((prev) => [...prev, { id: uid(), text: snipTip.text }]);
+                setSnipTip(null);
+                window.getSelection()?.removeAllRanges();
+                requestAnimationFrame(() => taRef.current?.focus());
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-accent)]"
+              title="quote this passage and focus the composer"
+            >
+              <CornerDownLeft size={11} className="text-[var(--color-muted)]" />
+              ask about this
+            </button>
+          </div>
         )}
         <div className="chat-col mx-auto flex flex-col gap-4 px-6 py-7">
           {resumedTitle && (
@@ -5834,6 +6198,37 @@ export function ChatPane({
             </div>
           )}
           {changedFiles.length > 0 && <ChangedFilesBar files={changedFiles} />}
+          {/* pinned answers — sticky within the scroll so the pinned command/
+              config stays one click away anywhere in a long session. */}
+          {pinResolved.length > 0 && (
+            <div className="sticky top-1 z-10 flex flex-wrap items-center gap-1.5">
+              {pinResolved.map((p) => (
+                <span
+                  key={p.h}
+                  className="glass-strong flex max-w-[340px] items-center gap-1.5 overflow-hidden rounded-full py-1 pl-2.5 pr-1 shadow-[var(--aios-shadow-pop)]"
+                >
+                  <Pin size={10} className="shrink-0 fill-current text-[var(--color-accent)]" />
+                  <button
+                    type="button"
+                    disabled={!p.id}
+                    onClick={() => p.id && scrollToBlock(p.id)}
+                    title={p.id ? p.preview : `${p.preview} — not in this view (other branch/variant)`}
+                    className="min-w-0 truncate text-left font-sans text-[11px] text-[var(--color-text-2)] transition-colors enabled:hover:text-[var(--color-text)] disabled:opacity-60"
+                  >
+                    {p.preview}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => persistPins(pins.filter((x) => x.h !== p.h))}
+                    title="unpin"
+                    className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-danger)]"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           {(() => {
             // same elements as before, built in a loop so a quiet day rule can
             // slip in whenever the wall-clock day changes mid-transcript
@@ -5987,6 +6382,10 @@ export function ChatPane({
                     }}
                     disabled={streaming}
                     onOpenUrl={onOpenUrl}
+                    pinned={pinnedHashes.has(hashText(b.turn.text))}
+                    onTogglePin={
+                      b.turn.text.trim() ? () => togglePinText(b.turn.text) : undefined
+                    }
                   />
                 ) : b.kind === "compaction" ? (
                   <CompactionCard turn={b.turn} forceOpen={findOpen && findMatchSet.has(b.id)} />
@@ -6266,14 +6665,86 @@ export function ChatPane({
           )}
         </div>
       )}
-      {/* jump-to-latest pill — appears when autoscroll is paused or viewport is off-bottom */}
+      {/* conversation outline — the rail's ticks as a table of contents: your
+          prompts (+ plans, questions, compactions, errors), click to jump. */}
+      {outlineEntries.length >= 3 && (
+        <button
+          type="button"
+          onClick={() => setOutlineOpen((v) => !v)}
+          title={outlineOpen ? "close outline" : "conversation outline"}
+          className={`glass-strong absolute right-7 top-3 z-30 grid h-7 w-7 place-items-center rounded-full shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] ${
+            outlineOpen ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
+          }`}
+        >
+          <ListChecks size={13} />
+        </button>
+      )}
+      {outlineOpen && outlineEntries.length >= 3 && (
+        <div className="glass-strong absolute bottom-28 right-7 top-12 z-30 flex w-80 flex-col overflow-hidden rounded-xl shadow-[var(--aios-shadow-pop)]">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-faint)]">
+              outline · {outlineEntries.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOutlineOpen(false)}
+              className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+            {outlineEntries.map((t) => {
+              const s = markerStyle(t.kind, t.err);
+              const current = t.id === outlineCurrentId;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    scrollToBlock(t.id);
+                    setOutlineOpen(false);
+                  }}
+                  className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-panel)] ${
+                    current ? "bg-[var(--color-panel)]/70" : ""
+                  }`}
+                >
+                  <span
+                    className="mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full"
+                    style={{ backgroundColor: s.color, opacity: 0.9 }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-sans text-[12px] leading-snug text-[var(--color-text-2)]">
+                      {t.label || "—"}
+                    </span>
+                    {t.at != null && (
+                      <span className="font-mono text-[9.5px] text-[var(--color-faint)]">
+                        {fmtTickTime(t.at)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {/* jump-to-latest pill — appears when autoscroll is paused or viewport is
+          off-bottom; while you read up it wears a count of what landed below. */}
       {showJump && (
         <button
           type="button"
           onClick={jumpToLatest}
-          title="scroll to bottom"
-          className="glass-strong absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)]"
+          title={newBelow > 0 ? `${newBelow} new — scroll to bottom` : "scroll to bottom"}
+          className={`glass-strong absolute bottom-24 right-5 z-20 flex h-9 items-center justify-center gap-1.5 rounded-full text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)] ${
+            newBelow > 0 ? "px-3.5" : "w-9"
+          }`}
         >
+          {newBelow > 0 && (
+            <span className="font-mono text-[11px] font-medium tabular-nums text-[var(--color-accent)]">
+              {newBelow} new
+            </span>
+          )}
           <ArrowDown size={15} />
         </button>
       )}
@@ -6290,17 +6761,17 @@ export function ChatPane({
               ) : (
                 <span />
               )}
-              {/* cumulative session readout — messages · tokens · age (no $). */}
+              {/* cumulative session readout — messages · output tokens · age (no $). */}
               {usage.messages > 0 ? (
                 (() => {
                   const age = formatAge(usage.startedAt, Date.now());
                   return (
                     <span
                       className="truncate text-[var(--color-muted)]"
-                      title={`${usage.messages} message${usage.messages === 1 ? "" : "s"} · ${usage.tokens.toLocaleString()} tokens processed this session${age ? ` · started ${age} ago` : ""}`}
+                      title={`${usage.messages} message${usage.messages === 1 ? "" : "s"} · ${usage.tokens.toLocaleString()} output tokens written this session${age ? ` · started ${age} ago` : ""}`}
                     >
                       {usage.messages} msg{usage.messages === 1 ? "" : "s"}
-                      {usage.tokens > 0 ? ` · ${formatTokens(usage.tokens)}` : ""}
+                      {usage.tokens > 0 ? ` · ${formatTokens(usage.tokens)} out` : ""}
                       {age && age !== "just now" ? ` · ${age}` : ""}
                     </span>
                   );
@@ -6309,7 +6780,13 @@ export function ChatPane({
                 <span />
               )}
               {ctxTokens != null ? (
-                <span title={`${ctxTokens.toLocaleString()} tokens of context`}>
+                <span
+                  title={`${ctxTokens.toLocaleString()} tokens of context in the model's window right now${
+                    turnBurnPct != null
+                      ? ` · recent turns each used ≈${turnBurnPct < 1 ? turnBurnPct.toFixed(1) : Math.round(turnBurnPct)}% of your 5h usage window`
+                      : ""
+                  }`}
+                >
                   {(() => {
                     const win = model.id.startsWith("claude-opus")
                       ? 1_000_000
@@ -6318,8 +6795,12 @@ export function ChatPane({
                         : model.engine === "opencode"
                           ? 256_000
                           : 200_000;
-                    const pct = Math.round((ctxTokens / win) * 100);
-                    return `${(ctxTokens / 1000).toFixed(1)}K${pct > 0 ? ` · ${pct}%` : ""} ctx`;
+                    const pct = Math.min(100, Math.round((ctxTokens / win) * 100));
+                    const burn =
+                      turnBurnPct != null && turnBurnPct >= 0.05
+                        ? ` · ≈${turnBurnPct < 1 ? turnBurnPct.toFixed(1) : Math.round(turnBurnPct)}%/turn`
+                        : "";
+                    return `${formatTokens(ctxTokens)}${pct > 0 ? ` · ${pct}%` : ""} ctx${burn}`;
                   })()}
                 </span>
               ) : (
@@ -6364,6 +6845,7 @@ export function ChatPane({
       />
     )}
     </PaneDropZone>
+    </ChatSubmitContext.Provider>
     </ChatFileOpenContext.Provider>
     </ChatCwdContext.Provider>
   );
@@ -7814,6 +8296,8 @@ function AssistantBubble({
   onButton,
   disabled,
   onOpenUrl,
+  pinned,
+  onTogglePin,
 }: {
   turn: Extract<Turn, { kind: "assistant" }>;
   /** wall-clock of the turn (arrival / transcript time); null = unknown. */
@@ -7821,6 +8305,9 @@ function AssistantBubble({
   onButton: (label: string) => void;
   disabled: boolean;
   onOpenUrl?: (url: string) => void;
+  /** true when this answer is pinned to the session's pin strip. */
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   // Don't render the sentinel as a half-baked pill while still streaming in —
   // wait for the full message so we don't flicker partial `[[btn:` text.
@@ -7851,13 +8338,31 @@ function AssistantBubble({
         </div>
       )}
       {!turn.streaming && body.trim() && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div
+          className={`flex items-center gap-0.5 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${
+            pinned ? "opacity-100" : "opacity-0"
+          }`}
+        >
           {at != null && (
             <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]" title={new Date(at).toLocaleString()}>
               {turnClock(at)}
             </span>
           )}
           <CopyButton text={body} title="copy response" />
+          {onTogglePin && (
+            <button
+              type="button"
+              onClick={onTogglePin}
+              title={pinned ? "unpin this answer" : "pin this answer to the top strip"}
+              className={`grid h-6 w-6 place-items-center rounded transition-colors hover:bg-[var(--color-panel-2)] ${
+                pinned
+                  ? "text-[var(--color-accent)]"
+                  : "text-[var(--color-faint)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              <Pin size={12} className={pinned ? "fill-current" : undefined} />
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -8746,6 +9251,93 @@ function CodeBlock({ lang, body }: { lang: string; body: string }) {
 
 /** Render the non-code body: split into block-level lines (headings / lists /
  *  paragraphs), each with inline formatting. */
+/** `[ ] item` / `[x] item` (after the list bullet was stripped). */
+const TASK_ITEM_RE = /^\[( |x|X)\]\s+(.*)$/;
+
+/**
+ * Interactive task list inside assistant prose. Model-authored `[x]` items
+ * render done; ticking an open item arms a "send progress" chip that reports
+ * the newly-done items back into the conversation (steered mid-turn when the
+ * engine allows, otherwise sent as the next message) — so the model's plan is
+ * something you work THROUGH, not just read.
+ */
+function Checklist({
+  items,
+  onOpenUrl,
+}: {
+  items: { checked: boolean; text: string }[];
+  onOpenUrl?: (url: string) => void;
+}) {
+  const submit = useChatSubmit();
+  // your ticks, layered over the authored state; reported indexes collapse the
+  // chip until something NEW is ticked.
+  const [ticks, setTicks] = useState<Record<number, boolean>>({});
+  const [reported, setReported] = useState<Record<number, boolean>>({});
+  const done = (i: number) => ticks[i] ?? items[i].checked;
+  const fresh = items
+    .map((_, i) => i)
+    .filter((i) => done(i) && !items[i].checked && !reported[i]);
+  const sendProgress = () => {
+    if (!submit || fresh.length === 0) return;
+    const remaining = items.map((_, i) => i).filter((i) => !done(i));
+    submit(
+      `Progress update — I've completed:\n${fresh.map((i) => `- ${items[i].text}`).join("\n")}${
+        remaining.length
+          ? `\n\nStill open:\n${remaining.map((i) => `- ${items[i].text}`).join("\n")}`
+          : "\n\nThat's everything on the list."
+      }`,
+    );
+    setReported((prev) => {
+      const next = { ...prev };
+      for (const i of fresh) next[i] = true;
+      return next;
+    });
+  };
+  return (
+    <div className="my-0.5 flex flex-col gap-1 pl-1">
+      {items.map((it, i) => {
+        const isDone = done(i);
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setTicks((prev) => ({ ...prev, [i]: !isDone }))}
+            className="group/task flex items-start gap-2 text-left"
+            title={isDone ? "mark as not done" : "mark as done"}
+          >
+            <span
+              className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded border transition-colors ${
+                isDone
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
+                  : "border-[var(--color-border-strong)] group-hover/task:border-[var(--color-accent)]/60"
+              }`}
+            >
+              {isDone && <Check size={11} />}
+            </span>
+            <span
+              className={`flex-1 transition-colors ${
+                isDone ? "text-[var(--color-faint)] line-through decoration-[var(--color-border-strong)]" : ""
+              }`}
+            >
+              <Inline text={it.text} onOpenUrl={onOpenUrl} />
+            </span>
+          </button>
+        );
+      })}
+      {submit != null && fresh.length > 0 && (
+        <button
+          type="button"
+          onClick={sendProgress}
+          className="mt-1 flex w-fit items-center gap-1.5 rounded-full border border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)]/20"
+        >
+          <CornerDownLeft size={11} />
+          tell the model — {fresh.length} done
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MarkdownBlocks({
   text,
   onOpenUrl,
@@ -8762,6 +9354,18 @@ function MarkdownBlocks({
   const flushList = () => {
     if (!listBuf) return;
     const { ordered, items } = listBuf;
+    // a task list (every item `[ ]`/`[x]`-shaped) renders as an INTERACTIVE
+    // checklist: tick what you've done, then hand the model a progress note in
+    // one click — the model's own plans become a working surface.
+    if (!ordered && items.length > 0 && items.every((it) => TASK_ITEM_RE.test(it))) {
+      const rows = items.map((it) => {
+        const m = it.match(TASK_ITEM_RE)!;
+        return { checked: m[1] !== " ", text: m[2] };
+      });
+      out.push(<Checklist key={`l${key++}`} items={rows} onOpenUrl={onOpenUrl} />);
+      listBuf = null;
+      return;
+    }
     const cls =
       "my-0.5 flex flex-col gap-1 pl-1 " +
       (ordered ? "" : "");

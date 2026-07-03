@@ -80,3 +80,27 @@ test("nextAutoscrollPaused pauses on manual scroll up and resumes only at bottom
     false,
   );
 });
+
+test("riding down into the bottom zone re-latches from the WIDE window", () => {
+  // distance 50px: inside the 96px stick window. An explicit DOWN intent
+  // re-arms following (mid-stream the bottom is a moving target — the crisp
+  // 8px made "scroll back down to resume" nearly impossible to hit)…
+  assert.equal(
+    nextAutoscrollPaused(
+      true,
+      { scrollHeight: 1400, scrollTop: 1050, clientHeight: 300 },
+      "down",
+    ),
+    false,
+  );
+  // …but a passive/unknown intent at the same spot does NOT unpause (only the
+  // crisp threshold applies — content growth must never silently re-latch).
+  assert.equal(
+    nextAutoscrollPaused(
+      true,
+      { scrollHeight: 1400, scrollTop: 1050, clientHeight: 300 },
+      "unknown",
+    ),
+    true,
+  );
+});

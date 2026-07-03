@@ -18,6 +18,7 @@ mod files;
 mod lsp;
 mod mac_apps;
 mod memory;
+mod model_catalog;
 mod monitor;
 mod oracles;
 mod plugins;
@@ -381,6 +382,7 @@ pub fn run() {
             apikeys::aios_delete_api_key,
             apikeys::aios_has_api_key,
             apikeys::aios_list_api_keys,
+            model_catalog::refresh_model_catalog,
             oracles::list_oracles,
             oracles::list_tmux_sessions,
             oracles::create_oracle,

@@ -43,6 +43,13 @@ export function nextAutoscrollPaused(
   thresholdPx: number = BOTTOM_STICKY_THRESHOLD_PX,
 ): boolean {
   if (intent === "up") return true;
-  if (distanceFromBottom(metrics) < thresholdPx) return false;
+  // Riding DOWN toward the bottom re-latches from further out. Mid-stream the
+  // bottom is a moving target (content grows under you), so requiring the
+  // crisp 8px meant "scroll back to the bottom to resume following" almost
+  // never re-armed — the jump pill was the only real way back. The wide window
+  // applies ONLY to an explicit down intent; the idle threshold stays crisp.
+  const relatch =
+    intent === "down" ? Math.max(thresholdPx, AUTOSCROLL_STICK_THRESHOLD_PX) : thresholdPx;
+  if (distanceFromBottom(metrics) < relatch) return false;
   return paused || intent !== "down";
 }

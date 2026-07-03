@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -133,6 +134,8 @@ import {
   registerOpenSettings,
   openSettingsTo,
   paneKeyForChatSession,
+  paneNeedsAttention,
+  subscribePaneAttention,
   registerSpawnPane,
   onChatBusy,
   setPaneOverlay,
@@ -140,6 +143,7 @@ import {
   type SpawnCtx,
   type PayloadKind,
 } from "./lib/paneBus";
+import { refreshModelCatalogAtLaunch } from "./lib/modelCatalog";
 import { containingDir, paneFileTarget } from "./lib/paneOpenActions";
 import { basename as pathBasename } from "./lib/paths.ts";
 import { SidebarUsage } from "./components/SidebarUsage";
@@ -947,6 +951,15 @@ function App() {
     applyFlashLevel(); // reflect stored composer flash level on <html>
     applyAppearance(); // font-scale + density + reduce-motion at boot (not just when Settings mounts)
     return teardown;
+  }, []);
+
+  // Launch-time model-catalog sweep: ask every connected source (claude OAuth /
+  // API keys / local ollama) for its CURRENT model lineup, so a newly-shipped
+  // model is pickable without waiting for an app update. Fire-and-forget; an
+  // offline launch keeps the static catalog + last good sweep.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    refreshModelCatalogAtLaunch(null); // default local ollama endpoint
   }, []);
 
   // Provider self-heal: if the configured chat engine's CLI isn't installed but
@@ -5011,6 +5024,11 @@ function OpenPanesList({
     if (editKey) onRename(editKey, draft);
     setEditKey(null);
   };
+  // re-render when any chat's needs-you flag flips (unanswered approval /
+  // question / plan) — the amber dot below is how a parallel-pane user notices
+  // which chat is blocked on them.
+  const [, bumpAttention] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => subscribePaneAttention(bumpAttention), []);
   return (
     <div className="flex flex-col gap-0.5">
       <div
@@ -5081,6 +5099,13 @@ function OpenPanesList({
             >
               <span className={`status-dot shrink-0 ${hidden ? "status-dot--cold" : DOT[p.kind.type] ?? "status-dot--cold"}`} />
               {!iconsOnly && <span className="truncate">{p.label}</span>}
+              {/* needs-you: this chat is waiting on an answer/approval from you */}
+              {paneNeedsAttention(p.key) && (
+                <span
+                  className="h-[7px] w-[7px] shrink-0 animate-pulse rounded-full bg-[var(--color-warning,#f0b429)] shadow-[0_0_6px_rgba(240,180,41,0.8)]"
+                  title="waiting for your answer"
+                />
+              )}
               {!iconsOnly && maximized && <Maximize2 size={10} className="shrink-0 text-[var(--color-accent)]" />}
             </button>
             {!iconsOnly && <div className="flex shrink-0 items-center pr-1 opacity-0 transition-opacity group-hover:opacity-100">

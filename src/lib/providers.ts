@@ -114,6 +114,64 @@ export function apiProvider(id: string): ApiProvider | undefined {
   return BY_ID.get(id);
 }
 
+// ── live catalog overlay ──────────────────────────────────────────────────────
+// Filled once per app launch by the backend's model sweep (model_catalog.rs):
+// each connected provider's CURRENT lineup, newest first. The static lists
+// above stay as the offline/dependable floor; dynamic entries take precedence
+// so a brand-new model is pickable without an app update.
+
+export interface DynamicProviderModel {
+  id: string;
+  label: string;
+  context_window?: number;
+}
+
+let dynamicModels = new Map<string, ApiModel[]>();
+const catalogListeners = new Set<() => void>();
+
+export function applyDynamicCatalog(
+  providers: Record<string, DynamicProviderModel[]> | null | undefined,
+): void {
+  const next = new Map<string, ApiModel[]>();
+  for (const [pid, models] of Object.entries(providers ?? {})) {
+    if (!Array.isArray(models) || models.length === 0) continue;
+    next.set(
+      pid,
+      models.map((m) => ({
+        id: m.id,
+        label: m.label || m.id,
+        contextWindow: m.context_window ?? 200_000,
+        toolUse: true,
+      })),
+    );
+  }
+  dynamicModels = next;
+  for (const fn of catalogListeners) fn();
+}
+
+/** Re-render hook for pickers: fires when the launch sweep lands. */
+export function subscribeModelCatalog(fn: () => void): () => void {
+  catalogListeners.add(fn);
+  return () => {
+    catalogListeners.delete(fn);
+  };
+}
+
+/** A provider's effective lineup: live catalog first, curated floor after
+ *  (deduped by id) — so the picker always works offline but tracks reality. */
+export function providerModels(p: ApiProvider): ApiModel[] {
+  const dyn = dynamicModels.get(p.id);
+  if (!dyn || dyn.length === 0) return p.models;
+  const seen = new Set(dyn.map((m) => m.id));
+  return [...dyn, ...p.models.filter((m) => !seen.has(m.id))];
+}
+
+/** The live lineup for one provider id ([] when the sweep found nothing) —
+ *  lets the claude CLI picker reuse the anthropic listing. */
+export function dynamicModelsFor(providerId: string): ApiModel[] {
+  return dynamicModels.get(providerId) ?? [];
+}
+
 /** A model qualified by its provider — the catalog row + the send target. */
 export interface QualifiedApiModel {
   providerId: ApiProviderId;
@@ -129,14 +187,15 @@ export function qualifiedKey(providerId: ApiProviderId, modelId: string): string
   return `${providerId}:${modelId}`;
 }
 
-/** Resolve a `provider:model` key back to its provider + model. */
+/** Resolve a `provider:model` key back to its provider + model (live catalog
+ *  included — a dynamic-only model must survive settings/session round-trips). */
 export function apiModelByKey(key: string): QualifiedApiModel | undefined {
   const idx = key.indexOf(":");
   if (idx < 0) return undefined;
   const providerId = key.slice(0, idx);
   const modelId = key.slice(idx + 1);
   const p = BY_ID.get(providerId);
-  const model = p?.models.find((m) => m.id === modelId);
+  const model = p ? providerModels(p).find((m) => m.id === modelId) : undefined;
   if (!p || !model) return undefined;
   return { providerId: p.id, providerLabel: p.label, model, key };
 }
@@ -162,7 +221,7 @@ export function availableApiModels(configured: Set<string>): QualifiedApiModel[]
   const out: QualifiedApiModel[] = [];
   for (const p of API_PROVIDERS) {
     if (!p.keyless && !configured.has(p.id)) continue;
-    for (const model of p.models) {
+    for (const model of providerModels(p)) {
       out.push({
         providerId: p.id,
         providerLabel: p.label,

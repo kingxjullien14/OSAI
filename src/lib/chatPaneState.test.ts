@@ -276,3 +276,14 @@ test("pane routing resolves markdown links relative to the current file", () => 
   );
   assert.equal(targetLabel("/Users/aios/project/docs/notes/todo.md:44"), "todo.md");
 });
+
+test("resumeTitle strips markdown checkbox/list/heading noise from titles", () => {
+  assert.equal(
+    resumeTitle("- [ ] add proper switching between OTP (sms123/isms) and Email", "claude").title,
+    "add proper switching between OTP (sms123/isms) and Email",
+  );
+  assert.equal(resumeTitle("## fix the build", "claude").title, "fix the build");
+  assert.equal(resumeTitle("run `pnpm dev` and check", "claude").title, "run pnpm dev and check");
+  // plain prose is untouched
+  assert.equal(resumeTitle("why is the sky blue?", "claude").title, "why is the sky blue?");
+});

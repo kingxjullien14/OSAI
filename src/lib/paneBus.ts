@@ -27,6 +27,32 @@ export interface ChatHandle {
 /** Live ChatPanes keyed by pane key — lets App intercept close on a busy chat. */
 export const chatHandles = new Map<string, ChatHandle>();
 
+// ── needs-you attention ───────────────────────────────────────────────────────
+// pane key → this chat is blocked on the human (unanswered approval / question /
+// plan). The sidebar subscribes and wears an amber dot on the pane row, so you
+// can run several chats without missing the one that's waiting on you.
+const paneAttentionMap = new Map<string, true>();
+const paneAttentionListeners = new Set<() => void>();
+
+export function setPaneAttention(paneKey: string, on: boolean): void {
+  const had = paneAttentionMap.has(paneKey);
+  if (had === on) return;
+  if (on) paneAttentionMap.set(paneKey, true);
+  else paneAttentionMap.delete(paneKey);
+  for (const fn of paneAttentionListeners) fn();
+}
+
+export function paneNeedsAttention(paneKey: string): boolean {
+  return paneAttentionMap.has(paneKey);
+}
+
+export function subscribePaneAttention(fn: () => void): () => void {
+  paneAttentionListeners.add(fn);
+  return () => {
+    paneAttentionListeners.delete(fn);
+  };
+}
+
 /** Pane key → backend numeric chat-session id. A ChatPane registers itself here
  *  once its session id is known, and clears on unmount. Lets a notification click
  *  resolve "is there an OPEN pane for this backend session?" without the pane

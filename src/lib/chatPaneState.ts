@@ -85,9 +85,24 @@ const basename = (path: string): string => {
   return clean.split(/[\\/]/).filter(Boolean).pop() ?? path;
 };
 
+/** Strip markdown plumbing from a first-message-derived title: task checkboxes
+ *  ("- [ ] add otp switch…"), list bullets, heading hashes, blockquote arrows
+ *  and inline backticks. Titles are labels, not documents — the raw syntax
+ *  read as garbage in the sidebar / History / window title. */
+function stripTitleMarkdown(flat: string): string {
+  return flat
+    // leading list/checkbox/heading/quote markers (repeat for nested "– [ ]")
+    .replace(/^(?:[-*+•–—]\s*(?:\[[ xX]?\]\s*)?|#{1,6}\s+|>\s+)+/, "")
+    // checkbox/bullet markers that ride mid-string after the flatten
+    .replace(/\s[-*+•]\s\[[ xX]?\]\s/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Keep Codex resume labels provisional until the first real instruction lands. */
 export function resumeTitle(raw: string, engine: string): ResumeTitle {
-  const flattened = raw.trim().replace(/\s+/g, " ");
+  const flattened = stripTitleMarkdown(raw.trim().replace(/\s+/g, " "));
   if (engine !== "codex") {
     return { title: clipTitle(flattened, 120), meaningful: Boolean(flattened) };
   }
