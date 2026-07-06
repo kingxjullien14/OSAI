@@ -1,18 +1,17 @@
 <#
 .SYNOPSIS
-  Auto-watcher: poll origin for the upstream updates and pull them into this branch.
+  LEGACY - auto-watcher that polled for upstream updates and pulled them in.
 
 .DESCRIPTION
-  Upstream pushes to origin/master constantly. This loops forever, checking every
-  few minutes; when he's pushed new commits it auto-merges them into our branch,
-  reinstalls deps, and rebuilds - so we always have the latest with zero manual
-  steps. Leave it running in a terminal (or install it as a scheduled task with
-  -Install). It is SAFE:
-    - never pushes (read + merge only); you publish with aios-sync.ps1 -Push
-    - auto-resolves the known pnpm-lock.yaml conflict (we use npm)
-    - on a REAL conflict (upstream changed the same lines we did) it backs out and
-      keeps watching - so it never leaves a half-merged tree.
-    - skips the merge if you have uncommitted work (won't clobber you)
+  *** LEGACY (Firaz-era) ***
+  Written when this tree tracked Firaz's AIOS and auto-merged his pushes. OSAI
+  has diverged since (unrelated histories; upstream ideas are hand-ported, never
+  merged), so this watcher has nothing meaningful to watch anymore. Kept for
+  reference. If a scheduled task from `-Install` still exists, remove it with
+  `.\scripts\aios-watch.ps1 -Uninstall`. Its safety rails, for the record:
+    - never pushes (read + merge only)
+    - on a real conflict it backs out and keeps watching
+    - skips the merge if you have uncommitted work
 
   ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI, so non-ASCII
   characters would corrupt parsing. Keep this file ASCII.

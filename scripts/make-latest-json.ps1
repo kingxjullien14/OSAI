@@ -5,10 +5,11 @@
   Run from anywhere AFTER a signed build (see RELEASING.md):
       $env:TAURI_SIGNING_PRIVATE_KEY      = "$env:USERPROFILE\.aios\keys\aios-updater.key"
       $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""      # key was generated passwordless
-      npm run tauri build
+      pnpm tauri build
       pwsh scripts/make-latest-json.ps1 -Notes "what changed in this release"
 
-  It reads version + productName from src-tauri/tauri.conf.json, finds the signed
+  It reads version + productName from src-tauri/tauri.conf.json (resolving the
+  "../package.json" version POINTER tauri.conf uses), finds the signed
   *-setup.exe + its .sig under target/release/bundle/nsis, and writes latest.json
   pointing at the release asset URL. The endpoint in tauri.conf.json is
   releases/latest/download/latest.json, so as long as latest.json is attached to
@@ -17,7 +18,7 @@
 [CmdletBinding()]
 param(
   [string]$Notes = "",
-  [string]$Repo = "kingxjullien14/AIOS-Superapp",
+  [string]$Repo = "kingxjullien14/OSAI",
   [string]$OutFile = "latest.json"
 )
 
@@ -25,6 +26,15 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $conf = Get-Content (Join-Path $root "src-tauri/tauri.conf.json") -Raw | ConvertFrom-Json
 $version = $conf.version
+# tauri v2 allows `"version": "../package.json"` (a file POINTER, not a number).
+# Resolve it, or the manifest would say "v../package.json" and every installed
+# app would reject the update.
+if ($version -notmatch '^\d+\.\d+') {
+  $version = (Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json).version
+}
+if ($version -notmatch '^\d+\.\d+') {
+  throw "could not resolve a real version (got '$version') from tauri.conf.json/package.json"
+}
 $product = $conf.productName
 
 $nsisDir = Join-Path $root "src-tauri/target/release/bundle/nsis"

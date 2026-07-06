@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
-  Sync the upstream upstream changes into the Windows branch - and push for the team.
+  LEGACY - sync upstream changes into this branch, and push.
 
 .DESCRIPTION
-  Upstream develops the shell on origin/master (macOS). This keeps our Windows
-  branch current with his work and rebuilds, in one command. All our Windows
-  changes are cross-platform (cfg(windows) guards + USERPROFILE fallbacks), so
-  merging his macOS changes is almost always clean. The one expected conflict -
-  pnpm-lock.yaml (we use npm on Windows) - is auto-resolved.
+  *** LEGACY (Firaz-era) ***
+  Written when this tree tracked Firaz's AIOS as its direct upstream. OSAI has
+  diverged since (the upstream remote now has an UNRELATED history - his ideas
+  are hand-ported, never merged), so running a merge from it will conflict on
+  everything. Kept for reference; at most use -Preview to see what changed
+  upstream. Day to day you want plain `git push origin main`.
 
   ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI, so non-ASCII
   characters would corrupt parsing. Keep this file ASCII.

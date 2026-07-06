@@ -62,13 +62,15 @@ backend and a React + xterm.js frontend fused into a single native window where
 
 ## ✨ What's inside
 
-OSAI is built around a **resizable pane grid** — open as many tools as you want,
-drag the dividers, maximize, minimize to the sidebar, or fan them all out in a
-Mission-Control-style overview. When nothing's open you land on an **idle
-dashboard**: a bento grid of your usage pulse, recent repos, a memory focus
-widget, scheduled-agent summaries, your oracle fleet, and live device stats. A
-calm, skippable **first-run onboarding** (welcome → your name → engine detection
-→ MCP review → theme & accent) sets you up on first launch.
+OSAI is a **windowed workspace** — every tool is a floating window on one
+canvas: drag, snap, tile, minimize to a tray, maximize, or fan everything out
+in a Mission-Control-style overview. When nothing's open you land on the
+**Horizon lock screen**: a monumental clock over a starfield, one glanceable
+status row (agents live · usage · streak), a quick-start dock, a "continue"
+shelf of your real projects and work sessions — and the resident glass spirit
+strolling the horizon line. A calm, skippable **first-run onboarding** (welcome
+→ your name → engine detection → MCP review → theme & accent) sets you up on
+first launch.
 
 <sub>Every capability below is one pane. Click any row to expand it.</sub>
 
@@ -202,14 +204,24 @@ click/keystroke forwarding is in progress.)
 </details>
 
 <details>
-<summary><b>🗒 Notes</b> — a synced markdown scratchpad</summary>
+<summary><b>🗒 Notes</b> — a native client for your own notes cloud</summary>
 
 <br />
 
-An Apple-Notes-style scratch pad over your markdown files — search, create,
-delete, autosave (debounced + on blur), word count, and a **live sync** so edits
-made by an oracle show up without clobbering what you're typing. "Send to AI"
-routes a note straight into chat.
+The notes pane is a full client for **Stone & Chisel** (the author's
+self-hosted markdown notes app): connect once with a personal access token and
+your notes live in *your* cloud, readable from any device.
+
+- **Write / split / read** modes with the chat's markdown renderer, tags,
+  folders, trash, and server-side search.
+- **Offline-first** — edits queue in a local outbox and replay when the
+  connection returns; concurrent edits resolve with a real **three-way
+  (diff3) merge**, falling back to conflict markers only when both sides
+  touched the same lines.
+- **Agent-native** — chats and terminals can save selections and replies
+  straight into notes, and control-plane verbs (`notes.list / read / create /
+  append`) let agents file things for you. Local drafts work with no account
+  at all.
 
 </details>
 
@@ -235,7 +247,8 @@ it by hand. Pure in-app — no daemons — so it works the same on macOS and Win
 
 <br />
 
-The idle dashboard and account menu surface a GitHub-style **activity heatmap**,
+The lock screen's status row, the pulse pane, and the account menu surface a
+GitHub-style **activity heatmap**,
 **current/longest streaks**, token totals, your favorite model, live **5h / 7d
 rate-limit %**, and **device stats** (CPU, RAM, disk, battery, uptime) — all read
 locally from your usage data, degrading to quiet zeros when absent.
@@ -272,16 +285,22 @@ happens in plain code; it never pollutes the model's context.
 </details>
 
 <details>
-<summary><b>🐾 Companion · 🎨 Theming</b> — delight & looks</summary>
+<summary><b>🐾 The resident · 🎨 Theming</b> — delight & looks</summary>
 
 <br />
 
-- **Companion** — a small idle pet tile with subtle liveness, plus celebratory
-  flourishes (confetti, sparks) on a long clean run. Pure delight, fully gated
-  behind a reduce-motion-aware "fun fx" setting.
-- **Theming** — system / light / dark, a live **accent color** picker, density
-  (comfortable / compact), a font-size slider, a reduce-motion toggle, and the
-  motion/fx system built on `motion` (Framer Motion's successor).
+- **The resident** — a glass-spirit companion with a real soul: needs
+  (energy · fullness · spirits), a bond that only grows, life stages, and an
+  evolution flavored by where you actually work. It roams the workspace floor
+  (grab it, toss it, right-click to care), lives on the lock screen's horizon
+  (and sleeps there at night), rarely speaks up with something *useful* — a
+  finished run, an error, usage pace — as a click-to-jump bubble, and has a
+  room pane with vitals, bond, and keepsakes earned from its real history
+  with you. Fully gated by settings + reduce-motion.
+- **Theming** — system / light / dark, a live **accent** picker *plus* a
+  second **glow** accent (the cold neon: composer lip, send orb, the spirit's
+  core), density, a font-size slider, an ambient flash-level, and a strict
+  reduce-motion contract over the `motion`-based fx layer.
 
 </details>
 
@@ -339,8 +358,8 @@ release manifests are produced.
 - **Rust** (stable, via [rustup](https://rustup.rs)) — for the Tauri backend.
   On Windows, the MSVC toolchain + **VS Build Tools 2022** ("Desktop development
   with C++").
-- **Node** 18+ — for the frontend. macOS can use **pnpm**; **Windows uses npm**
-  (see [`WINDOWS.md`](./WINDOWS.md) for why).
+- **Node** 18+ with **pnpm** — for the frontend (plain npm works too; see
+  [`WINDOWS.md`](./WINDOWS.md) for the Windows guide).
 - **WebView2** — preinstalled on Windows 11; renders the UI.
 
 **Nice to have** — every one is optional, and OSAI degrades gracefully without it:
@@ -359,20 +378,20 @@ release manifests are produced.
 ## 🛠 Build & Run
 
 ```bash
-npm install           # install frontend deps
-npx tauri dev         # run OSAI in dev (hot-reload frontend + backend)
-npx tauri build       # produce a release bundle (.app / .msi / binary)
+pnpm install          # install frontend deps
+pnpm tauri dev        # run OSAI in dev (hot-reload frontend + backend)
+pnpm tauri build      # produce a release bundle (.app / installer / binary)
 ```
 
-On **Windows**, a helper script wraps the above:
+On **Windows**, a helper script wraps the above (and falls back to npm when
+pnpm isn't installed):
 
 ```powershell
 .\scripts\run.ps1            # install deps (first run) + launch dev app
-.\scripts\run.ps1 -Build     # produce an .msi / .exe installer instead
+.\scripts\run.ps1 -Build     # produce an installer instead
 ```
 
-> macOS users can substitute `pnpm` for `npm` if they prefer. `npm run dev` runs
-> just the Vite frontend on `:1420`.
+> `pnpm dev` runs just the Vite frontend on `:1420`.
 
 ## ⚙️ Configuration
 
@@ -407,13 +426,14 @@ src/            React + TypeScript frontend (Vite)
                   Viewer, Onboarding, …) + fx/ (the motion/fx primitives)
   lib/            thin Tauri-invoke wrappers, the pane bus, the conductor,
                   the LSP client, the updater, settings
-  App.tsx         the superapp shell — pane grid, layout, keybinds, dispatch
+  App.tsx         the shell — windowed workspace, lock screen, keybinds, dispatch
   App.css         the design system (color tokens, type scale, radii, spacing)
 src-tauri/      Rust (Tauri v2) backend — #[tauri::command]s across:
   src/            pty · chat · browser · files · memory · oracles · lsp
                   appcast · wincast · monitor · bridges · plugins · device
-                  stats · usage · telemetry · diag · proc (no-window spawns)
-  tauri.conf.json app config (name "OSAI", id com.julnazz.aios, window, bundle,
+                  stats · usage · control · snc (notes cloud) · apikeys
+                  telemetry · diag · proc (no-window spawns)
+  tauri.conf.json app config (name "OSAI", id com.julnazz.osai, window, bundle,
                   signed GitHub-Releases updater)
 ```
 
@@ -453,12 +473,10 @@ Shipped and stable today: everything in **What's inside** above. On deck:
 
 - **App-cast input forwarding** — click/scroll/keystroke through to the mirrored
   native window (display is already live).
-- **Control plane** — expose every UI action over localhost HTTP + MCP so an
-  agent can drive the superapp exactly like a human.
-- **Chat upgrades** — edit-and-resend a prior message, retry-with-different-model
-  without losing the thread, in-transcript find, and a cumulative cost HUD.
-- **Model-agnostic chat** — a live model catalog, OpenRouter key onboarding, and
-  BYO-key native APIs with secure key storage.
+- **Chat upgrades** — in-transcript find and a cumulative cost HUD
+  (edit-and-resend, branching, and model handoff already shipped).
+- **Model-agnostic chat** — BYO-key native-API engines on top of the shipped
+  provider catalog + OS-keychain key storage.
 - **Deeper Windows parity** — Windows-native equivalents for the few remaining
   Unix-only integrations (e.g. messaging bridges). Persistent/reattachable
   terminals and the oracle roster already work on Windows via `psmux`.
