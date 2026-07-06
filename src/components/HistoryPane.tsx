@@ -14,6 +14,7 @@ import {
 
 import { PaneEmpty } from "./ui";
 import { cleanSessionLabel } from "../lib/chat";
+import { PaneMenu, type PaneMenuEntry } from "./PaneMenu";
 import {
   deleteChats,
   exportChat,
@@ -78,7 +79,7 @@ export function HistoryPane({ onOpenChat }: Props) {
   const [view, setView] = useState<"history" | "trash">("history");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupMenu, setCleanupMenu] = useState<{ x: number; y: number } | null>(null);
   const [confirm, setConfirm] = useState<{ ids: string[]; label: string } | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -213,7 +214,6 @@ export function HistoryPane({ onOpenChat }: Props) {
     }
   };
   const startCleanup = (months: number, label: string) => {
-    setCleanupOpen(false);
     const ids = selectForCleanup(entries, monthsAgoCutoff(Date.now(), months), true);
     if (!ids.length) {
       flash(`nothing older than ${label}`);
@@ -241,11 +241,34 @@ export function HistoryPane({ onOpenChat }: Props) {
     return "var(--color-accent)";
   };
 
+  // per-row context menu (W3): resume / star / export / delete at the pointer.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; entry: ResultEntry } | null>(null);
+  const rowMenuItems = (e: ResultEntry): PaneMenuEntry[] => [
+    {
+      key: "open",
+      label: "Open conversation",
+      onSelect: () => onOpenChat(e, searching ? query.trim() : undefined),
+    },
+    { key: "star", label: e.starred ? "Unstar" : "Star", onSelect: () => toggleStar(e) },
+    { key: "export", label: "Export markdown", onSelect: () => void doExport([e.id]) },
+    { key: "sep", separator: true },
+    {
+      key: "delete",
+      label: "Move to trash",
+      danger: true,
+      onSelect: () => doDelete([e.id]),
+    },
+  ];
   const row = (e: ResultEntry) => {
     const isSel = selected.has(e.id);
     return (
       <div
         key={e.id}
+        onContextMenu={(ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          setCtxMenu({ x: ev.clientX, y: ev.clientY, entry: e });
+        }}
         className={`group/hist flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-all ${
           isSel
             ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
@@ -363,58 +386,47 @@ export function HistoryPane({ onOpenChat }: Props) {
             <Trash2 size={12} /> Trash{trash.length ? ` · ${trash.length}` : ""}
           </button>
           {view === "history" && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setCleanupOpen((v) => !v)}
-                className={`${headerBtn} text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]`}
-                title="bulk-delete older conversations (keeps starred)"
-              >
-                Clean up ▾
-              </button>
-              {cleanupOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setCleanupOpen(false)} />
-                  <div className="surface-pop absolute right-0 top-full z-30 mt-1 min-w-[180px] overflow-hidden rounded-lg py-1">
-                    <div className="px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)]">
-                      delete older than
-                    </div>
-                    {CLEANUP_OPTIONS.map((o) => (
-                      <button
-                        key={o.months}
-                        type="button"
-                        onClick={() => startCleanup(o.months, o.label)}
-                        className="block w-full px-3 py-1.5 text-left font-sans text-[12px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                    <div className="px-3 py-1 font-sans text-[9.5px] text-[var(--color-faint)]">
-                      starred conversations are kept
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setCleanupMenu({ x: r.right, y: r.bottom + 4 });
+              }}
+              className={`${headerBtn} text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]`}
+              title="bulk-delete older conversations (keeps starred)"
+            >
+              Clean up ▾
+            </button>
           )}
         </div>
       </div>
 
-      {/* search (history view only) */}
+      {/* search (history view only) — the house inset field */}
       {view === "history" && (
-        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1.5 transition-colors focus-within:border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)]">
-          <Search size={13} className="shrink-0 text-[var(--color-faint)]" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="search conversations…"
-            className="min-w-0 flex-1 bg-transparent font-sans text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
-          />
-          {query && (
-            <button type="button" onClick={() => setQuery("")} title="clear">
-              <X size={12} className="text-[var(--color-faint)] hover:text-[var(--color-text)]" />
-            </button>
-          )}
+        <div className="border-b border-[var(--color-border)] px-2 py-1.5">
+          <div className="relative">
+            <Search
+              size={12}
+              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-faint)]"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search titles + message content"
+              spellCheck={false}
+              className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/70 py-1 pl-7 pr-6 font-sans text-[12px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60 placeholder:text-[var(--color-faint)]"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                title="clear"
+                className="absolute right-1 top-1/2 grid h-4 w-4 -translate-y-1/2 place-items-center rounded text-[var(--color-faint)] hover:text-[var(--color-text)]"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -572,6 +584,34 @@ export function HistoryPane({ onOpenChat }: Props) {
           </div>
         )}
       </div>
+
+      {ctxMenu && (
+        <PaneMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={rowMenuItems(ctxMenu.entry)}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
+
+      {/* cleanup menu — a solid PaneMenu like every other menu (the old
+          surface-pop dropdown was the same stacking trap as files/browser) */}
+      {cleanupMenu && (
+        <PaneMenu
+          x={cleanupMenu.x}
+          y={cleanupMenu.y}
+          items={[
+            ...CLEANUP_OPTIONS.map((o) => ({
+              key: `cl-${o.months}`,
+              label: `Older than ${o.label}`,
+              onSelect: () => startCleanup(o.months, o.label),
+            })),
+            { key: "sep", separator: true },
+            { key: "note", label: "Starred conversations are kept", disabled: true, onSelect: () => {} },
+          ]}
+          onClose={() => setCleanupMenu(null)}
+        />
+      )}
 
       {/* transient note */}
       {note && (

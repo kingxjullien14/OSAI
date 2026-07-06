@@ -83,6 +83,30 @@ enum ApiProvider {
     Anthropic,
     Openai,
     Ollama,
+    /// Any OpenAI-compatible server on a user-set base URL — LM Studio,
+    /// llama.cpp `--server`, vLLM, LiteLLM… (BYOK P1, PLAN-odysseus-hybrid.md).
+    Local,
+}
+
+/// User-set base URL for the `local` provider (e.g. `http://localhost:1234/v1`).
+/// Set from the frontend (settings.localApiEndpoint) at launch + on change.
+static LOCAL_API_ENDPOINT: Mutex<String> = Mutex::new(String::new());
+
+const LOCAL_API_ENDPOINT_DEFAULT: &str = "http://localhost:1234/v1";
+
+fn local_api_endpoint() -> String {
+    let ep = LOCAL_API_ENDPOINT.lock().trim().trim_end_matches('/').to_string();
+    if ep.is_empty() {
+        LOCAL_API_ENDPOINT_DEFAULT.to_string()
+    } else {
+        ep
+    }
+}
+
+/// Frontend push of settings.localApiEndpoint (launch + on change).
+#[tauri::command]
+pub fn set_local_api_endpoint(endpoint: String) {
+    *LOCAL_API_ENDPOINT.lock() = endpoint;
 }
 
 impl ApiProvider {
@@ -92,6 +116,7 @@ impl ApiProvider {
             "anthropic" => Some(ApiProvider::Anthropic),
             "openai" => Some(ApiProvider::Openai),
             "ollama" => Some(ApiProvider::Ollama),
+            "local" => Some(ApiProvider::Local),
             _ => None,
         }
     }
@@ -102,27 +127,33 @@ impl ApiProvider {
             ApiProvider::Anthropic => "anthropic",
             ApiProvider::Openai => "openai",
             ApiProvider::Ollama => "ollama",
+            ApiProvider::Local => "local",
         }
     }
     fn protocol(self) -> crate::chat_api::ApiProtocol {
         use crate::chat_api::ApiProtocol;
         match self {
             ApiProvider::Anthropic => ApiProtocol::AnthropicMessages,
-            ApiProvider::OpenRouter | ApiProvider::Openai => ApiProtocol::OpenaiChat,
+            ApiProvider::OpenRouter | ApiProvider::Openai | ApiProvider::Local => {
+                ApiProtocol::OpenaiChat
+            }
             ApiProvider::Ollama => ApiProtocol::OllamaChat,
         }
     }
     /// Full POST URL for a turn. (Ollama endpoint override = a later setting.)
-    fn url(self) -> &'static str {
+    fn url(self) -> String {
         match self {
-            ApiProvider::Anthropic => "https://api.anthropic.com/v1/messages",
-            ApiProvider::Openai => "https://api.openai.com/v1/chat/completions",
-            ApiProvider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
-            ApiProvider::Ollama => "http://localhost:11434/api/chat",
+            ApiProvider::Anthropic => "https://api.anthropic.com/v1/messages".to_string(),
+            ApiProvider::Openai => "https://api.openai.com/v1/chat/completions".to_string(),
+            ApiProvider::OpenRouter => {
+                "https://openrouter.ai/api/v1/chat/completions".to_string()
+            }
+            ApiProvider::Ollama => "http://localhost:11434/api/chat".to_string(),
+            ApiProvider::Local => format!("{}/chat/completions", local_api_endpoint()),
         }
     }
     fn keyless(self) -> bool {
-        matches!(self, ApiProvider::Ollama)
+        matches!(self, ApiProvider::Ollama | ApiProvider::Local)
     }
 }
 
@@ -1131,6 +1162,13 @@ fn send_api_request(
         ApiProvider::OpenRouter | ApiProvider::Openai => {
             req = req.header("authorization", format!("Bearer {}", key.unwrap_or("")));
         }
+        // local servers are usually authless, but LiteLLM/vLLM gateways can
+        // demand a bearer — send one when the user stored a "local" key.
+        ApiProvider::Local => {
+            if let Some(k) = key.filter(|k| !k.is_empty()) {
+                req = req.header("authorization", format!("Bearer {k}"));
+            }
+        }
         ApiProvider::Ollama => {}
     }
     req.send().map_err(|e| format!("request failed: {e}"))
@@ -1154,11 +1192,9 @@ fn run_api_turn(
         ingest_line(&sess, &app, &api_error_result(&sid, "no model selected for the API provider"));
         return Ok(());
     }
-    let key = if provider.keyless() {
-        None
-    } else {
-        crate::apikeys::key_for(provider.id())
-    };
+    // keyless providers may still have an OPTIONAL key (local gateways with
+    // auth) — always look, only REQUIRE for keyed providers.
+    let key = crate::apikeys::key_for(provider.id());
     if !provider.keyless() && key.is_none() {
         ingest_line(
             &sess,

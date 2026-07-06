@@ -146,6 +146,21 @@ export async function deletePath(path: string): Promise<void> {
   return invoke<void>("delete_path", { path });
 }
 
+// Files-pane ops (W7.3). Creation/rename refuse to overwrite; delete goes to
+// the OS trash (Recycle Bin) so a mis-click is always recoverable.
+export async function fsCreateFile(path: string): Promise<void> {
+  return invoke<void>("fs_create_file", { path });
+}
+export async function fsCreateDir(path: string): Promise<void> {
+  return invoke<void>("fs_create_dir", { path });
+}
+export async function fsRename(from: string, to: string): Promise<void> {
+  return invoke<void>("fs_rename", { from, to });
+}
+export async function fsTrash(path: string): Promise<void> {
+  return invoke<void>("fs_trash", { path });
+}
+
 /** Flat list of every file under `root` (relative paths), honoring .gitignore +
  *  pruning node_modules. Powers the ⌘P fuzzy finder — call once, cache, score
  *  client-side. `max` caps the walk (default backend = generous). */

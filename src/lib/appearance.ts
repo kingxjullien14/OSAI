@@ -6,7 +6,9 @@
  *  See PLAN-superapp-uiux.md §13 (boot-time apply) + §2 (motion). */
 import { loadSettings } from "./settings";
 
-export type Density = "compact" | "comfortable";
+/** "terminal" = compact spacing + the whole UI set in the mono stack — the
+ *  W5 "Terminal density" variant of Neon Glass (PLAN-odysseus-feel.md). */
+export type Density = "compact" | "comfortable" | "terminal";
 
 const DENSITY_KEY = "aios.density";
 /** Baseline px the font-scale multiplier is relative to (TerminalPane's default). */
@@ -15,7 +17,7 @@ const FONT_BASELINE = 13;
 export function getDensity(): Density {
   try {
     const v = localStorage.getItem(DENSITY_KEY);
-    if (v === "compact" || v === "comfortable") return v;
+    if (v === "compact" || v === "comfortable" || v === "terminal") return v;
   } catch {
     /* ignore */
   }

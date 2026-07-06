@@ -10,6 +10,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowLeft,
   ArrowRight,
+  Bookmark as BookmarkIcon,
   Camera,
   ChevronDown,
   ChevronUp,
@@ -20,7 +21,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  Globe,
   Loader2,
   MessageSquarePlus,
   MoreVertical,
@@ -90,7 +90,7 @@ import { chord, fmtChord } from "../lib/platform";
 import { DEFAULT_PROFILE, addProfile, loadProfiles } from "../lib/profiles";
 import { rememberUrl } from "../lib/browser-mem";
 import { type NotificationLevel } from "../lib/notifications";
-import { onAiosDrag, onPaneOverlay, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
+import { onAiosDrag, onPaneOverlay, onWindowGesture, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
 import { homeDir } from "../lib/fs";
 import { basename, dirname, toFileUrl } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
@@ -108,6 +108,12 @@ const ANNOT_POLL_MS = 700;
 const ZOOM_MIN = 50;
 const ZOOM_MAX = 200;
 const ZOOM_STEP = 10;
+
+/** Toolbar dropdown panel — SOLID, no backdrop-filter (WebView2 blurs the
+ *  backdrop as a SQUARE that ignores border-radius; same standing rule as
+ *  chat/overlays + PaneMenu). One style for every browser menu. */
+const DROP =
+  "absolute top-full z-[70] mt-1 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]";
 
 // If a navigation STARTS but no Finished arrives within this window we treat it
 // as a connection failure (dead localhost port / DNS fail). wry/tauri 2.11 has
@@ -278,6 +284,26 @@ export function BrowserPane({
   const [chromeMenuOpen, setChromeMenuOpen] = useState(false);
   useEffect(() => onPaneOverlay((keys) => setChromeMenuOpen(keys.has(label))), [label]);
 
+  // While the WINDOW is being dragged (windowed workspace), hide the webview:
+  // it can only chase the chrome through async IPC — visibly ghosting behind
+  // the frame — and it would paint over the snap ghost anyway. Re-show is
+  // DELAYED past the 300ms snap glide so the page pops back exactly once, in
+  // place, instead of landing mid-animation and correcting.
+  const [winGestureArmed, setWinGestureArmed] = useState(false);
+  const winGestureTimer = useRef<number | null>(null);
+  useEffect(
+    () =>
+      onWindowGesture((on) => {
+        if (winGestureTimer.current != null) {
+          clearTimeout(winGestureTimer.current);
+          winGestureTimer.current = null;
+        }
+        if (on) setWinGestureArmed(true);
+        else winGestureTimer.current = window.setTimeout(() => setWinGestureArmed(false), 340);
+      }),
+    [],
+  );
+
   const rect = useCallback((): Rect | null => {
     const el = slotRef.current;
     if (!el) return null;
@@ -305,25 +331,31 @@ export function BrowserPane({
     (suggestOpen && suggestions.length > 0);
 
   useEffect(() => {
-    if (!active || dragArmed || loadError || overlayMenuOpen) {
-      // loadError / open dropdown → shrink the webview so the React card or menu
-      // underneath is visible (the native view otherwise paints over it).
+    if (!active || dragArmed || winGestureArmed || loadError || overlayMenuOpen) {
+      // loadError / open dropdown / window drag → shrink the webview so the
+      // React card or menu underneath is visible (the native view otherwise
+      // paints over it) and nothing ghosts behind a moving frame.
       if (shownRef.current) browserHide(label).catch((e) => reportDiag("browser.hide", e, { action: "hide" }));
       return;
     }
     let raf = 0;
+    // change-detected: idle frames cost ONE getBoundingClientRect and no IPC.
+    let lastKey = "";
     const sync = () => {
       const r = rect();
       if (!r) return;
+      const key = `${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
       if (!shownRef.current) {
         shownRef.current = true;
+        lastKey = key;
         browserShow(label, current, r, profile)
           .then(() => setShowError(null))
           .catch((e) => {
             shownRef.current = false; // allow a retry on the next sync tick
             setShowError(typeof e === "string" ? e : String(e));
           });
-      } else {
+      } else if (key !== lastKey) {
+        lastKey = key;
         browserSetBounds(label, r).catch((e) => reportDiag("browser.bounds", e, { action: "setBounds" }));
       }
     };
@@ -332,14 +364,26 @@ export function BrowserPane({
     const ro = new ResizeObserver(sync);
     if (slotRef.current) ro.observe(slotRef.current);
     window.addEventListener("resize", sync);
-    const poll = setInterval(sync, 300);
+    // rAF follow: the windowed workspace GLIDES windows (300ms snap/arrange
+    // easing) and the dock reserves space with animation — the old 300ms poll
+    // let the page visibly trail its chrome. The change-detection above makes
+    // this loop free when nothing moves; the slow interval stays as a backstop
+    // for throttled rAF (background window).
+    let follow = 0;
+    const loop = () => {
+      sync();
+      follow = requestAnimationFrame(loop);
+    };
+    follow = requestAnimationFrame(loop);
+    const poll = setInterval(sync, 1000);
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(follow);
       ro.disconnect();
       window.removeEventListener("resize", sync);
       clearInterval(poll);
     };
-  }, [active, dragArmed, loadError, overlayMenuOpen, current, label, profile, rect]);
+  }, [active, dragArmed, winGestureArmed, loadError, overlayMenuOpen, current, label, profile, rect]);
 
   // Poll the webview's REAL url (catches in-page navigation the address bar never
   // sees). On a real change: remember it (pinned sites resume here) and sync the
@@ -1106,7 +1150,13 @@ export function BrowserPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
+      {/* `relative z-20` is LOAD-BEARING: backdrop-filter makes this row a
+          stacking context, but without a position+z-index the whole context
+          (dropdowns included, z-index inside can't escape) paints in the
+          in-flow layer — BELOW the positioned slot content that follows in
+          the DOM. The menus showed through the transparent slot but every
+          click hit the slot instead ("dropdowns open but nothing clickable"). */}
+      <div className="relative z-20 flex h-9 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
         <div className="flex shrink-0 items-center gap-1">
           <NavBtn
             title="Back"
@@ -1175,12 +1225,12 @@ export function BrowserPane({
                 }
               }}
               spellCheck={false}
-              className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/70 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
               placeholder="search or enter url"
             />
           </form>
           {suggestOpen && suggestions.length > 0 && (
-            <div className="surface-pop absolute left-0 right-0 top-full z-[70] mt-1 max-h-80 overflow-y-auto py-1 text-[12px]">
+            <div className={`${DROP} left-0 right-0 max-h-80`}>
               {suggestions.map((s, i) => {
                 let host = s.url;
                 try {
@@ -1233,10 +1283,10 @@ export function BrowserPane({
         </NavBtn>
         <div ref={bookmarksRef} className="relative">
           <NavBtn title="Bookmarks" onClick={() => { setBookmarksOpen((o) => !o); setDownloadsOpen(false); }}>
-            <Globe size={13} />
+            <BookmarkIcon size={13} />
           </NavBtn>
           {bookmarksOpen && (
-            <div className="surface-pop absolute right-0 top-full z-[70] mt-1 max-h-96 w-72 overflow-y-auto py-1 text-[12px]">
+            <div className={`${DROP} right-0 max-h-96 w-72`}>
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
                 bookmarks
               </div>
@@ -1285,7 +1335,7 @@ export function BrowserPane({
             <Download size={13} />
           </NavBtn>
           {downloadsOpen && (
-            <div className="surface-pop absolute right-0 top-full z-[70] mt-1 max-h-96 w-80 overflow-y-auto py-1 text-[12px]">
+            <div className={`${DROP} right-0 max-h-96 w-80`}>
               <div className="flex items-center justify-between px-3 py-1">
                 <span className="text-[10px] uppercase tracking-wide text-[var(--color-faint)]">downloads</span>
                 {downloads.length > 0 && (
@@ -1352,7 +1402,7 @@ export function BrowserPane({
             )}
           </NavBtn>
           {sendMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-lg">
+            <div className={`${DROP} right-0 w-44`}>
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
                 send to chat
               </div>
@@ -1404,7 +1454,7 @@ export function BrowserPane({
             )}
           </button>
           {profileMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-lg">
+            <div className={`${DROP} right-0 w-48`}>
               <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
                 account profile
               </div>
@@ -1461,7 +1511,7 @@ export function BrowserPane({
             <MoreVertical size={14} />
           </NavBtn>
           {menuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-lg">
+            <div className={`${DROP} right-0 w-52`}>
               <MenuItem
                 icon={<Camera size={13} />}
                 label="Screenshot"
@@ -1618,10 +1668,10 @@ export function BrowserPane({
             spellCheck={false}
             placeholder="find in page"
             className={
-              "min-w-0 flex-1 rounded-md border bg-[var(--color-bg)] px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none " +
+              "min-w-0 flex-1 rounded-lg border bg-[var(--color-bg)]/70 px-2.5 py-1 font-mono text-[12px] text-[var(--color-text)] outline-none transition-colors " +
               (findMiss
                 ? "border-[var(--color-danger)]"
-                : "border-[var(--color-border)] focus:border-[var(--color-accent)]/50")
+                : "border-[var(--color-border)] focus:border-[var(--color-accent)]/60")
             }
           />
           {findMiss && findQuery.trim() && (

@@ -55,6 +55,24 @@ function mkHandlers() {
       calls.push(["oracleKill", id, force]);
       return id !== "missing";
     },
+    notesList: (opts) => {
+      calls.push(["notesList", opts]);
+      return Promise.resolve([{ id: "n1", title: "beacon" }]);
+    },
+    notesRead: (id) => {
+      calls.push(["notesRead", id]);
+      return id === "missing"
+        ? Promise.reject(new Error("Not found"))
+        : Promise.resolve({ id, title: "beacon", content: "…" });
+    },
+    notesCreate: (seed) => {
+      calls.push(["notesCreate", seed]);
+      return Promise.resolve({ id: "n2", title: seed.title ?? "Untitled" });
+    },
+    notesAppend: (id, text) => {
+      calls.push(["notesAppend", id, text]);
+      return Promise.resolve({ id, updatedAt: "2026-07-04T00:00:00Z" });
+    },
     paneList: () => [{ key: "k1" }],
     stateGet: () => ({ panes: [{ key: "k1" }], sidebarOpen: true }),
   };
@@ -208,4 +226,52 @@ test("an unknown action fails loudly (never a silent no-op)", () => {
   const r = routeControl({ action: "pane.nuke" }, mkHandlers());
   assert.equal(r.ok, false);
   assert.match(r.error, /unknown action/);
+});
+
+test("notes verbs are async: list/read/create/append resolve with data", async () => {
+  const h = mkHandlers();
+  const list = await routeControl({ action: "notes.list", q: "beacon", tag: "aios" }, h);
+  assert.equal(list.ok, true);
+  assert.deepEqual(list.result, [{ id: "n1", title: "beacon" }]);
+  assert.deepEqual(h.calls.at(-1), ["notesList", { q: "beacon", tag: "aios" }]);
+
+  const read = await routeControl({ action: "notes.read", id: "n1" }, h);
+  assert.equal(read.ok, true);
+  assert.equal(read.result.content, "…");
+
+  const created = await routeControl(
+    { action: "notes.create", content: "# hi", tags: ["from-aios"] },
+    h,
+  );
+  assert.equal(created.ok, true);
+  assert.deepEqual(h.calls.at(-1), [
+    "notesCreate",
+    { content: "# hi", title: undefined, tags: ["from-aios"] },
+  ]);
+
+  const appended = await routeControl({ action: "notes.append", id: "n1", text: "more" }, h);
+  assert.equal(appended.ok, true);
+  assert.deepEqual(h.calls.at(-1), ["notesAppend", "n1", "more"]);
+});
+
+test("notes verbs validate input synchronously and surface rejections as ok:false", async () => {
+  const h = mkHandlers();
+  // malformed → sync error results (no handler call, no promise)
+  assert.equal(routeControl({ action: "notes.read" }, h).ok, false);
+  assert.equal(routeControl({ action: "notes.create" }, h).ok, false);
+  assert.equal(routeControl({ action: "notes.create", content: "   " }, h).ok, false);
+  assert.equal(routeControl({ action: "notes.append", id: "n1" }, h).ok, false);
+  assert.equal(h.calls.length, 0, "invalid input must never reach a handler");
+  // a rejecting handler (e.g. not connected / 404) becomes ok:false, never an
+  // unhandled rejection that would leave the agent's request hanging
+  const missing = await routeControl({ action: "notes.read", id: "missing" }, h);
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /Not found/);
+});
+
+test("capabilities advertises the notes verbs", () => {
+  const r = routeControl({ action: "capabilities" }, mkHandlers());
+  for (const a of ["notes.list", "notes.read", "notes.create", "notes.append"]) {
+    assert.ok(r.result.actions.includes(a), `${a} missing from capabilities`);
+  }
 });

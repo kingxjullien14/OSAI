@@ -45,6 +45,10 @@ export type ControlCmd =
   | { action: "oracle.list" }
   | { action: "oracle.spawn"; id: string }
   | { action: "oracle.kill"; id: string; force?: boolean }
+  | { action: "notes.list"; q?: string; tag?: string }
+  | { action: "notes.read"; id: string }
+  | { action: "notes.create"; content: string; title?: string; tags?: string[] }
+  | { action: "notes.append"; id: string; text: string }
   | { action: "pane.list" }
   | { action: "state.get" }
   | { action: "capabilities" };
@@ -88,6 +92,14 @@ export interface ControlHandlers {
   oracleList: () => unknown;
   oracleSpawn: (id: string) => void;
   oracleKill: (id: string, force: boolean) => boolean;
+  /** Notes = the owner's Stone & Chisel notebook (lib/snc). ASYNC — these hit
+   *  the network, so the router returns a Promise for them and the transport
+   *  awaits before replying. Rejections become ok:false results (e.g. "notes
+   *  not connected"), never unhandled. */
+  notesList: (opts: { q?: string; tag?: string }) => Promise<unknown>;
+  notesRead: (id: string) => Promise<unknown>;
+  notesCreate: (seed: { content: string; title?: string; tags?: string[] }) => Promise<unknown>;
+  notesAppend: (id: string, text: string) => Promise<unknown>;
   paneList: () => unknown;
   stateGet: () => unknown;
 }
@@ -118,6 +130,10 @@ export const CONTROL_ACTIONS: ControlAction[] = [
   "oracle.list",
   "oracle.spawn",
   "oracle.kill",
+  "notes.list",
+  "notes.read",
+  "notes.create",
+  "notes.append",
   "pane.list",
   "state.get",
   "capabilities",
@@ -132,15 +148,20 @@ function asString(v: unknown): string | null {
 
 /**
  * Pure router: validate the envelope's required fields and dispatch to the
- * matching handler. Returns a `ControlResult` (never throws). The transport
- * (or App) attaches the correlation `id`; this only decides ok/result/error.
+ * matching handler. Returns a `ControlResult` (never throws) — or, for the
+ * async notes verbs, a Promise of one that likewise never rejects. The
+ * transport (or App) attaches the correlation `id`; this only decides
+ * ok/result/error.
  *
  * Reads (`pane.list`/`state.get`/`capabilities`) return data; writes return the
  * pane list so an agent stays in sync in one round-trip (App supplies it via
  * `paneList`). Unknown or malformed commands return `ok:false` with a reason —
  * a silent no-op would leave the agent thinking it succeeded.
  */
-export function routeControl(env: ControlEnvelope, h: ControlHandlers): ControlResult {
+export function routeControl(
+  env: ControlEnvelope,
+  h: ControlHandlers,
+): ControlResult | Promise<ControlResult> {
   const action = env.action;
   switch (action) {
     case "capabilities":
@@ -266,6 +287,33 @@ export function routeControl(env: ControlEnvelope, h: ControlHandlers): ControlR
       const id = asString(env.id);
       if (!id) return err("oracle.kill requires an `id` string");
       return h.oracleKill(id, env.force === true) ? ok() : err(`no oracle "${id}"`);
+    }
+    case "notes.list": {
+      return h
+        .notesList({ q: asString(env.q) ?? undefined, tag: asString(env.tag) ?? undefined })
+        .then(ok, (e) => err(String(e)));
+    }
+    case "notes.read": {
+      const id = asString(env.id);
+      if (!id) return err("notes.read requires an `id` string (from notes.list)");
+      return h.notesRead(id).then(ok, (e) => err(String(e)));
+    }
+    case "notes.create": {
+      const content = typeof env.content === "string" && env.content.trim() ? env.content : null;
+      if (!content) return err("notes.create requires a non-empty `content` string");
+      const tags =
+        Array.isArray(env.tags) && env.tags.every((t) => typeof t === "string")
+          ? (env.tags as string[])
+          : undefined;
+      return h
+        .notesCreate({ content, title: asString(env.title) ?? undefined, tags })
+        .then(ok, (e) => err(String(e)));
+    }
+    case "notes.append": {
+      const id = asString(env.id);
+      const text = typeof env.text === "string" && env.text.trim() ? env.text : null;
+      if (!id || !text) return err("notes.append requires `id` + non-empty `text` strings");
+      return h.notesAppend(id, text).then(ok, (e) => err(String(e)));
     }
     default:
       return err(`unknown action "${String(action)}" — see capabilities`);

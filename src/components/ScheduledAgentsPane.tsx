@@ -70,7 +70,7 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
       <div className="pane-header justify-between">
         <div className="flex items-center gap-2">
           <Target size={14} className="text-[var(--color-muted)]" />
-          <span className="pane-header__title">aios agents</span>
+          <span className="pane-header__title">osai agents</span>
         </div>
         <button
           type="button"

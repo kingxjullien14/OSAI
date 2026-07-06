@@ -17,14 +17,21 @@ export interface DynamicCatalog {
 /** One best-effort sweep; resolves with the merged (fresh ∪ last-good) catalog. */
 export async function refreshModelCatalog(
   ollamaEndpoint?: string | null,
+  localEndpoint?: string | null,
 ): Promise<DynamicCatalog> {
-  return invoke("refresh_model_catalog", { ollamaEndpoint: ollamaEndpoint ?? null });
+  return invoke("refresh_model_catalog", {
+    ollamaEndpoint: ollamaEndpoint ?? null,
+    localEndpoint: localEndpoint ?? null,
+  });
 }
 
 /** Fire the launch sweep in the background and overlay the result. Never
  *  throws — an offline launch just keeps the static catalog. */
-export function refreshModelCatalogAtLaunch(ollamaEndpoint?: string | null): void {
-  refreshModelCatalog(ollamaEndpoint)
+export function refreshModelCatalogAtLaunch(
+  ollamaEndpoint?: string | null,
+  localEndpoint?: string | null,
+): void {
+  refreshModelCatalog(ollamaEndpoint, localEndpoint)
     .then((cat) => applyDynamicCatalog(cat.providers))
     .catch((e) => reportDiag("models.refresh", e, { action: "launch" }));
 }

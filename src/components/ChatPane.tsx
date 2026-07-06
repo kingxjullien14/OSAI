@@ -22,8 +22,7 @@
  *   7. `/` slash menu (clear / plan / model / help)
  *   8. `@` file-mention picker sourced from cwd
  */
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
@@ -33,7 +32,6 @@ import {
   PackageOpen,
   Brain,
   Check,
-  CheckCheck,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -43,7 +41,6 @@ import {
   FileText,
   FileType,
   Folder,
-  Gauge,
   Globe,
   HelpCircle,
   History,
@@ -54,10 +51,10 @@ import {
   Pencil,
   Pin,
   RefreshCw,
-  RotateCcw,
   Search,
+  Shield,
   ShieldCheck,
-  ShieldQuestion,
+  ShieldHalf,
   Sparkles,
   Quote,
   Square,
@@ -67,10 +64,7 @@ import {
   Wrench,
   X,
   Zap,
-  Bug,
-  Compass,
   Map as MapIcon,
-  type LucideIcon,
 } from "lucide-react";
 import {
   buildApprovalLine,
@@ -112,7 +106,7 @@ import { listConfiguredProviders } from "../lib/apiKeys";
 import { activePath, siblingPosition, stepBranch, type Selection, type TreeNode } from "../lib/chatTree";
 import { turnsToApiMessages, messagesUpToLastUser, type ApiMessage } from "../lib/apiMessages";
 import { createScheduledAgent, saveScheduledAgentChatSession } from "../lib/scheduledAgents";
-import { fileSrc, homeDir, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
+import { fileSrc, readDir, saveImageTemp, type DirEntry } from "../lib/fs";
 import { displayName, loadSettings, saveSettings } from "../lib/settings";
 import { ALT, SHIFT, chord } from "../lib/platform";
 import { claudeRate, codexRate, resetIn, type ModelRate } from "../lib/dashboard";
@@ -145,14 +139,12 @@ import {
   paneImageDrop,
   openEditorFileInPane,
   openFileInPane,
-  openUrlInPane,
   openViewerFileInPane,
   revealFileInPane,
   setChatBusy,
   setPaneAttention,
-  spawnPane,
 } from "../lib/paneBus";
-import { isHttpPaneTarget, isPaneFileTarget, resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
+import { resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
 import {
   emptyRunEventState,
   parseRunEventState,
@@ -172,9 +164,48 @@ import {
 import { readChatHistory, saveChatTree, loadChatTree } from "../lib/chatHistory";
 import { partitionTools, deriveFleet, isAgentTurn } from "../lib/subagentFleet";
 import { FleetView } from "./chat/FleetView";
+import { CadencedShimmer, ThinkingBlock } from "./chat/ThinkingBlock";
+import { baseName, ellipsizeMid, fmtClock, fmtDuration } from "./chat/format";
+import {
+  AskQuestionCard,
+  ApprovalCard,
+  PlanProposalCard,
+  parseAskQuestions,
+  parsePlanProposal,
+  type AskQuestion,
+} from "./chat/InteractionCards";
+import {
+  CwdPicker,
+  Dropdown,
+  GoalEditorOverlay,
+  ImagePreview,
+  MenuItem,
+  OverlayPanel,
+  OverlayRow,
+  ResumePicker,
+  ResumedNote,
+  type ImageChip,
+  type SlashCommand,
+} from "./chat/overlays";
+import { ArmedStrip, EffortTicks, Filament, SendOrb, engineDotColor } from "./chat/composer/deck";
+import { ModelMenu, modelKey } from "./chat/composer/ModelMenu";
+import {
+  AssistantBubble,
+  DaySeparator,
+  ResultFooter,
+  TurnFrame,
+  UserBubble,
+  WorkingLine,
+} from "./chat/Bubbles";
+import {
+  ChatCwdContext,
+  ChatFileOpenContext,
+  ChatSubmitContext,
+  useChatFileOpener,
+  type ChatFileOpener,
+} from "./chat/context";
 import { AgentStep } from "./chat/AgentStep";
 import { serializeTree, deserializeTree } from "../lib/chatTreePersist";
-import { groupByDate } from "../lib/historyManage";
 import { sessionUsage, formatTokens, formatAge } from "../lib/sessionUsage";
 import { lineDiff, diffStat, refineDiff, type DiffLine } from "../lib/textDiff";
 import { memorySearch, type MemoryHit } from "../lib/memory";
@@ -195,18 +226,15 @@ import { dayBoundaries, fmtTickTime, markerStyle, nearestTick } from "../lib/cha
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { playCue } from "../lib/sound";
 import { PaneDropZone } from "./PaneDropZone";
-import { CopyButton, trapTab } from "./ui";
+import { CopyButton } from "./ui";
 import { RunCinema } from "./RunCinema";
 import { reportDiag } from "../lib/diag";
 import { pushNotification, resolveNeedsInputNotification } from "../lib/notifications";
 import { BlurFade } from "./fx/BlurFade";
-import { BorderBeam } from "./fx/BorderBeam";
-import { Magnet } from "./fx/Magnet";
 import { spotlightMove } from "./fx/spotlightGlow";
 import { SplitText } from "./fx/SplitText";
 import { TiltCard } from "./fx/TiltCard";
 import { DotPattern } from "./fx/DotPattern";
-import { HoverBorderGradient } from "./fx/HoverBorderGradient";
 import { NumberTicker } from "./fx/NumberTicker";
 
 // ── transcript model ──────────────────────────────────────────────────────
@@ -363,12 +391,6 @@ function modelWindowFor(
   return null;
 }
 
-/** A pasted/attached image: live thumbnail + its saved temp path (null while saving). */
-interface ImageChip {
-  id: string;
-  url: string;
-  path: string | null;
-}
 let _imgSeq = 0;
 /** "0:05" from elapsed seconds (dictation timer). */
 function fmtElapsed(sec: number): string {
@@ -403,9 +425,9 @@ const PLAN_PREFIX =
 // dismissal as "no answer" and barrels ahead on assumptions before the user has
 // touched the card (user-reported). Silent = kept out of history/replay.
 const HOLD_ASK =
-  "[AIOS shell] Your AskUserQuestion call was auto-dismissed by the headless harness, but the user IS being shown your questions in an interactive picker right now. Do not proceed on assumptions or pick defaults yourself. Wrap up cleanly and STOP — the user's actual selections will arrive as the next user message.";
+  "[OSAI shell] Your AskUserQuestion call was auto-dismissed by the headless harness, but the user IS being shown your questions in an interactive picker right now. Do not proceed on assumptions or pick defaults yourself. Wrap up cleanly and STOP — the user's actual selections will arrive as the next user message.";
 const HOLD_PLAN =
-  "[AIOS shell] Your ExitPlanMode call was auto-dismissed by the headless harness, but the user IS reviewing your plan in an interactive approval card right now. Do not start implementing and do not re-plan. Wrap up cleanly and STOP — their approve/revise decision will arrive as the next user message.";
+  "[OSAI shell] Your ExitPlanMode call was auto-dismissed by the headless harness, but the user IS reviewing your plan in an interactive approval card right now. Do not start implementing and do not re-plan. Wrap up cleanly and STOP — their approve/revise decision will arrive as the next user message.";
 const GOAL_PREFIX = (goal: string) =>
   `Ongoing goal (keep pursuing this across turns until I say it's done): ${goal}\n\n`;
 // ultracode = xhigh effort + workflows. Headless `claude -p` has no ultracode
@@ -434,20 +456,15 @@ const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string
  *  the live menu reads at a glance. The hover lift is the small tactile "quirk" —
  *  reduce-motion neutralizes the transform via the master guard in App.css. */
 const CTRL_PILL =
-  "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
+  "flex shrink-0 items-center gap-1 rounded-full border border-transparent bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-[3px] font-sans text-[11px] text-[var(--color-muted)] backdrop-blur-md transition-all duration-150 hover:border-[var(--color-border)] hover:text-[var(--color-text)]";
 const CTRL_PILL_OPEN =
-  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur-md transition-all duration-150";
+  "flex shrink-0 items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2 py-[3px] font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur-md transition-all duration-150";
 /** The model pill leads the action group (nearest send — the most-changed
  *  control), so it reads accent-tinted at rest (mockup 02's `.pill.model`):
  *  a faint accent wash + edge, lifting on hover. Distinct from the neutral
  *  CTRL_PILL without shouting like CTRL_PILL_OPEN. */
 const CTRL_PILL_MODEL =
   "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_38%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] hover:shadow-[var(--aios-glow-soft)]";
-/** The flashy "you're in an expensive mode" variant — the animated ultracode
- *  gradient (.aios-ultra owns bg/border/color) on the context + effort pills
- *  whenever ultracode / ultra effort is live, so the spend is unmissable. */
-const CTRL_PILL_ULTRA =
-  "aios-ultra flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-[11.5px] transition-all duration-150 hover:-translate-y-px";
 
 /** Chip ids that are now interactive control PILLS in the composer's action row,
  *  so the passive summary-chips row drops them (no duplicate readout). */
@@ -455,7 +472,7 @@ const CONTROL_CHIP_IDS = new Set(["model", "effort", "permission", "budget", "cw
 
 function memoryContextBlock(memories: MemoryHit[]): string {
   if (memories.length === 0) return "";
-  return `Relevant AIOS memory context:\n${memories
+  return `Relevant OSAI memory context:\n${memories
     .map((m, i) => {
       const reasons = m.reasons.length ? ` reasons: ${m.reasons.join("; ")}` : "";
       return `${i + 1}. ${m.title} [${m.type}] — ${m.description || m.preview}${reasons}`;
@@ -477,17 +494,6 @@ function previewArgs(input: Record<string, unknown>): string {
       return `${k}: ${s}`;
     })
     .join("  ");
-}
-
-/** Full, UNTRUNCATED args for the approval card — the field a security decision
- *  hinges on (a Bash `command` with a `&& rm -rf` tail past 80 chars) must never
- *  be clipped. Rendered in a scrollable pre. */
-function fullArgs(input: Record<string, unknown>): string {
-  const entries = Object.entries(input ?? {});
-  if (entries.length === 0) return "";
-  return entries
-    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v, null, 2)}`)
-    .join("\n");
 }
 
 /** Pulls a total token count out of the loose result `usage` object. */
@@ -533,25 +539,6 @@ function contextFromUsage(usage: unknown): number {
   );
 }
 
-/** basename for a path, for the @-mention picker labels. */
-function baseName(p: string): string {
-  const clean = p.replace(/[\\/]+$/, "");
-  return clean.split(/[\\/]/).filter(Boolean).pop() ?? p;
-}
-
-/** Parent directory of a path, handling both separators + drive/unix roots.
- *  Returns null at a root (C:\, /) so callers can disable an "up" affordance. */
-function parentDir(p: string): string | null {
-  const sep = p.includes("\\") ? "\\" : "/";
-  const clean = p.replace(/[\\/]+$/, "");
-  const idx = Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\"));
-  if (idx < 0) return null;
-  let parent = clean.slice(0, idx);
-  if (parent === "") parent = sep; // unix root "/"
-  else if (/^[A-Za-z]:$/.test(parent)) parent = parent + sep; // windows drive "C:" → "C:\"
-  return parent === clean ? null : parent;
-}
-
 /** Time-of-day kicker for the empty hero ("good evening, jullien"). */
 function timeGreeting(): string {
   const h = new Date().getHours();
@@ -561,102 +548,16 @@ function timeGreeting(): string {
   return "good evening";
 }
 
-/** The empty hero's starter deck — icon cards that prefill the composer. */
-const STARTER_DECK: { icon: LucideIcon; label: string; sub: string; prompt: string }[] = [
-  { icon: Compass, label: "explore", sub: "explain this codebase", prompt: "explain this codebase" },
-  { icon: MapIcon, label: "plan", sub: "sketch a feature", prompt: "plan a feature with me — ask me what we're building first" },
-  { icon: Bug, label: "fix", sub: "hunt down a bug", prompt: "find and fix a bug" },
-  { icon: Sparkles, label: "discover", sub: "what can you do?", prompt: "what can you do?" },
-];
+// (the empty hero's starter deck was removed with the hero cards — the home
+// lock screen owns discovery now. Owner request, W1.6b.)
 
 // ── tool presentation (Codex-style activity steps) ───────────────────────────
 
 type ToolTurn = Extract<Turn, { kind: "tool" }>;
 
-/** One question inside an `AskUserQuestion` tool call. The tool always streams
- *  to us (claude can't render its native picker in headless stream-json mode, so
- *  it auto-denies with "Answer questions?" — we render OUR OWN picker from this
- *  shape and feed the choices back as the next user turn). */
-export interface AskQuestion {
-  /** The prompt shown above the options. */
-  question: string;
-  /** Short tag for the question (chip label), e.g. "Framework". */
-  header: string;
-  /** When true the user may pick several options (checkbox); else single (radio). */
-  multiSelect: boolean;
-  options: { label: string; description?: string }[];
-}
-
-/** Parse the `questions` array out of an AskUserQuestion tool input. Returns null
- *  when the shape isn't a usable question set (so we fall back to the generic
- *  tool card rather than render an empty picker). */
-export function parseAskQuestions(input: Record<string, unknown> | undefined): AskQuestion[] | null {
-  const raw = input?.questions;
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const out: AskQuestion[] = [];
-  for (const q of raw) {
-    if (!q || typeof q !== "object") continue;
-    const obj = q as Record<string, unknown>;
-    const question = typeof obj.question === "string" ? obj.question : "";
-    const opts: { label: string; description?: string }[] = [];
-    if (Array.isArray(obj.options)) {
-      for (const o of obj.options) {
-        if (!o || typeof o !== "object") continue;
-        const oo = o as Record<string, unknown>;
-        if (typeof oo.label !== "string" || !oo.label) continue;
-        opts.push({
-          label: oo.label,
-          ...(typeof oo.description === "string" ? { description: oo.description } : {}),
-        });
-      }
-    }
-    if (!question || opts.length === 0) continue;
-    out.push({
-      question,
-      header: typeof obj.header === "string" && obj.header ? obj.header : "Question",
-      multiSelect: obj.multiSelect === true,
-      options: opts,
-    });
-  }
-  return out.length > 0 ? out : null;
-}
-
 /** True when a tool turn is an AskUserQuestion we can render interactively. */
 function isAskQuestionTool(t: ToolTurn): boolean {
   return t.name === "AskUserQuestion" && parseAskQuestions(t.input) != null;
-}
-
-/** One auto-allowed follow-up action the model suggested alongside its plan. */
-interface PlanAllowedPrompt {
-  tool?: string;
-  prompt?: string;
-}
-/** The parsed contents of an ExitPlanMode tool call — the plan the model wants
- *  approved before it starts building. Shape verified from captured stream-json:
- *  `{ plan: "<markdown>", planFilePath?: string, allowedPrompts?: [{tool,prompt}] }`. */
-interface PlanProposal {
-  plan: string;
-  planFilePath?: string;
-  allowedPrompts: PlanAllowedPrompt[];
-}
-
-/** Parse an ExitPlanMode tool input into a usable plan proposal. Returns null
- *  when there's no plan text (so we fall back to the generic activity step rather
- *  than render an empty card). */
-function parsePlanProposal(input: Record<string, unknown>): PlanProposal | null {
-  const plan = typeof input?.plan === "string" ? input.plan.trim() : "";
-  if (!plan) return null;
-  const planFilePath =
-    typeof input?.planFilePath === "string" ? input.planFilePath : undefined;
-  const allowedPrompts = Array.isArray(input?.allowedPrompts)
-    ? (input.allowedPrompts as unknown[])
-        .filter((p): p is Record<string, unknown> => typeof p === "object" && p != null)
-        .map((p) => ({
-          tool: typeof p.tool === "string" ? p.tool : undefined,
-          prompt: typeof p.prompt === "string" ? p.prompt : undefined,
-        }))
-    : [];
-  return { plan, planFilePath, allowedPrompts };
 }
 
 /** True when a tool turn is an ExitPlanMode proposal we can render interactively.
@@ -726,13 +627,6 @@ function editStat(turn: ToolTurn): { adds: number; dels: number } {
     dels += s.dels;
   }
   return { adds, dels };
-}
-
-/** Truncate the middle of a string so both ends stay visible. */
-function ellipsizeMid(s: string, max = 52): string {
-  if (s.length <= max) return s;
-  const half = Math.floor((max - 1) / 2);
-  return s.slice(0, half) + "…" + s.slice(s.length - half);
 }
 
 /** Pull the most relevant target arg out of a tool's input. Mirrors the verbs
@@ -1078,42 +972,6 @@ function artifactFromTool(turn: ToolTurn): Artifact | null {
   return { path, name: baseName(path), kind: artifactKind(path) };
 }
 
-/** Format a duration in ms as a compact human label: "2m 38s", "47s", "0.4s". */
-function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
-  const totalSec = Math.round(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}m ${s}s`;
-}
-
-/** Format an elapsed-while-running timer as m:ss (Codex "Working… 0:42"). */
-function fmtClock(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/** Compact "time since" label from a unix-SECONDS timestamp ("3h ago", "2d ago",
- *  "just now"). Used for the /resume session picker's faint secondary line. */
-function fmtRelativeTime(unixSeconds: number): string {
-  const diffSec = Math.max(0, Math.floor(Date.now() / 1000 - unixSeconds));
-  if (diffSec < 45) return "just now";
-  const min = Math.floor(diffSec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  const wk = Math.floor(day / 7);
-  if (wk < 5) return `${wk}w ago`;
-  const mo = Math.floor(day / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(day / 365)}y ago`;
-}
-
 // ── deterministic in-chat file open ──────────────────────────────────────────
 //
 // Opening a file the model mentioned must NOT rely on the model or on a
@@ -1127,40 +985,6 @@ function fmtRelativeTime(unixSeconds: number): string {
 //
 // `cwd` is provided once at the ChatPane root via this context so the deep
 // markdown/inline/tool renderers don't each need it threaded through.
-
-type ChatFileOpener = (ref: string) => void;
-const ChatFileOpenContext = createContext<ChatFileOpener | null>(null);
-
-/** Session cwd, provided once at the ChatPane root so deep renderers (code-fence
- *  "run in terminal" affordance) can spawn a terminal rooted in the same dir
- *  without threading cwd through every layer. */
-const ChatCwdContext = createContext<string | null>(null);
-
-/** Lets deep leaf renderers (markdown checklists) hand a note to the live
- *  composer machinery: steered into a running turn when the engine can take it,
- *  sent as the next message otherwise. Null outside a live pane (e.g. plan-file
- *  previews), where the affordance simply doesn't render. */
-const ChatSubmitContext = createContext<((text: string) => void) | null>(null);
-
-function useChatSubmit(): ((text: string) => void) | null {
-  return useContext(ChatSubmitContext);
-}
-
-function useChatCwd(): string | null {
-  return useContext(ChatCwdContext);
-}
-
-function useChatFileOpener(): ChatFileOpener {
-  const ctx = useContext(ChatFileOpenContext);
-  return (
-    ctx ??
-    // fallback (no provider, e.g. web/test): open as-is, best-effort.
-    ((ref: string) => {
-      const path = resolvePaneFileTarget(ref);
-      openFileInPane(path, targetLabel(path));
-    })
-  );
-}
 
 /** Resolve a file reference against `cwd` (backend existence check) and open it
  *  in a pane. Absolute/`~` paths skip resolution. Falls back to a BOUNDED fuzzy
@@ -1469,13 +1293,34 @@ export function ChatPane({
   // uuid handed to codex (or vice versa) can't resolve — the "retry" silently
   // became a contextless new session. API-tier targets stay allowed for every
   // engine: they rebuild context from OUR durable store, not the CLI's.
+  // model visibility + recency (model menu M1+M3): hiddenModels drops a model
+  // from EVERY picker (this menu + retry menus); recentModels feeds the menu's
+  // short-by-default "recent" group. Both persisted in settings.
+  const [hiddenModels, setHiddenModels] = useState<string[]>(() => loadSettings().hiddenModels);
+  const [recentModels, setRecentModels] = useState<string[]>(() => loadSettings().recentModels);
+  const toggleHiddenModel = useCallback((key: string, hide: boolean) => {
+    setHiddenModels((prev) => {
+      const next = hide ? [...new Set([...prev, key])] : prev.filter((k) => k !== key);
+      saveSettings({ hiddenModels: next });
+      return next;
+    });
+  }, []);
+  const pushRecentModel = useCallback((key: string) => {
+    setRecentModels((prev) => {
+      const next = [key, ...prev.filter((k) => k !== key)].slice(0, 6);
+      saveSettings({ recentModels: next });
+      return next;
+    });
+  }, []);
+  const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
+
   const retryMenuModels = useMemo<ChatModel[]>(() => {
     const curEngine = model.engine ?? "claude";
     const cli = pickerModels.filter(
       (m) => !m.disabled && (m.engine ?? "claude") === curEngine,
     );
-    return [...cli, ...apiModels];
-  }, [pickerModels, apiModels, model.engine]);
+    return [...cli, ...apiModels].filter((m) => !hiddenModelSet.has(modelKey(m)));
+  }, [pickerModels, apiModels, model.engine, hiddenModelSet]);
 
   // Sticky controls: seed from the last-picked values (settings) so the composer
   // pills persist across panes + restarts, like the model does. null/unknown →
@@ -2284,7 +2129,13 @@ export function ChatPane({
         // the turn for the activity line. Mirrors the replay path (chatStream.ts),
         // which already skips these empty-success footers.
         const okEmptyMetric = !Boolean(ev.is_error) && !resultText && !tokStr;
-        const foot = okEmptyMetric ? "" : [resultText, dur, tokStr].filter(Boolean).join(" · ");
+        // generation rate (Odysseus footer signature) — only when the sample is
+        // long enough to mean something (sub-400ms turns read as noise).
+        const rate =
+          tokens != null && durationMs != null && durationMs > 400
+            ? `${(tokens / (durationMs / 1000)).toFixed(1)} tok/s`
+            : "";
+        const foot = okEmptyMetric ? "" : [resultText, dur, tokStr, rate].filter(Boolean).join(" · ");
         // always emit a result turn (carries durationMs for the activity line),
         // even if the human-readable footer would be empty.
         onPetResult({
@@ -2808,12 +2659,23 @@ export function ChatPane({
     syncJumpVisibility(el ?? null, false);
   }, [setPaused, syncJumpVisibility]);
 
-  // autosize textarea
+  // autosize textarea. Also re-measures on box resize: a pane mounted inside a
+  // display:none host (a toggled-away canvas conversation in the windowed
+  // workspace) reads scrollHeight 0 here and stayed squished when revealed —
+  // the observer fires as soon as the textarea gets real layout.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 240)}px`;
+    const fit = () => {
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 240)}px`;
+    };
+    fit();
+    const ro = new ResizeObserver(() => {
+      if (ta.offsetParent !== null) fit();
+    });
+    ro.observe(ta);
+    return () => ro.disconnect();
   }, [input]);
 
   // tick the live "Working… m:ss" timer once a second while a turn is in flight
@@ -4365,6 +4227,37 @@ export function ChatPane({
   const summaryChips = contextChips.filter(
     (chip) => !CONTROL_CHIP_IDS.has(chip.id) && chip.id !== "engine",
   );
+  void summaryChips; // deck redesign: plan/goal ride as armed strips; the rest live in the rail/tray
+
+  // ── deck telemetry (W4 composer redesign) ──────────────────────────────────
+  // working clock — "● working · 0:42" in the rail while a run is live (D).
+  const [workClock, setWorkClock] = useState(0);
+  useEffect(() => {
+    if (!activeRun) {
+      setWorkClock(0);
+      return;
+    }
+    const t0 = Date.now();
+    setWorkClock(0);
+    const iv = setInterval(() => setWorkClock(Date.now() - t0), 1000);
+    return () => clearInterval(iv);
+  }, [activeRun]);
+  // context meter for the filament (A: the deck's top edge IS the ctx meter;
+  // the numbers live in its hover card). Same window map + accuracy guard the
+  // old stats-row chip used (observed > nominal → trust the 1M beta).
+  const ctxMeter = useMemo(() => {
+    if (ctxTokens == null || ctxTokens <= 0) return null;
+    let win = model.id.startsWith("claude-opus")
+      ? 1_000_000
+      : model.engine === "codex"
+        ? 272_000
+        : model.engine === "opencode"
+          ? 256_000
+          : 200_000;
+    if (ctxTokens > win) win = 1_000_000;
+    const pct = Math.min(100, Math.round((ctxTokens / win) * 100));
+    return { win, pct };
+  }, [ctxTokens, model.id, model.engine]);
   const contextBuckets = contextLedger({
     draft: input,
     goal,
@@ -4398,74 +4291,16 @@ export function ChatPane({
 
   // ── composer (shared between empty hero + docked) ──────────────────────────
 
+  // fresh hero = a bare rail (cwd · model · orb); the full rail blooms in on
+  // the first keystroke (sketch plate 12).
+  const bareRail = empty && !hasDraft;
+
   const composer = useMemo(
     () => (
       <div className="relative">
-        {/* context contract: what this send will use, before the user fires it.
-            On a fresh hero the telemetry stays hidden until the first keystroke
-            — the rows BLOOM in as a response to typing (plan §4's critical row:
-            no machine readout before the user has said anything). */}
-        {(!empty || hasDraft) && summaryChips.length > 0 && (
-          <div className={`mb-2 flex flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
-            {summaryChips.map((chip) => (
-              <span
-                key={chip.id}
-                className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 font-sans text-[11.5px] ${
-                  chip.id === "plan" || chip.id === "goal"
-                    ? "border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] text-[var(--color-text)]"
-                    : "border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 text-[var(--color-text-2)]"
-                }`}
-                title={chip.label}
-              >
-                {chip.id === "cwd" ? (
-                  <Folder size={12} className="shrink-0 text-[var(--color-muted)]" />
-                ) : chip.id === "engine" ? (
-                  <Terminal size={12} className="shrink-0 text-[var(--color-muted)]" />
-                ) : chip.id === "attachments" ? (
-                  <ImageIcon size={12} className="shrink-0 text-[var(--color-muted)]" />
-                ) : chip.id === "queue" ? (
-                  <Waypoints size={12} className="shrink-0 text-[var(--color-muted)]" />
-                ) : chip.id === "plan" ? (
-                  <ListChecks size={12} className="shrink-0 text-[var(--color-accent)]" />
-                ) : chip.id === "goal" ? (
-                  <Target size={12} className="shrink-0 text-[var(--color-accent)]" />
-                ) : chip.id === "budget" ? (
-                  <Gauge size={12} className="shrink-0 text-[var(--color-muted)]" />
-                ) : null}
-                <span className="truncate">{chip.label}</span>
-                {chip.id === "plan" && (
-                  <button
-                    type="button"
-                    onClick={() => setPlanMode(false)}
-                    className="ml-0.5 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                    title="cancel plan mode"
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-                {chip.id === "goal" && (
-                  <button
-                    type="button"
-                    onClick={() => setGoal("")}
-                    className="ml-0.5 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                    title="clear goal"
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </span>
-            ))}
-            {/* live runs only — a resting "run: completed" pill was stale noise */}
-            {activeRun && runEventCount > 0 && (
-              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)]">
-                <Waypoints size={12} className="shrink-0 animate-pulse text-[var(--color-muted)]" />
-                <span className="truncate">run: {runPhase}</span>
-              </span>
-            )}
-            {/* memories + quoted snippets moved to the composer's attachment tray */}
-          </div>
-        )}
-
+        {/* (the summary-chip row retired with the deck redesign: plan/goal ride
+            as ARMED STRIPS inside the deck, cwd/model/attachments live in the
+            rail + tray, the run phase is the rail's working chip.) */}
         {(!empty || hasDraft) && (
         <div
           className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[10px] ${
@@ -4646,7 +4481,6 @@ export function ChatPane({
             searchRef={resumeSearchRef}
             onQueryChange={setResumeQuery}
             onKeyDown={onResumeKeyDown}
-            onHover={setOverlayIdx}
             onPick={resumeSession}
             onClose={closeResume}
           />
@@ -4753,16 +4587,66 @@ export function ChatPane({
         )}
 
         <div className={`flash-composer glass-strong glow-focus relative rounded-2xl transition-all duration-200 ${streaming ? "glow-live" : ""}`}>
-          {/* signature lit top edge — the dual accent→cyan hairline across the
-              composer's lip (mockup 02). Themeable: blends the runtime accent
-              toward cyan, so it re-tints with the chosen accent. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-3.5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-accent),color-mix(in_srgb,var(--color-accent)_45%,var(--aios-accent-2)),transparent)] opacity-90"
+          {/* the context FILAMENT (decision A) — the deck's top edge is the
+              live context meter: fills with usage, warms past ~80%, sweeps
+              while streaming. Hover the edge for the Context Window card. */}
+          <Filament
+            pct={ctxMeter ? ctxMeter.pct / 100 : 0}
+            live={streaming}
+            label={ctxMeter ? `context · ${formatTokens(ctxTokens ?? 0)} used · ${ctxMeter.pct}%` : "context meter — fills as the window fills"}
+            card={
+              ctxMeter ? (
+                <>
+                  <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                    context window
+                    <span className="text-[var(--color-text-2)]">{ctxMeter.pct}%</span>
+                  </span>
+                  <span className="h-1.5 overflow-hidden rounded-full bg-[var(--color-panel-2)]">
+                    <span
+                      className="block h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--aios-accent-2))]"
+                      style={{ width: `${Math.max(2, ctxMeter.pct)}%` }}
+                    />
+                  </span>
+                  <span className="flex justify-between font-mono text-[10.5px] text-[var(--color-text-2)]">
+                    <span>{(ctxTokens ?? 0).toLocaleString()} used</span>
+                    <span>{ctxMeter.win.toLocaleString()} total</span>
+                  </span>
+                  <span className="truncate font-mono text-[10px] text-[var(--color-faint)]">
+                    model · {model.id}
+                  </span>
+                  {turnBurnPct != null && turnBurnPct >= 0.05 && (
+                    <span className="font-mono text-[10px] text-[var(--color-faint)]">
+                      ≈{turnBurnPct < 1 ? turnBurnPct.toFixed(1) : Math.round(turnBurnPct)}% of the 5h window per turn
+                    </span>
+                  )}
+                </>
+              ) : undefined
+            }
           />
-          {/* a slow neon light laps the composer's edge — the "alive console"
-              signature (Magic UI BorderBeam; static accent ring on reduce-motion). */}
-          <BorderBeam duration={streaming ? 4 : 9} size={90} />
+          {/* (the BorderBeam retired with the deck redesign — its beam path
+              was a rectangle that ignored the rounded corners, and the
+              FILAMENT is the deck's living edge now. Owner-reported.) */}
+          {/* ── armed strips ── the receipt for anything riding the next send
+              (plan-first · goal · live run) — replaces the floating chip row. */}
+          {planMode && (
+            <ArmedStrip
+              icon={<ListChecks size={12} />}
+              onClear={() => setPlanMode(false)}
+              clearTitle="cancel plan mode"
+            >
+              <b className="font-semibold">plan-first</b> — will propose a plan and wait for your go-ahead
+            </ArmedStrip>
+          )}
+          {goal.trim() && (
+            <ArmedStrip icon={<Target size={12} />} onClear={() => setGoal("")} clearTitle="clear goal">
+              <b className="font-semibold">goal</b> — {goal}
+            </ArmedStrip>
+          )}
+          {activeRun && runEventCount > 0 && (
+            <ArmedStrip icon={<Waypoints size={12} className="animate-pulse" />}>
+              run: {runPhase}
+            </ArmedStrip>
+          )}
           {/* ── attachment tray ── images (click to preview before sending),
               quoted text snippets, and attached memories — one consistent row. */}
           {(images.length > 0 || snippets.length > 0 || attachedMemories.length > 0) && (
@@ -4880,7 +4764,7 @@ export function ChatPane({
               {ghost && (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-3 pb-2 font-sans text-[14px] leading-relaxed text-transparent"
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-2.5 pb-1.5 font-sans text-[13.5px] leading-relaxed text-transparent"
                 >
                   {input}
                   <span className="text-[var(--color-faint)]">{ghost}</span>
@@ -4905,18 +4789,19 @@ export function ChatPane({
                       : "ask, or describe a task — / for commands, @ for files"
                 }
                 spellCheck={false}
-                className="relative block w-full resize-none bg-transparent px-4 pt-3 pb-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+                className="relative block w-full resize-none bg-transparent px-4 pt-2.5 pb-1.5 font-sans text-[13.5px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
               />
             </div>
           )}
           {/* zoned divider — a lit hairline separating the input hero from the
               control bar (Neon Glass composer layout "01 · Zoned"). */}
           <div className="mx-3 h-px bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] to-transparent" />
-          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5 pt-2">
-            {/* LEFT — the agent-control pills (access · context · effort ·
-                model). On the fresh hero they stagger in; the action buttons
-                (tools · send) sit in their own right-aligned group. */}
-            <div className={`flex min-w-0 flex-wrap items-center gap-1.5 ${empty ? "stagger" : ""}`}>
+          {/* THE RAIL (deck redesign) — context on the left (folder · shield ·
+              plan · goal), action on the right (attach · mic · model · orb).
+              Nothing scrolls; the fresh hero shows a bare rail (cwd + model +
+              orb) until the first keystroke blooms the rest in. */}
+          <div className="flex items-center gap-1 px-2.5 pt-1.5 pb-2">
+            <div className={`flex min-w-0 items-center gap-1 ${empty ? "stagger" : ""}`}>
             {/* working directory — the folder the agent reads + acts in. Click
                 to browse/pick a new one; switching it restarts the session there
                 (an engine's cwd is fixed at process start). Hidden in the hosted
@@ -4941,263 +4826,238 @@ export function ChatPane({
                 <CwdPicker cwd={cwd ?? null} onPick={changeCwd} />
               </Dropdown>
             )}
-            {/* access · context · effort — each its own labeled pill (was a
-                single bundled "behavior" menu). One click, reads at a glance,
-                live value on the pill, accent ring while open. */}
-            <Dropdown
-              open={openMenu === "perm"}
-              onToggle={() => setOpenMenu(openMenu === "perm" ? null : "perm")}
-              align="right"
-              triggerClassName={openMenu === "perm" ? CTRL_PILL_OPEN : CTRL_PILL}
-              label={`access — ${permission.label}`}
-              trigger={
-                <>
-                  <ShieldCheck size={12} className="shrink-0 text-[var(--color-muted)]" />
-                  <span className="whitespace-nowrap">{permission.label}</span>
-                  <ChevronDown size={11} className="text-[var(--color-faint)]" />
-                </>
-              }
-            >
-              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                access
-              </div>
-              {PERMISSION_MODES.map((p) => (
-                <MenuItem
-                  key={p.id}
-                  active={p.id === permission.id}
-                  onClick={() => {
-                    setPermission(p);
-                    saveSettings({ chatAccess: p.id });
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className="flex flex-col leading-snug">
-                    <span>{p.label}</span>
-                    {PERMISSION_SUBS[p.id] && (
-                      <span className="text-[10.5px] text-[var(--color-faint)]">{PERMISSION_SUBS[p.id]}</span>
-                    )}
-                  </span>
-                </MenuItem>
-              ))}
-            </Dropdown>
-            <Dropdown
-              open={openMenu === "context"}
-              onToggle={() => setOpenMenu(openMenu === "context" ? null : "context")}
-              align="right"
-              triggerClassName={
-                effectiveBudget === "ultracode"
-                  ? CTRL_PILL_ULTRA
-                  : openMenu === "context"
-                    ? CTRL_PILL_OPEN
-                    : CTRL_PILL
-              }
-              label={`context — ${effectiveBudget}`}
-              trigger={
-                <>
-                  {effectiveBudget === "ultracode" ? (
-                    <Sparkles size={12} className="shrink-0" />
+            {/* the SHIELD (decision C) — access mode + context budget behind
+                one icon whose form mirrors the choice: check = bypass, half =
+                accept-edits, outline = ask, cyan = plan-only. */}
+            {!bareRail && (
+              <Dropdown
+                open={openMenu === "perm"}
+                onToggle={() => setOpenMenu(openMenu === "perm" ? null : "perm")}
+                align="left"
+                triggerClassName={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors ${
+                  openMenu === "perm"
+                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)]"
+                    : "border border-transparent hover:bg-[var(--color-panel)]"
+                }`}
+                label={`access — ${permission.label} · context — ${effectiveBudget}`}
+                trigger={
+                  permission.id === "bypassPermissions" ? (
+                    <ShieldCheck size={14} className="text-[var(--color-accent)]" />
+                  ) : permission.id === "acceptEdits" ? (
+                    <ShieldHalf size={14} className="text-[var(--color-accent)]" />
+                  ) : permission.id === "plan" ? (
+                    <Shield size={14} style={{ color: "var(--aios-accent-2)" }} />
                   ) : (
-                    <Gauge size={12} className="shrink-0 text-[var(--color-muted)]" />
-                  )}
-                  <span className="whitespace-nowrap">{effectiveBudget}</span>
-                  <ChevronDown size={11} className={effectiveBudget === "ultracode" ? "opacity-80" : "text-[var(--color-faint)]"} />
-                </>
-              }
-            >
-              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                context
-              </div>
-              {CONTEXT_BUDGETS.map((b) => (
-                <MenuItem
-                  key={b.id}
-                  active={b.id === effectiveBudget}
-                  title={b.sub}
-                  onClick={() => {
-                    setContextBudget(b.id);
-                    saveSettings({ chatContextBudget: b.id });
-                    if (b.id === "ultracode") {
-                      const ultra = EFFORTS.find((ef) => ef.ultra);
-                      if (ultra) {
-                        setEffort(ultra);
-                        saveSettings({ chatEffort: ultra.id });
-                      }
-                    } else if (effort.ultra) {
-                      setEffort(EFFORTS[1]);
-                      saveSettings({ chatEffort: EFFORTS[1].id });
-                    }
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="flex items-center gap-2">
-                      {b.id === "ultracode" && <Sparkles size={13} className="text-[var(--color-spark)]" />}
-                      {b.label}
-                    </span>
-                    <span className="truncate text-[10.5px] text-[var(--color-faint)]">{b.sub}</span>
-                  </span>
-                </MenuItem>
-              ))}
-            </Dropdown>
-            <Dropdown
-              open={openMenu === "effort"}
-              onToggle={() => setOpenMenu(openMenu === "effort" ? null : "effort")}
-              align="right"
-              triggerClassName={
-                effort.ultra
-                  ? CTRL_PILL_ULTRA
-                  : openMenu === "effort"
-                    ? CTRL_PILL_OPEN
-                    : CTRL_PILL
-              }
-              label={`effort — ${effort.label}`}
-              trigger={
-                <>
-                  {effort.ultra ? (
-                    <Sparkles size={12} className="shrink-0" />
-                  ) : (
-                    <Zap size={12} className="shrink-0 text-[var(--color-muted)]" />
-                  )}
-                  <span className="whitespace-nowrap">{effort.label}</span>
-                  <ChevronDown size={11} className={effort.ultra ? "opacity-80" : "text-[var(--color-faint)]"} />
-                </>
-              }
-            >
-              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                effort
-              </div>
-              {EFFORTS.map((ef) => (
-                <MenuItem
-                  key={ef.id}
-                  active={ef.id === effort.id}
-                  onClick={() => {
-                    setEffort(ef);
-                    saveSettings({ chatEffort: ef.id });
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className="flex items-center gap-2">
-                    {ef.ultra && <Sparkles size={13} className="text-[var(--color-spark)]" />}
-                    {ef.label}
-                  </span>
-                </MenuItem>
-              ))}
-            </Dropdown>
+                    <Shield size={14} className="text-[var(--color-muted)]" />
+                  )
+                }
+              >
+                <div className="w-[250px]">
+                  <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+                    access
+                  </div>
+                  {PERMISSION_MODES.map((p) => (
+                    <MenuItem
+                      key={p.id}
+                      active={p.id === permission.id}
+                      onClick={() => {
+                        setPermission(p);
+                        saveSettings({ chatAccess: p.id });
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span className="flex flex-col leading-snug">
+                        <span>{p.label}</span>
+                        {PERMISSION_SUBS[p.id] && (
+                          <span className="text-[10.5px] text-[var(--color-faint)]">{PERMISSION_SUBS[p.id]}</span>
+                        )}
+                      </span>
+                    </MenuItem>
+                  ))}
+                  <div className="mx-2 my-1 h-px bg-[var(--color-border)]" />
+                  <div className="px-3 pb-1 pt-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+                    context budget
+                  </div>
+                  <div className="mx-2 mb-1.5 flex gap-[3px] rounded-[9px] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_60%,transparent)] p-[3px]">
+                    {CONTEXT_BUDGETS.map((b) => {
+                      const on = b.id === effectiveBudget;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          title={b.sub}
+                          onClick={() => {
+                            setContextBudget(b.id);
+                            saveSettings({ chatContextBudget: b.id });
+                            if (b.id === "ultracode") {
+                              const ultra = EFFORTS.find((ef) => ef.ultra);
+                              if (ultra) {
+                                setEffort(ultra);
+                                saveSettings({ chatEffort: ultra.id });
+                              }
+                            } else if (effort.ultra) {
+                              setEffort(EFFORTS[1]);
+                              saveSettings({ chatEffort: EFFORTS[1].id });
+                            }
+                            setOpenMenu(null);
+                          }}
+                          className={`flex-1 rounded-md px-0.5 py-[3px] text-center font-sans text-[10.5px] transition-colors ${
+                            on
+                              ? b.id === "ultracode"
+                                ? "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_30%,transparent),color-mix(in_srgb,var(--aios-accent-2)_25%,transparent))] text-[var(--color-text)]"
+                                : "bg-[var(--color-accent-soft)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
+                              : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                          }`}
+                        >
+                          {b.id === "ultracode" ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              <Sparkles size={9} />
+                              ultra
+                            </span>
+                          ) : (
+                            b.label
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </Dropdown>
+            )}
+            {/* plan-first + goal as icon toggles — the armed strip above the
+                input is their receipt. */}
+            {!bareRail && (
+              <button
+                type="button"
+                onClick={() => setPlanMode((v) => !v)}
+                title={planMode ? "plan-first armed — click to disarm" : "plan-first: propose a plan before building"}
+                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors ${
+                  planMode
+                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
+                    : "border border-transparent text-[var(--color-muted)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                }`}
+              >
+                <ListChecks size={13} />
+              </button>
+            )}
+            {!bareRail && (
+              <button
+                type="button"
+                onClick={() => setGoalDraft(goal)}
+                title={goal.trim() ? `goal — ${goal}` : "set an ongoing goal (kept across turns)"}
+                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors ${
+                  goal.trim()
+                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
+                    : "border border-transparent text-[var(--color-muted)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                }`}
+              >
+                <Target size={13} />
+              </button>
+            )}
             </div>
-            {/* RIGHT — tools + actions, right-aligned. The model pill LEADS this
-                group (nearest send — the most-changed control), then collapse ·
-                tools · voice · send. */}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {/* model selector — sits next to send */}
+            {/* RIGHT — action: attach · mic · (working) · model pill · orb. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+            {!bareRail && !activeRun && (
+              <button
+                type="button"
+                onClick={() => imgInputRef.current?.click()}
+                title="attach image"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+              >
+                <ImageIcon size={13} />
+              </button>
+            )}
+            {!bareRail && !activeRun && (
+              <button
+                type="button"
+                onClick={() => void micStart()}
+                title={`dictate (${chord("J")})`}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+              >
+                <Mic size={13} />
+              </button>
+            )}
+            {/* the working chip (decision D) — the run's clock lives in the
+                rail where attach/mic sat, for exactly the run's duration. */}
+            {activeRun && (
+              <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 font-mono text-[9.5px] text-[var(--color-muted)]">
+                <span className="h-[6px] w-[6px] rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+                working · {fmtClock(workClock)}
+              </span>
+            )}
+            {/* the model pill (decision B) — engine dot · name · effort ticks.
+                Its menu = short-by-default + type-to-dig + manage (M1+M3). */}
             <Dropdown
               open={openMenu === "model"}
               onToggle={() => setOpenMenu(openMenu === "model" ? null : "model")}
               align="right"
               triggerClassName={openMenu === "model" ? CTRL_PILL_OPEN : CTRL_PILL_MODEL}
-              label={`model — ${model.label}`}
+              label={`model — ${model.label} · effort — ${effort.label}`}
               trigger={
                 <>
-                  <span className="whitespace-nowrap font-medium">{model.label}</span>
+                  <span
+                    className="h-[6px] w-[6px] shrink-0 rounded-full"
+                    style={{
+                      background: engineDotColor(model.engine),
+                      boxShadow: `0 0 6px color-mix(in srgb, ${engineDotColor(model.engine)} 70%, transparent)`,
+                    }}
+                  />
+                  <span className="max-w-[130px] truncate font-medium whitespace-nowrap">{model.label}</span>
+                  <EffortTicks effortId={effort.id} ultra={effort.ultra} />
                   <ChevronDown size={11} className="text-[var(--color-faint)]" />
                 </>
               }
             >
-              {(() => {
-                // group the flat model list by client (codex / claude / other)
-                // with section headers; surface groups that have an installed
-                // model first so the picker never leads with a wall of
-                // "not installed" rows.
-                const order = [
-                  { engine: "codex", label: "codex" },
-                  { engine: "claude", label: "claude" },
-                  { engine: "opencode", label: "other" },
-                  // BYO-key API tier (Tier 4) — only groups with a configured key
-                  // (or keyless ollama) have rows, so empty ones drop out below.
-                  { engine: "anthropic", label: "anthropic · api" },
-                  { engine: "openrouter", label: "openrouter · api" },
-                  { engine: "openai", label: "openai · api" },
-                  { engine: "ollama", label: "ollama · local" },
-                ];
-                const allModels = [...pickerModels, ...apiModels];
-                const groups = order
-                  .map((g) => ({
-                    ...g,
-                    rows: allModels.filter((m) => (m.engine ?? "claude") === g.engine),
-                  }))
-                  .filter((g) => g.rows.length > 0);
-                groups.sort(
-                  (a, b) =>
-                    Number(b.rows.some((m) => !m.disabled)) -
-                    Number(a.rows.some((m) => !m.disabled)),
-                );
-                return groups.flatMap(({ engine, label, rows }, gi) => [
-                  <div
-                    key={`grp-${engine}`}
-                    className={`px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)] ${
-                      gi > 0 ? "mt-1 border-t border-[var(--color-border)]" : ""
-                    }`}
-                  >
-                    {label}
-                  </div>,
-                  ...rows.map((m) => {
-                    const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
-                    return (
-                      <MenuItem
-                        // identity is (engine, id): an API model id can collide
-                        // with a CLI one (claude-opus-4-8 is both the claude CLI
-                        // and the Anthropic API), so key + active compare both.
-                        key={`${m.engine ?? "claude"}:${m.id}`}
-                        active={
-                          m.id === model.id &&
-                          (m.engine ?? "claude") === (model.engine ?? "claude")
-                        }
-                        disabled={m.disabled}
-                        title={m.note}
-                        onClick={() => {
-                          if (m.disabled) return;
-                          setModel(m);
-                          // Picking a model sets the global default (sticks across
-                          // panes + restarts). For API providers we persist the bare
-                          // provider id (the model-init restores it; the CLI helpers
-                          // fall back gracefully) and leave defaultAi — the "send to
-                          // AI" route — untouched since it's CLI-only.
-                          if (isApiProviderId(m.engine)) {
-                            saveSettings({ chatModel: m.id, chatProvider: m.engine });
-                          } else {
-                            const provider = `${m.engine ?? "claude"}-cli`;
-                            saveSettings({
-                              chatModel: m.id,
-                              chatProvider: provider,
-                              defaultAi: defaultAiForProvider(provider),
-                            });
-                          }
-                          setOpenMenu(null);
-                        }}
-                      >
-                        <span className="flex items-center gap-2">
-                          {m.label}
-                          {m.disabled && m.note && (
-                            // chip stays terse ("not installed"); the row tooltip
-                            // carries the full why + the install one-liner.
-                            <span className="rounded bg-[var(--color-panel)] px-1.5 py-0.5 text-[10px] text-[var(--color-faint)]">
-                              {m.note.split(" — ")[0]}
-                            </span>
-                          )}
-                          {win && (
-                            <span
-                              className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
-                              title={`this model's own ${win.tag === "7d" ? "weekly" : "5-hour"} window${
-                                win.resetsAt ? ` · resets ${resetIn(win.resetsAt)}` : ""
-                              }`}
-                            >
-                              {win.tag} {Math.round(Math.min(Math.max(100 - win.pct, 0), 100))}% left
-                            </span>
-                          )}
-                        </span>
-                      </MenuItem>
-                    );
-                  }),
-                ]);
-              })()}
+              <ModelMenu
+                models={[...pickerModels, ...apiModels]}
+                currentId={model.id}
+                currentEngine={model.engine ?? "claude"}
+                recents={recentModels}
+                hidden={hiddenModels}
+                effort={effort}
+                efforts={EFFORTS}
+                onEffort={(ef) => {
+                  const full = EFFORTS.find((e) => e.id === ef.id);
+                  if (!full) return;
+                  setEffort(full);
+                  saveSettings({ chatEffort: full.id });
+                }}
+                onToggleHidden={toggleHiddenModel}
+                onPick={(m) => {
+                  setModel(m);
+                  // Picking a model sets the global default (sticks across
+                  // panes + restarts). For API providers we persist the bare
+                  // provider id (the model-init restores it; the CLI helpers
+                  // fall back gracefully) and leave defaultAi — the "send to
+                  // AI" route — untouched since it's CLI-only.
+                  if (isApiProviderId(m.engine)) {
+                    saveSettings({ chatModel: m.id, chatProvider: m.engine });
+                  } else {
+                    const provider = `${m.engine ?? "claude"}-cli`;
+                    saveSettings({
+                      chatModel: m.id,
+                      chatProvider: provider,
+                      defaultAi: defaultAiForProvider(provider),
+                    });
+                  }
+                  pushRecentModel(modelKey(m));
+                  setOpenMenu(null);
+                }}
+                renderWindow={(m) => {
+                  const win = m.disabled ? null : modelWindowFor(m, pickerWindows);
+                  if (!win) return null;
+                  return (
+                    <span
+                      className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
+                      title={`this model's own ${win.tag === "7d" ? "weekly" : "5-hour"} window${
+                        win.resetsAt ? ` · resets ${resetIn(win.resetsAt)}` : ""
+                      }`}
+                    >
+                      {win.tag} {Math.round(Math.min(Math.max(100 - win.pct, 0), 100))}% left
+                    </span>
+                  );
+                }}
+              />
             </Dropdown>
             {!empty && (
               <button
@@ -5206,66 +5066,23 @@ export function ChatPane({
                   setOpenMenu(null);
                   setComposerCollapsed(true);
                 }}
-                className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                className="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
                 title="hide composer"
               >
-                <ChevronDown size={15} />
+                <ChevronDown size={14} />
               </button>
             )}
-            <Dropdown
-              open={openMenu === "advanced"}
-              onToggle={() => setOpenMenu(openMenu === "advanced" ? null : "advanced")}
-              align="right"
-              triggerClassName="grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-              trigger={<Wrench size={15} />}
-              label="tools & session controls"
-            >
-              <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                tools
-              </div>
-              <MenuItem
-                onClick={() => {
-                  setResumeQuery("");
-                  setOverlay("resume");
-                  setOverlayIdx(0);
-                  void loadResumeSessions();
-                  setOpenMenu(null);
-                  setTimeout(() => resumeSearchRef.current?.focus(), 0);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <History size={13} /> resume session
-                </span>
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  imgInputRef.current?.click();
-                  setOpenMenu(null);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <ImageIcon size={13} /> attach image
-                </span>
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  void micStart();
-                  setOpenMenu(null);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <Mic size={13} /> dictate
-                </span>
-              </MenuItem>
-            </Dropdown>
-
+            {/* (the wrench tools menu retired — attach + dictate are direct
+                rail chips now, and /resume owns resume. Owner-confirmed.) */}
             {voicePhase === "transcribing" ? (
-              <div className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-accent)]">
-                <Loader2 size={16} className="animate-spin" />
+              <div className="grid h-7 w-7 place-items-center rounded-full text-[var(--color-accent)]">
+                <Loader2 size={15} className="animate-spin" />
               </div>
             ) : null}
 
-            {/* send / steer / queue / stop. The label is the contract. */}
+            {/* the ORB — hollow when empty, lit when ready, breathing stop
+                ring while a run is live. While running, a quiet steer/queue
+                chip carries the draft's contract (⌥/⌃ click = interrupt). */}
             {activeRun ? (
               <>
                 {hasDraft && (
@@ -5280,42 +5097,42 @@ export function ChatPane({
                       } else enqueue(input);
                     }}
                     disabled={action.disabled}
-                    className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3 text-[12px] font-medium text-[var(--color-bg)] transition-all hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
+                    className="flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[var(--color-accent-soft)] px-2.5 font-sans text-[11px] text-[var(--color-text)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-40"
                     title={action.title}
                   >
-                    {action.mode === "steer" ? <Waypoints size={14} /> : <Clock size={14} />}
+                    {action.mode === "steer" ? <Waypoints size={12} /> : <Clock size={12} />}
                     {action.label}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={stop}
-                  className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-danger)] px-3 text-[12px] font-medium text-[var(--color-bg)] transition-all hover:opacity-90"
-                  title="interrupt active run"
-                >
-                  <Square size={13} className="fill-current" />
-                  stop
-                </button>
+                <SendOrb mode="stop" onClick={stop} title="stop the run" />
               </>
             ) : (
-              <Magnet>
-                <HoverBorderGradient radius="rounded-full">
-                  <button
-                    type="button"
-                    onClick={send}
-                    disabled={action.disabled}
-                    className="press aios-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] enabled:shadow-[0_0_20px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
-                    title={action.title}
-                  >
-                    <ArrowUp size={16} />
-                    {action.label}
-                  </button>
-                </HoverBorderGradient>
-              </Magnet>
+              <SendOrb
+                mode={hasDraft && !action.disabled ? "ready" : "idle"}
+                disabled={action.disabled}
+                title={action.title}
+                onClick={send}
+              />
             )}
             </div>
           </div>
         </div>
+        {/* under-row — the steer contract, only while a run is live. */}
+        {streaming && (
+          <div className="mt-1.5 flex items-center gap-3.5 px-1.5 font-mono text-[10px] text-[var(--color-faint)]">
+            <span className="text-[var(--color-accent)]">streaming</span>
+            {(model.engine ?? "claude") === "claude" ? (
+              <>
+                <span><span className="rounded border border-[var(--color-border)] px-1 text-[var(--color-muted)]">⏎</span> steer into the run</span>
+                <span><span className="rounded border border-[var(--color-border)] px-1 text-[var(--color-muted)]">{ALT}⏎</span> interrupt &amp; redirect</span>
+              </>
+            ) : model.engine === "codex" ? (
+              <span><span className="rounded border border-[var(--color-border)] px-1 text-[var(--color-muted)]">⏎</span> steer (won't interrupt)</span>
+            ) : (
+              <span><span className="rounded border border-[var(--color-border)] px-1 text-[var(--color-muted)]">⏎</span> queue a follow-up</span>
+            )}
+          </div>
+        )}
       </div>
     ),
     // re-render composer on the inputs that affect it
@@ -5376,6 +5193,17 @@ export function ChatPane({
       resumeSession,
       closeResume,
       pickerWindows,
+      // deck redesign (W4): filament + working chip + armed strips + model menu
+      workClock,
+      ctxMeter,
+      turnBurnPct,
+      runPhase,
+      runEventCount,
+      recentModels,
+      hiddenModels,
+      toggleHiddenModel,
+      pushRecentModel,
+      bareRail,
     ],
   );
 
@@ -5877,33 +5705,8 @@ export function ChatPane({
       alive = false;
     };
   }, [empty, cwd]);
-  const starterDeck = useMemo(() => {
-    const deck = STARTER_DECK.map((c) => ({ ...c }));
-    if (!deckHints || !cwd) return deck;
-    const projectName = baseName(cwd);
-    if (deckHints.bare) {
-      deck[0].sub = "start from scratch";
-      deck[0].prompt =
-        "this folder is empty — help me scaffold a new project here. ask me what we're building first";
-      return deck;
-    }
-    if (deckHints.manifest) {
-      deck[0].sub = `explain ${projectName}`;
-      deck[0].prompt = `explain this codebase — start from ${deckHints.manifest} and give me the lay of the land`;
-      deck[2].sub = "run the tests";
-      deck[2].prompt = "run the test suite, then fix the first failure you find";
-    } else if (deckHints.hasReadme) {
-      deck[0].sub = `summarize ${projectName}`;
-      deck[0].prompt = "read the README and summarize what this project is and how to work in it";
-    }
-    if (deckHints.hasGit) {
-      deck[1].label = "catch up";
-      deck[1].sub = "what changed lately?";
-      deck[1].prompt =
-        "summarize the recent git history — what's been worked on lately, and what looks unfinished?";
-    }
-    return deck;
-  }, [deckHints, cwd]);
+  // (starter deck removed with the hero cards — see the empty-state comment.)
+  void deckHints;
 
   /** Wall-clock for a block (unix ms) — the turn's own createdAt (sends +
    *  resumed transcripts) first, then the arrival stamp; null when unknown
@@ -5945,9 +5748,11 @@ export function ChatPane({
     return (
       <ChatFileOpenContext.Provider value={openChatFile}>
       <PaneDropZone onPath={insertPath} onFiles={onDropFiles} label="drop image or path">
-      {/* anchored (not centered): supplementary rows grow DOWNWARD so the
-          title never jumps as chips/ledger/status bloom in. */}
-      <div className="relative flex h-full min-h-0 w-full flex-col items-center justify-start overflow-y-auto overflow-x-hidden bg-[var(--color-bg)] px-6 pt-[14vh]">
+      {/* vertically CENTERED hero (owner: anchored-high read as empty) — the
+          block still grows downward from center as chips/status bloom in.
+          NEVER scrolls (owner: only content bubbles may scroll): overlays like
+          /resume fit by shifting the hero up instead. */}
+      <div className="relative flex h-full min-h-0 w-full flex-col items-center justify-center overflow-hidden bg-[var(--color-bg)] px-6 py-10">
         {/* ambient aurora — two slow accent blobs whispering behind the hero
             (drift keyframes die under reduce-motion; the static wash stays). */}
         <div
@@ -5960,30 +5765,49 @@ export function ChatPane({
           className="aios-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
           style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 62%)", filter: "blur(80px)" }}
         />
-        <div className="fade-in-up relative w-full max-w-2xl">
-          <div className="helper-line mb-2.5 text-center" style={{ animationDelay: "60ms" }}>
-            {timeGreeting()}, {displayName()}
+        {/* an open overlay (the /resume ledger drops BELOW the composer here)
+            shifts the whole hero up so everything fits without scrolling. */}
+        <div
+          className={`fade-in-up relative w-full max-w-3xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            overlay ? "-translate-y-[16vh]" : ""
+          }`}
+        >
+          <div className="hero-kicker fade-in-up mb-3 text-center" style={{ animationDelay: "60ms" }}>
+            {timeGreeting()}, <b>{displayName()}</b>
           </div>
-          {/* per-word spring rise (SplitText); keyed by fresh/resume so it
-              fires once per state, not on every transcript re-render. */}
+          {/* per-word spring rise (SplitText); keyed per state so it fires
+              once per state, not on every transcript re-render. The title is
+              a living question — it morphs with what's actually happening:
+              /resume open, dictation live, plan-first armed. */}
           <h1 className="hero-title mb-6 text-center">
-            <SplitText
-              key={resumedTitle ? "resume" : "fresh"}
-              startDelay={0.08}
-              words={
-                resumedTitle
-                  ? ["picking", "up", "where", "we", "left", "off"]
-                  : [
-                      "what",
-                      "should",
-                      "we",
-                      <span key="work" className="aios-greet-name">
-                        work
-                      </span>,
-                      "on?",
-                    ]
-              }
-            />
+            {(() => {
+              const heroState =
+                overlay === "resume"
+                  ? "resume"
+                  : recording
+                    ? "listening"
+                    : planMode
+                      ? "plan"
+                      : resumedTitle
+                        ? "resumed"
+                        : "fresh";
+              const accent = (key: string, text: string) => (
+                <span key={key} className="aios-greet-name">
+                  {text}
+                </span>
+              );
+              const words =
+                heroState === "resume"
+                  ? ["what", "should", "we", accent("resume", "resume?")]
+                  : heroState === "listening"
+                    ? ["go", "ahead —", "i'm", accent("listening", "listening")]
+                    : heroState === "plan"
+                      ? ["what", "should", "we", accent("plan", "plan?")]
+                      : heroState === "resumed"
+                        ? ["picking", "up", "where", "we", accent("left", "left off")]
+                        : ["what", "should", "we", accent("work", "work"), "on?"];
+              return <SplitText key={heroState} startDelay={0.08} words={words} />;
+            })()}
           </h1>
           {resumedTitle && (
             <div className="mb-4 flex justify-center">
@@ -6013,105 +5837,25 @@ export function ChatPane({
               )}
             </div>
           )}
-          <div className="helper-line mt-3 flex items-center justify-center gap-3">
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className={`status-dot ${started ? "status-dot--active" : "status-dot--idle"}`}
-                style={{ width: 6, height: 6 }}
-              />
-              {started ? `${model.engine ?? "claude"} · ready` : `starting ${model.engine ?? "claude"}…`}
-            </span>
-            <span className="text-[var(--color-border-strong)]">·</span>
-            <span>⏎ send</span>
-            <span>{SHIFT}⏎ newline</span>
-          </div>
-          {/* starter deck: the hero hands you somewhere to GO instead of a
-              blank box — four lift-on-hover cards, gone on the first keystroke.
-              Cards are cwd-aware (starterDeck): manifests, git, README and
-              empty folders each reshape the prompts. */}
-          {!hasDraft && (
-            <div className="stagger mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {starterDeck.map(({ icon: Icon, label, sub, prompt }) => (
-                // TiltCard owns the hover motion (3D tilt + mouse-follow glare),
-                // so the button drops `lift` to avoid a double transform.
-                <TiltCard key={label} className="rounded-[var(--aios-radius-lg)]">
-                  <button
-                    type="button"
-                    disabled={!started}
-                    onClick={() => {
-                      setInput(prompt);
-                      taRef.current?.focus();
-                    }}
-                    className="surface-card group flex h-full w-full flex-col items-start gap-2 px-3.5 py-3 text-left disabled:opacity-50"
-                  >
-                    <Icon
-                      size={16}
-                      className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
-                    />
-                    <span className="flex flex-col leading-tight">
-                      <span className="text-[12.5px] font-medium text-[var(--color-text)]">{label}</span>
-                      <span className="text-[11px] text-[var(--color-faint)]">{sub}</span>
-                    </span>
-                  </button>
-                </TiltCard>
-              ))}
+          {/* status/kbd hints hide while an overlay is open — the /resume
+              ledger occupies exactly this space below the composer. */}
+          {!overlay && (
+            <div className="helper-line mt-3 flex items-center justify-center gap-3">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className={`status-dot ${started ? "status-dot--active" : "status-dot--idle"}`}
+                  style={{ width: 6, height: 6 }}
+                />
+                {started ? `${model.engine ?? "claude"} · ready` : `starting ${model.engine ?? "claude"}…`}
+              </span>
+              <span className="text-[var(--color-border-strong)]">·</span>
+              <span>⏎ send</span>
+              <span>{SHIFT}⏎ newline</span>
             </div>
           )}
-          {/* resume rail: the last few conversations one click away — quiet
-              rows under the deck, gone (with it) on the first keystroke. */}
-          {!hasDraft && !resumedTitle && heroSessions != null && heroSessions.length > 0 && (
-            <div className="fade-in-up mt-6 pb-8" style={{ animationDelay: "160ms" }}>
-              <div className="mb-1.5 flex items-baseline justify-between px-1">
-                <span className="font-mono text-[10px] lowercase tracking-[0.14em] text-[var(--color-faint)]">
-                  or pick up where you left off
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOverlay("resume");
-                    void loadResumeSessions();
-                  }}
-                  className="font-mono text-[10px] lowercase text-[var(--color-faint)] transition-colors hover:text-[var(--color-text-2)]"
-                >
-                  all sessions →
-                </button>
-              </div>
-              <div className="flex flex-col gap-1">
-                {heroSessions.slice(0, 3).map((s) => {
-                  const engine = s.engine || "claude";
-                  const color = engineColorVar(engine);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => resumeSession(s)}
-                      title={(s.last_user || "").trim() || s.title}
-                      className="surface-card press group flex items-center gap-2.5 px-3 py-2 text-left"
-                    >
-                      <RotateCcw
-                        size={13}
-                        className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">
-                        {s.title || "untitled session"}
-                      </span>
-                      <span
-                        style={{ color, borderColor: `color-mix(in srgb, ${color} 40%, transparent)` }}
-                        className="shrink-0 rounded border px-1 py-0.5 font-mono text-[9px]"
-                      >
-                        {engine}
-                      </span>
-                      {s.mtime ? (
-                        <span className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
-                          {fmtRelativeTime(s.mtime)}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* (starter deck + resume rail removed — the home lock screen owns
+              discovery and "pick up where you left off" now; the chat hero
+              stays a clean greeting + composer. Owner request, W1.6b.) */}
         </div>
       </div>
       {goalDraft !== null && (
@@ -6120,6 +5864,18 @@ export function ChatPane({
           onChange={setGoalDraft}
           onCommit={(v) => { setGoal(v.trim()); setGoalDraft(null); }}
           onCancel={() => setGoalDraft(null)}
+        />
+      )}
+      {/* the attach-preview lightbox must exist in the HERO branch too — this
+          is where images usually get attached first (owner-reported dead click). */}
+      {previewImage && (
+        <ImagePreview
+          image={previewImage}
+          onClose={() => setPreviewImage(null)}
+          onRemove={() => {
+            removeImage(previewImage.id);
+            setPreviewImage(null);
+          }}
         />
       )}
       </PaneDropZone>
@@ -6140,6 +5896,19 @@ export function ChatPane({
     >
       {/* quiet dot-grid texture on the chat ground — behind the aurora + content */}
       <DotPattern className="-z-10" gap={26} />
+      {/* W5 ambient canvas art — the hero's aurora blobs, whisper-faint, on
+          the live transcript ground too (drift dies under reduce-motion; the
+          static wash stays). */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div
+          className="aios-drift-a absolute left-[6%] top-[10%] h-[44vh] w-[44vh] rounded-full opacity-[0.035]"
+          style={{ background: "radial-gradient(circle, var(--color-accent), transparent 62%)", filter: "blur(90px)" }}
+        />
+        <div
+          className="aios-drift-b absolute bottom-[6%] right-[4%] h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
+          style={{ background: "radial-gradient(circle, var(--aios-accent-2), transparent 62%)", filter: "blur(90px)" }}
+        />
+      </div>
       <div
         ref={scrollRef}
         className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -6753,14 +6522,11 @@ export function ChatPane({
           {/* context readout — out of the cramped composer, model-aware window
               (opus 4.8 = 1M, sonnet/haiku = 200K, codex = 272K) */}
           {(usage.messages > 0 || ctxTokens != null || tokenHistory.length >= 3) && (
-            <div className="mb-1.5 flex items-center justify-between gap-2 px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]">
+            <div className="mb-1.5 flex items-center gap-3 px-1 font-mono text-[10.5px] tabular-nums text-[var(--color-faint)]">
               {/* per-turn token sparkline — the result turns already carry
                   tokens; this is the session's rhythm at a glance */}
-              {tokenHistory.length >= 3 ? (
-                <TokenSparkline values={tokenHistory} />
-              ) : (
-                <span />
-              )}
+              {tokenHistory.length >= 3 && <TokenSparkline values={tokenHistory} />}
+              <span className="ml-auto flex min-w-0 items-center gap-2">
               {/* cumulative session readout — messages · output tokens · age (no $). */}
               {usage.messages > 0 ? (
                 (() => {
@@ -6772,40 +6538,23 @@ export function ChatPane({
                     >
                       {usage.messages} msg{usage.messages === 1 ? "" : "s"}
                       {usage.tokens > 0 ? ` · ${formatTokens(usage.tokens)} out` : ""}
+                      {(() => {
+                        // real-money engines only — sub-billed CLIs stay $-free
+                        if (["claude", "codex", "opencode"].includes(model.engine ?? "claude")) return "";
+                        const cost = turns.reduce(
+                          (a, t) => a + (t.kind === "result" && typeof t.cost === "number" ? t.cost : 0),
+                          0,
+                        );
+                        return cost >= 0.0005 ? ` · $${cost.toFixed(4)}` : "";
+                      })()}
                       {age && age !== "just now" ? ` · ${age}` : ""}
                     </span>
                   );
                 })()
-              ) : (
-                <span />
-              )}
-              {ctxTokens != null ? (
-                <span
-                  title={`${ctxTokens.toLocaleString()} tokens of context in the model's window right now${
-                    turnBurnPct != null
-                      ? ` · recent turns each used ≈${turnBurnPct < 1 ? turnBurnPct.toFixed(1) : Math.round(turnBurnPct)}% of your 5h usage window`
-                      : ""
-                  }`}
-                >
-                  {(() => {
-                    const win = model.id.startsWith("claude-opus")
-                      ? 1_000_000
-                      : model.engine === "codex"
-                        ? 272_000
-                        : model.engine === "opencode"
-                          ? 256_000
-                          : 200_000;
-                    const pct = Math.min(100, Math.round((ctxTokens / win) * 100));
-                    const burn =
-                      turnBurnPct != null && turnBurnPct >= 0.05
-                        ? ` · ≈${turnBurnPct < 1 ? turnBurnPct.toFixed(1) : Math.round(turnBurnPct)}%/turn`
-                        : "";
-                    return `${formatTokens(ctxTokens)}${pct > 0 ? ` · ${pct}%` : ""} ctx${burn}`;
-                  })()}
-                </span>
-              ) : (
-                <span />
-              )}
+              ) : null}
+              {/* (the ctx chip retired — the composer's FILAMENT is the ambient
+                  context meter now; hover its edge for the full card.) */}
+              </span>
             </div>
           )}
           {isComposerCollapsed ? (
@@ -7007,19 +6756,22 @@ function ActivityGroup({
       : `${n} step${n === 1 ? "" : "s"}`;
 
   return (
-    <div className="group/actg relative flex flex-col gap-1.5">
+    <div
+      className={`group/actg relative flex flex-col overflow-hidden rounded-xl border transition-colors ${
+        live
+          ? "border-[color-mix(in_srgb,var(--color-accent)_24%,transparent)]"
+          : "border-[var(--color-border)]"
+      } bg-[color-mix(in_srgb,var(--color-panel)_40%,transparent)]`}
+    >
       <button
         type="button"
         onClick={() => setUserToggled(!open)}
-        className="group/act -mx-1 flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-sans text-[12.5px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
+        className="group/act flex w-full items-center gap-2 px-3 py-1.5 text-left font-sans text-[12.5px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
       >
         {live ? (
           <Loader2 size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
         ) : (
-          <ChevronRight
-            size={13}
-            className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
-          />
+          <Terminal size={12} className="shrink-0 text-[var(--color-faint)]" />
         )}
         {live ? <CadencedShimmer>{label}</CadencedShimmer> : <span>{label}</span>}
         {live && phase && <RunRail phase={phase} />}
@@ -7027,10 +6779,16 @@ function ActivityGroup({
             duration the label IS the step count, so don't print it twice
             (the "2 steps · 2 steps" dup). */}
         {!live && durationMs != null && n > 0 && (
-          <span className="text-[var(--color-faint)]">
-            · {n} step{n === 1 ? "" : "s"}
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-[var(--color-faint)] tabular-nums transition-opacity group-hover/actg:opacity-0">
+            {n} step{n === 1 ? "" : "s"}
           </span>
         )}
+        <ChevronDown
+          size={12}
+          className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "" : "-rotate-90"} ${
+            !live && durationMs != null && n > 0 ? "" : "ml-auto"
+          }`}
+        />
         {/* replay (run cinema) — sibling-positioned via the absolute span so
             it never nests a button inside this button; reveals on hover. */}
       </button>
@@ -7043,14 +6801,14 @@ function ActivityGroup({
           type="button"
           onClick={onReplay}
           title="replay this run (run cinema)"
-          className="absolute right-1 top-0.5 flex h-5 w-fit items-center gap-1 rounded px-1.5 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
+          className="absolute top-1.5 right-8 flex h-5 w-fit items-center gap-1 rounded px-1.5 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
         >
           ▶ replay
         </button>
       )}
 
       {open && n > 0 && (
-        <div className="ml-[6px] flex flex-col gap-0.5 border-l border-[var(--color-border)] pl-3">
+        <div className="flex flex-col gap-0.5 border-t border-[var(--color-border)] px-3 py-2">
           {/* live fleet glance while a fan-out is in flight; the nested Agent rows
               below are the permanent record. */}
           {live && fleet.length > 0 && <FleetView agents={fleet} />}
@@ -7061,7 +6819,7 @@ function ActivityGroup({
       )}
 
       {artifacts.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] px-3 py-2">
           {artifacts.map((a) => (
             <FileCard key={a.path} artifact={a} />
           ))}
@@ -7734,1277 +7492,7 @@ function ArtifactActionButton({
   );
 }
 
-/** The bare live working line when a turn is in flight before any tool runs. */
-function WorkingLine({ elapsedMs, label }: { elapsedMs: number; label?: string }) {
-  return (
-    <div className="flex items-center gap-1.5 font-sans text-[12.5px] text-[var(--color-muted)]">
-      <Loader2 size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
-      <span className="animate-pulse">{label ?? "Working…"} {fmtClock(elapsedMs)}</span>
-    </div>
-  );
-}
-
-/** Faint, centered turn footer — tokens · cost · (duration on text-only turns). */
-function ResultFooter({
-  turn,
-  onRetry,
-}: {
-  turn: Extract<Turn, { kind: "result" }>;
-  onRetry?: () => void;
-}) {
-  // a failure must NOT read like a benign "1.2s · 340 tok" footer.
-  if (turn.ok === false) {
-    return (
-      <div className="flex items-start gap-2 rounded-xl border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/[0.07] px-3.5 py-2.5 backdrop-blur-md shadow-[0_0_26px_-14px_var(--color-danger)]">
-        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--color-danger)]" />
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-sans text-[12.5px] leading-relaxed text-[var(--color-text-2)]">
-          {turn.text || "something went wrong."}
-        </span>
-        {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="press inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border-strong)] px-2 py-1 font-sans text-[11.5px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-text)] hover:text-[var(--color-text)]"
-          >
-            <RefreshCw size={11} /> retry
-          </button>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="text-center font-mono text-[10.5px] text-[var(--color-faint)]">
-      {turn.text}
-    </div>
-  );
-}
-
-/** "today" / "yesterday" / "wed 11 jun" for the transcript's day rules. */
-function dayLabel(at: number): string {
-  const d = new Date(at);
-  const today = new Date();
-  const yesterday = new Date(today.getTime() - 86_400_000);
-  if (d.toDateString() === today.toDateString()) return "today";
-  if (d.toDateString() === yesterday.toDateString()) return "yesterday";
-  return d
-    .toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
-    .toLowerCase();
-}
-
-/** "14:32" hover stamp shared by both bubbles' action rows. */
-function turnClock(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/** Quiet hairline + day label where the transcript crosses midnight (resumed
- *  sessions span days; "yesterday" deserves a seam). */
-function DaySeparator({ at }: { at: number }) {
-  return (
-    <div
-      role="separator"
-      aria-label={dayLabel(at)}
-      className="sticky top-0 z-10 -mx-1 flex items-center gap-3 bg-[var(--color-bg)]/80 px-1 py-1 backdrop-blur-sm"
-    >
-      <span className="h-px flex-1 bg-[var(--color-border)]" />
-      <span className="font-mono text-[10px] lowercase tracking-wide text-[var(--color-faint)]">
-        {dayLabel(at)}
-      </span>
-      <span className="h-px flex-1 bg-[var(--color-border)]" />
-    </div>
-  );
-}
-
-/** 02 Framed Turns — one assistant response = one glass card. The render loop
- *  groups the run of non-user blocks (thinking · activity · change · prose ·
- *  result) following a user message into a single frame; this draws the card
- *  chrome + the mono header strip (status dot · AIOS·model · worked/steps).
- *  Non-positioned on purpose: the minimap reads child `offsetTop`, so a
- *  positioned wrapper would shift every marker. */
-function TurnFrame({
-  modelLabel,
-  steps,
-  workedMs,
-  live,
-  variantNav,
-  children,
-}: {
-  modelLabel: string;
-  steps: number;
-  workedMs: number;
-  live: boolean;
-  variantNav?: { index: number; count: number; onPrev: () => void; onNext: () => void };
-  children: React.ReactNode;
-}) {
-  const stepLbl = steps > 0 ? `${steps} step${steps === 1 ? "" : "s"}` : "";
-  const meta = live
-    ? ""
-    : workedMs > 0
-      ? `worked ${fmtDuration(workedMs)}${stepLbl ? ` · ${stepLbl}` : ""}`
-      : stepLbl;
-  return (
-    <div className="aios-turn overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
-      <div className="flex items-center gap-2 border-b border-[var(--color-border)]/70 px-3.5 py-2 font-mono text-[10.5px]">
-        <span
-          className="h-[7px] w-[7px] shrink-0 rounded-full"
-          style={
-            live
-              ? { background: "var(--color-accent)", boxShadow: "var(--aios-glow-soft)" }
-              : { background: "var(--color-success)", boxShadow: "0 0 7px var(--color-success-glow)" }
-          }
-        />
-        <span className="tracking-[0.06em] text-[var(--color-text-2)]">
-          AIOS · <span className="uppercase">{modelLabel}</span>
-        </span>
-        {variantNav && variantNav.count > 1 && (
-          <span
-            className="flex items-center gap-0.5 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_60%,transparent)] px-1 py-px"
-            title={`alternate answer ${variantNav.index + 1} of ${variantNav.count} to this message — regenerate re-rolls the SAME prompt (not a separate, continuable branch; that lands with BYO-key)`}
-          >
-            <button
-              type="button"
-              onClick={variantNav.onPrev}
-              disabled={variantNav.index <= 0}
-              title="previous response"
-              className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
-            >
-              <ChevronRight size={11} className="rotate-180" />
-            </button>
-            <span className="px-0.5 tabular-nums text-[var(--color-text-2)]">
-              {variantNav.index + 1}/{variantNav.count}
-            </span>
-            <button
-              type="button"
-              onClick={variantNav.onNext}
-              disabled={variantNav.index >= variantNav.count - 1}
-              title="next response"
-              className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
-            >
-              <ChevronRight size={11} />
-            </button>
-          </span>
-        )}
-        <span className="ml-auto text-[var(--color-faint)]">
-          {live ? <CadencedShimmer>streaming</CadencedShimmer> : meta}
-        </span>
-      </div>
-      <div className="flex flex-col gap-3 p-3.5">{children}</div>
-    </div>
-  );
-}
-
-function UserBubble({
-  turn,
-  at,
-  streaming,
-  isLast,
-  onRegenerate,
-  onRetryModel,
-  retryModels,
-  currentModelId,
-  onEdit,
-  variantNav,
-}: {
-  turn: Extract<Turn, { kind: "user" }>;
-  /** wall-clock of the turn (send time / transcript time); null = unknown. */
-  at?: number | null;
-  streaming: boolean;
-  isLast: boolean;
-  onRegenerate: () => void;
-  /** retry this turn on a different model (restart-resume-regenerate). */
-  onRetryModel?: (m: ChatModel) => void;
-  /** the models offered in the retry menu (CLI available + API) — parent-supplied
-   *  so it includes the BYO-key models, not just the static CLI catalog. */
-  retryModels?: ChatModel[];
-  /** the model currently driving the session (marked in the retry menu). */
-  currentModelId?: string;
-  onEdit: (id: string, text: string) => void;
-  /** edit-fork branch switcher (API tier): this prompt has alternate edits. */
-  variantNav?: { index: number; count: number; onPrev: () => void; onNext: () => void };
-}) {
-  // The retry menu is rendered in a PORTAL at fixed coords anchored to its button
-  // — an in-flow dropdown gets clipped by the scrolling transcript (the reported
-  // "can't see the models"). `retryPos` holds the resolved screen position.
-  const retryBtnRef = useRef<HTMLButtonElement>(null);
-  const [retryPos, setRetryPos] = useState<{
-    right: number;
-    top?: number;
-    bottom?: number;
-    maxH: number;
-  } | null>(null);
-  const models = retryModels ?? [];
-  const openRetryMenu = () => {
-    const r = retryBtnRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const right = Math.round(window.innerWidth - r.right);
-    const spaceAbove = r.top;
-    const spaceBelow = window.innerHeight - r.bottom;
-    // open upward when there's more room above (the common case — bubbles sit low),
-    // else downward; cap the height to the available space so it never clips.
-    setRetryPos(
-      spaceAbove >= spaceBelow
-        ? { right, bottom: Math.round(window.innerHeight - r.top + 4), maxH: Math.min(320, spaceAbove - 12) }
-        : { right, top: Math.round(r.bottom + 4), maxH: Math.min(320, spaceBelow - 12) },
-    );
-    setRetryOpen(true);
-  };
-  const [retryOpen, setRetryOpen] = useState(false);
-  // close the retry menu on any outside click, or Escape — ONLY Escape: closing
-  // on every keystroke dismissed the list before it could even be read.
-  useEffect(() => {
-    if (!retryOpen) return;
-    const close = () => setRetryOpen(false);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("click", close);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [retryOpen]);
-  // attachments that rode this turn: a clicked image opens a read-only lightbox;
-  // a clicked snippet chip expands its full quoted text inline.
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  const [openSnip, setOpenSnip] = useState<string | null>(null);
-  const images = turn.images ?? [];
-  const snippets = turn.snippets ?? [];
-  // image-only sends carry a "[N images]" placeholder as their wire text (so the
-  // model's prompt is unchanged) — hide it here since the thumbnails say it better.
-  const isImgPlaceholder = images.length > 0 && /^\[\d+ images?\]$/.test(turn.text);
-  const showText = turn.text.length > 0 && !isImgPlaceholder;
-  const hasBody = showText || images.length > 0 || snippets.length > 0;
-  useEffect(() => {
-    if (!lightbox) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLightbox(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [lightbox]);
-  return (
-    <div className="group flex flex-col items-end gap-1">
-      {turn.steered && (
-        <span className="flex items-center gap-1 pr-1 font-mono text-[10px] text-[var(--color-faint)]">
-          <Waypoints size={10} /> steered into the running turn
-        </span>
-      )}
-      {/* 02 framed turn — your message is a compact accent-glass card with a
-          mono YOU·time strip (matches the AIOS frame's header language). */}
-      <div className="w-fit max-w-[82%] overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent-soft)_82%,transparent)] shadow-[var(--aios-glow-soft)] backdrop-blur-md">
-        <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-3.5 py-1.5 font-mono text-[10.5px]">
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
-          <span className="tracking-[0.05em] text-[var(--color-text-2)]">YOU</span>
-          {variantNav && variantNav.count > 1 && (
-            <span
-              className="flex items-center gap-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_50%,transparent)] px-1 py-px"
-              title={`prompt ${variantNav.index + 1} of ${variantNav.count} — edited versions of this message (each its own branch)`}
-            >
-              <button
-                type="button"
-                onClick={variantNav.onPrev}
-                disabled={variantNav.index <= 0}
-                title="previous prompt"
-                className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronRight size={11} className="rotate-180" />
-              </button>
-              <span className="px-0.5 tabular-nums text-[var(--color-text-2)]">
-                {variantNav.index + 1}/{variantNav.count}
-              </span>
-              <button
-                type="button"
-                onClick={variantNav.onNext}
-                disabled={variantNav.index >= variantNav.count - 1}
-                title="next prompt"
-                className="press grid h-4 w-4 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronRight size={11} />
-              </button>
-            </span>
-          )}
-          {at != null && (
-            <span
-              className="ml-auto text-[var(--color-faint)]"
-              title={new Date(at).toLocaleString()}
-            >
-              {turnClock(at)}
-            </span>
-          )}
-        </div>
-        {showText && (
-          <div className="whitespace-pre-wrap break-words px-3.5 py-2.5 font-sans text-[13.5px] leading-relaxed text-[var(--color-text)]">
-            {turn.text}
-          </div>
-        )}
-        {(images.length > 0 || snippets.length > 0) && (
-          <div
-            className={`flex flex-col gap-2 px-3.5 pb-3 ${showText ? "border-t border-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] pt-2.5" : "pt-3"}`}
-          >
-            {images.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {images.map((path, i) => (
-                  <button
-                    key={`${path}:${i}`}
-                    type="button"
-                    onClick={() => setLightbox(fileSrc(path))}
-                    title="click to view"
-                    className="press group/img relative h-16 w-16 cursor-zoom-in overflow-hidden rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)] transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_50%,transparent)]"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={fileSrc(path)} alt="attachment" className="h-full w-full object-cover" />
-                    <span className="absolute inset-0 grid place-items-center bg-[var(--color-bg)]/0 opacity-0 transition-opacity group-hover/img:bg-[var(--color-bg)]/30 group-hover/img:opacity-100">
-                      <ImageIcon size={15} className="text-[var(--color-text)] drop-shadow" />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {snippets.map((s) => {
-              const open = openSnip === s.id;
-              return (
-                <div key={s.id} className="overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)]">
-                  <button
-                    type="button"
-                    onClick={() => setOpenSnip(open ? null : s.id)}
-                    className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left font-sans text-[11.5px] text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text)]"
-                    title={open ? "collapse" : "expand quoted snippet"}
-                  >
-                    <Quote size={12} className="shrink-0 text-[var(--color-accent)]" />
-                    <span className={open ? "flex-1" : "flex-1 truncate"}>{open ? "quoted snippet" : s.text.replace(/\s+/g, " ").slice(0, 60)}</span>
-                    <ChevronDown size={12} className={`shrink-0 text-[var(--color-muted)] transition-transform ${open ? "rotate-180" : ""}`} />
-                  </button>
-                  {open && (
-                    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
-                      {s.text}
-                    </pre>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {!hasBody && (
-          <div className="px-3.5 py-2.5 font-sans text-[12px] italic text-[var(--color-faint)]">(empty message)</div>
-        )}
-      </div>
-      {lightbox &&
-        createPortal(
-          <div
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setLightbox(null)}
-            className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-8 backdrop-blur-md"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightbox}
-              alt="attachment"
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[82vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
-            />
-          </div>,
-          document.body,
-        )}
-      <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-        <CopyButton text={turn.text} title="copy message" />
-        <button
-          type="button"
-          title="edit & resend"
-          disabled={streaming}
-          onClick={() => onEdit(turn.id, turn.text)}
-          className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Pencil size={13} />
-        </button>
-        {/* regenerate replays the most recent user turn — only honest on the last one */}
-        {isLast && (
-          <button
-            type="button"
-            title="regenerate response"
-            disabled={streaming}
-            onClick={onRegenerate}
-            className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <RefreshCw size={13} />
-          </button>
-        )}
-        {/* retry the last turn on a different model (restart-resume-regenerate);
-            opens upward — the last turn sits near the scroll bottom. */}
-        {isLast && onRetryModel && (
-          <>
-            <button
-              ref={retryBtnRef}
-              type="button"
-              title="retry with another model"
-              disabled={streaming}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (retryOpen) setRetryOpen(false);
-                else openRetryMenu();
-              }}
-              className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ChevronDown size={13} />
-            </button>
-            {retryOpen &&
-              retryPos &&
-              createPortal(
-                <div
-                  className="fixed z-[200] w-52 overflow-auto rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] p-1 shadow-xl shadow-black/40 backdrop-blur"
-                  style={{
-                    right: retryPos.right,
-                    top: retryPos.top,
-                    bottom: retryPos.bottom,
-                    maxHeight: retryPos.maxH,
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="px-2 pb-1 pt-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-                    retry with
-                  </div>
-                  {models.length === 0 && (
-                    <div className="px-2 py-1 text-[11px] text-[var(--color-faint)]">
-                      no other models available
-                    </div>
-                  )}
-                  {models.map((m) => (
-                    <button
-                      key={`${m.engine ?? "claude"}:${m.id}`}
-                      type="button"
-                      onClick={() => {
-                        setRetryOpen(false);
-                        onRetryModel(m);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-[12px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-                    >
-                      <span className="truncate">{m.label}</span>
-                      {m.id === currentModelId && (
-                        <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">current</span>
-                      )}
-                    </button>
-                  ))}
-                </div>,
-                document.body,
-              )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Parse the WA-style `[[btn: a | b | c]]` choice sentinel out of an assistant
- *  message: returns the prose with the sentinel stripped + up to 3 button
- *  labels. Mirrors the bridge's WhatsApp interactive-button behavior so a choice
- *  offered in chat is tappable here too, not dead literal text. */
-function parseButtons(text: string): { body: string; buttons: string[] } {
-  const m = text.match(/\[\[btn:\s*([^\]]+?)\s*\]\]/i);
-  if (!m) return { body: text, buttons: [] };
-  const buttons = m[1]
-    .split("|")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-  return { body: text.replace(m[0], "").trimEnd(), buttons };
-}
-
-/** The model's extended-thinking trace — dim + collapsible. Auto-expanded while
- *  the tokens are streaming in (so you read the reasoning live), then collapses
- *  to a faint "Thought ›" line you can re-open. Mirrors claude-code's quiet trace. */
-function ThinkingBlock({
-  turn,
-  forceOpen = false,
-}: {
-  turn: Extract<Turn, { kind: "thinking" }>;
-  /** find-in-chat: a hit lives in this block — reveal it regardless of toggle. */
-  forceOpen?: boolean;
-}) {
-  const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const open = forceOpen || (userToggled ?? turn.streaming);
-  return (
-    <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={() => setUserToggled(!open)}
-        className="-mx-1 flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-sans text-[12.5px] leading-[1.5] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
-      >
-        {turn.streaming ? (
-          <Brain size={12} className="shrink-0 animate-pulse text-[var(--color-accent)]" />
-        ) : (
-          <ChevronRight
-            size={12}
-            className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "rotate-90" : ""}`}
-          />
-        )}
-        {turn.streaming ? (
-          <CadencedShimmer>thinking</CadencedShimmer>
-        ) : (
-          <span>
-            {turn.durationMs != null ? `thought for ${fmtDuration(turn.durationMs)}` : "thought"}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="ml-[6px] whitespace-pre-wrap break-words border-l border-[var(--color-border)] pl-3 font-sans text-[12.5px] italic leading-relaxed text-[var(--color-muted)]">
-          {turn.text}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CadencedShimmer({ children }: { children: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [active, setActive] = useState(false);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let removeTimer: number | undefined;
-    const run = () => {
-      setActive(false);
-      window.requestAnimationFrame(() => {
-        setActive(true);
-        removeTimer = window.setTimeout(() => setActive(false), 1000);
-      });
-    };
-    const startTimer = window.setTimeout(run, 600);
-    const interval = window.setInterval(run, 4000);
-    return () => {
-      window.clearTimeout(startTimer);
-      window.clearInterval(interval);
-      if (removeTimer != null) window.clearTimeout(removeTimer);
-    };
-  }, []);
-
-  return (
-    <span
-      ref={ref}
-      className={`aios-cadenced-shimmer select-none truncate ${active ? "aios-cadenced-shimmer--active" : ""}`}
-    >
-      {children}
-      <span aria-hidden="true" className="aios-cadenced-shimmer__sweep">
-        <span className="aios-cadenced-shimmer__highlight">{children}</span>
-      </span>
-    </span>
-  );
-}
-
-function AssistantBubble({
-  turn,
-  at,
-  onButton,
-  disabled,
-  onOpenUrl,
-  pinned,
-  onTogglePin,
-}: {
-  turn: Extract<Turn, { kind: "assistant" }>;
-  /** wall-clock of the turn (arrival / transcript time); null = unknown. */
-  at?: number | null;
-  onButton: (label: string) => void;
-  disabled: boolean;
-  onOpenUrl?: (url: string) => void;
-  /** true when this answer is pinned to the session's pin strip. */
-  pinned?: boolean;
-  onTogglePin?: () => void;
-}) {
-  // Don't render the sentinel as a half-baked pill while still streaming in —
-  // wait for the full message so we don't flicker partial `[[btn:` text.
-  const { body, buttons } = turn.streaming
-    ? { body: turn.text, buttons: [] as string[] }
-    : parseButtons(turn.text);
-  return (
-    <div className="group flex flex-col items-start gap-1">
-      <div className="max-w-[92%] font-sans text-[14.5px] leading-relaxed text-[var(--color-text-2)]">
-        <Markdown text={body} onOpenUrl={onOpenUrl} />
-        {turn.streaming && (
-          <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-[var(--color-accent)]" />
-        )}
-      </div>
-      {buttons.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-2">
-          {buttons.map((label) => (
-            <button
-              key={label}
-              type="button"
-              disabled={disabled}
-              onClick={() => onButton(label)}
-              className="rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {!turn.streaming && body.trim() && (
-        <div
-          className={`flex items-center gap-0.5 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${
-            pinned ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          {at != null && (
-            <span className="mr-1 font-mono text-[10px] text-[var(--color-faint)]" title={new Date(at).toLocaleString()}>
-              {turnClock(at)}
-            </span>
-          )}
-          <CopyButton text={body} title="copy response" />
-          {onTogglePin && (
-            <button
-              type="button"
-              onClick={onTogglePin}
-              title={pinned ? "unpin this answer" : "pin this answer to the top strip"}
-              className={`grid h-6 w-6 place-items-center rounded transition-colors hover:bg-[var(--color-panel-2)] ${
-                pinned
-                  ? "text-[var(--color-accent)]"
-                  : "text-[var(--color-faint)] hover:text-[var(--color-text)]"
-              }`}
-            >
-              <Pin size={12} className={pinned ? "fill-current" : undefined} />
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Directory browser for the composer's working-directory pill. Browse into
- * subfolders, jump home, type/paste an absolute path, then "use this folder" to
- * re-root the chat. Listing is dirs-only (the agent works on a folder, not a
- * file). Lives inside a Dropdown menu, so it's already dismiss-on-outside-click.
- */
-function CwdPicker({
-  cwd,
-  onPick,
-}: {
-  cwd: string | null;
-  onPick: (dir: string) => void;
-}) {
-  const [path, setPath] = useState<string>(cwd ?? "");
-  const [entries, setEntries] = useState<DirEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [manual, setManual] = useState("");
-
-  // resolve $HOME once so an empty start (no cwd) still has somewhere to browse.
-  useEffect(() => {
-    if (path) return;
-    let alive = true;
-    homeDir()
-      .then((h) => alive && h && setPath(h))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [path]);
-
-  // (re)list the current path whenever it changes.
-  useEffect(() => {
-    if (!path) return;
-    let alive = true;
-    setLoading(true);
-    setError(null);
-    readDir(path)
-      .then((list) => {
-        if (!alive) return;
-        setEntries(
-          list
-            .filter((e) => e.is_dir && !e.name.startsWith("."))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        );
-      })
-      .catch((e) => alive && setError(String(e)))
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, [path]);
-
-  const parent = path ? parentDir(path) : null;
-  const goManual = () => {
-    const p = manual.trim();
-    if (p) {
-      setManual("");
-      setPath(p); // listing it confirms it exists (errors surface inline)
-    }
-  };
-
-  return (
-    <div className="flex w-[300px] max-w-[80vw] flex-col">
-      <div className="px-3 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
-        working directory
-      </div>
-      {/* current path + up */}
-      <div className="flex items-center gap-1.5 px-2 pb-1">
-        <button
-          type="button"
-          disabled={!parent}
-          onClick={() => parent && setPath(parent)}
-          title="up one folder"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] disabled:opacity-30"
-        >
-          <ChevronUp size={14} />
-        </button>
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-text-2)]"
-          title={path}
-          dir="rtl"
-        >
-          {path || "…"}
-        </span>
-      </div>
-      {/* subfolder list */}
-      <div className="max-h-52 overflow-y-auto px-1">
-        {loading ? (
-          <div className="px-2 py-3 text-center font-sans text-[11.5px] text-[var(--color-faint)]">
-            loading…
-          </div>
-        ) : error ? (
-          <div className="px-2 py-3 font-sans text-[11.5px] text-[var(--color-danger)]">
-            {error}
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="px-2 py-3 text-center font-sans text-[11.5px] text-[var(--color-faint)]">
-            no subfolders here
-          </div>
-        ) : (
-          entries.map((e) => (
-            <button
-              key={e.path}
-              type="button"
-              onClick={() => setPath(e.path)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-sans text-[12.5px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-            >
-              <Folder size={13} className="shrink-0 text-[var(--color-muted)]" />
-              <span className="min-w-0 flex-1 truncate">{e.name}</span>
-              <ChevronRight size={12} className="shrink-0 text-[var(--color-faint)]" />
-            </button>
-          ))
-        )}
-      </div>
-      {/* manual path entry */}
-      <div className="border-t border-[var(--color-border)] px-2 pt-2">
-        <input
-          type="text"
-          value={manual}
-          placeholder="or paste a path…"
-          onChange={(e) => setManual(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              goManual();
-            }
-          }}
-          className="w-full rounded-md border border-[var(--color-border-strong)] bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-mono text-[11px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:border-[var(--color-accent)]/60 focus:outline-none"
-        />
-      </div>
-      {/* confirm */}
-      <div className="flex items-center gap-2 px-2 py-2">
-        <button
-          type="button"
-          disabled={!path || path === cwd}
-          onClick={() => path && onPick(path)}
-          className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] enabled:shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
-        >
-          <Check size={13} />
-          {path === cwd ? "current folder" : "use this folder"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Interactive AskUserQuestion card. claude can't render its native picker in
- * headless stream-json mode (no TTY → it auto-denies the tool with "Answer
- * questions?"), so we render OUR OWN picker from the streamed tool input and
- * feed the choices back as the next user turn. Single-select questions render as
- * radio-style buttons, multiSelect as toggles; every question also offers a free
- * "Other…" answer. Once submitted the card collapses to a one-line verdict.
- */
-function AskQuestionCard({
-  turn,
-  answered,
-  cancelled,
-  disabled,
-  onAnswer,
-}: {
-  turn: ToolTurn;
-  /** Formatted answer once submitted (collapses the card); undefined = open. */
-  answered?: string;
-  /** True once the user stopped the turn before answering → cancelled verdict. */
-  cancelled?: boolean;
-  /** Reserved: block interaction (unused now — the card stays answerable while the
-   *  model waits, since answering is what unblocks it). */
-  disabled?: boolean;
-  onAnswer: (toolId: string, questions: AskQuestion[], picks: string[][]) => void;
-}) {
-  const questions = useMemo(() => parseAskQuestions(turn.input) ?? [], [turn.input]);
-  // chosen predefined labels + free "Other" text, one slot per question.
-  const [sel, setSel] = useState<string[][]>(() => questions.map(() => []));
-  const [other, setOther] = useState<string[]>(() => questions.map(() => ""));
-  const [otherOpen, setOtherOpen] = useState<boolean[]>(() => questions.map(() => false));
-
-  if (questions.length === 0) return null;
-
-  // already answered → collapsed verdict (mirrors ApprovalCard's resolved state).
-  if (answered) {
-    return (
-      <div className="rounded-xl border border-[var(--color-success)]/30 px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-text-2)]">
-        <div className="mb-1 flex items-center gap-2 text-[var(--color-success)]">
-          <CheckCheck size={13} />
-          <span className="font-medium">answered</span>
-        </div>
-        <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-[var(--color-text-2)]">
-          {answered}
-        </pre>
-      </div>
-    );
-  }
-
-  // stopped before answering → a quiet cancelled verdict.
-  if (cancelled) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-faint)]">
-        <X size={13} />
-        <span>question cancelled — stopped before answering</span>
-      </div>
-    );
-  }
-
-  const effectivePicks = (i: number): string[] => {
-    const q = questions[i];
-    const free = other[i]?.trim() ? [other[i].trim()] : [];
-    if (q.multiSelect) return [...sel[i], ...free];
-    // single-select: a typed "Other" wins over a chosen option.
-    return free.length ? free : sel[i];
-  };
-  const ready = questions.every((_, i) => effectivePicks(i).length > 0);
-
-  const pick = (i: number, label: string) => {
-    if (disabled) return;
-    const q = questions[i];
-    setSel((prev) => {
-      const next = prev.map((a) => [...a]);
-      if (q.multiSelect) {
-        next[i] = next[i].includes(label)
-          ? next[i].filter((l) => l !== label)
-          : [...next[i], label];
-      } else {
-        next[i] = next[i][0] === label ? [] : [label];
-      }
-      return next;
-    });
-    if (!q.multiSelect) {
-      // picking a concrete option clears a stray free-text answer.
-      setOther((prev) => prev.map((v, idx) => (idx === i ? "" : v)));
-      setOtherOpen((prev) => prev.map((v, idx) => (idx === i ? false : v)));
-    }
-  };
-
-  const submit = () => {
-    if (disabled || !ready) return;
-    onAnswer(
-      turn.id,
-      questions,
-      questions.map((_, i) => effectivePicks(i)),
-    );
-  };
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)]">
-      <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
-          <HelpCircle size={14} />
-        </span>
-        <span className="font-sans text-[12.5px] font-medium text-[var(--color-text)]">
-          {questions.length > 1 ? `${questions.length} questions` : "a question for you"}
-        </span>
-      </div>
-      <div className="flex flex-col gap-3 px-3.5 pb-2 pt-2">
-        {questions.map((q, i) => {
-          const chosen = effectivePicks(i);
-          return (
-            <div key={i} className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-[var(--color-bg)]/40 px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--color-muted)]">
-                  {q.header}
-                </span>
-                {q.multiSelect && (
-                  <span className="font-sans text-[10.5px] text-[var(--color-faint)]">
-                    pick any
-                  </span>
-                )}
-              </div>
-              <div className="font-sans text-[13px] leading-snug text-[var(--color-text)]">
-                {q.question}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {q.options.map((opt) => {
-                  const active = sel[i].includes(opt.label);
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => pick(i, opt.label)}
-                      className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left font-sans text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                        active
-                          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-text)]"
-                          : "border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 text-[var(--color-text-2)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-                      }`}
-                    >
-                      <span
-                        className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${
-                          q.multiSelect ? "rounded" : "rounded-full"
-                        } ${active ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]" : "border-[var(--color-border-strong)]"}`}
-                      >
-                        {active && <Check size={11} />}
-                      </span>
-                      <span className="flex min-w-0 flex-col">
-                        <span className="font-medium">{opt.label}</span>
-                        {opt.description && (
-                          <span className="text-[11px] leading-snug text-[var(--color-faint)]">
-                            {opt.description}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-                {/* free-text escape hatch (the real tool always allows "Other") */}
-                {otherOpen[i] ? (
-                  <input
-                    autoFocus
-                    type="text"
-                    disabled={disabled}
-                    value={other[i]}
-                    placeholder="your own answer…"
-                    onChange={(e) =>
-                      setOther((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        submit();
-                      }
-                    }}
-                    className="rounded-lg border border-[var(--color-accent)]/60 bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-sans text-[12.5px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => {
-                      setOtherOpen((prev) => prev.map((v, idx) => (idx === i ? true : v)));
-                      if (!q.multiSelect) {
-                        setSel((prev) => prev.map((a, idx) => (idx === i ? [] : a)));
-                      }
-                    }}
-                    className="self-start rounded-lg border border-dashed border-[var(--color-border-strong)] px-2.5 py-1 font-sans text-[12px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Other…
-                  </button>
-                )}
-              </div>
-              {chosen.length > 0 && (
-                <span className="font-sans text-[10.5px] text-[var(--color-faint)]">
-                  → {chosen.join(", ")}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex items-center gap-2 px-3.5 pb-3 pt-1">
-        <button
-          type="button"
-          disabled={disabled || !ready}
-          onClick={submit}
-          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <CornerDownLeft size={13} /> send answer{questions.length > 1 ? "s" : ""}
-        </button>
-        {!ready && (
-          <span className="font-sans text-[11px] text-[var(--color-faint)]">
-            {disabled ? "model is working…" : "pick an option for each question"}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Interactive plan-approval card for an `ExitPlanMode` tool call. In headless
- * stream-json mode claude can't show its native plan picker (no TTY → the tool
- * auto-dismisses and the model stalls), so we render the proposed plan ourselves
- * with approve / keep-planning actions and feed the verdict back as the next user
- * turn (see resolvePlan). Once decided the card collapses to a one-line verdict.
- */
-function PlanProposalCard({
-  turn,
-  resolved,
-  cancelled,
-  onResolve,
-}: {
-  turn: ToolTurn;
-  /** Verdict once decided (collapses the card); undefined = still open. */
-  resolved?: "approved" | "rejected";
-  /** True once the user stopped the turn before deciding → cancelled verdict. */
-  cancelled?: boolean;
-  onResolve: (toolId: string, decision: "approve" | "reject", feedback?: string) => void;
-}) {
-  const proposal = useMemo(() => parsePlanProposal(turn.input), [turn.input]);
-  const [showNote, setShowNote] = useState(false);
-  const [note, setNote] = useState("");
-
-  if (!proposal) return null;
-
-  // already decided → collapsed verdict (mirrors AskQuestionCard's resolved state).
-  if (resolved) {
-    const ok = resolved === "approved";
-    return (
-      <div
-        className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 font-sans text-[12px] ${
-          ok
-            ? "border-[var(--color-success)]/30 text-[var(--color-success)]"
-            : "border-[var(--color-border)] text-[var(--color-muted)]"
-        }`}
-      >
-        {ok ? <CheckCheck size={13} /> : <ListChecks size={13} />}
-        <span className="font-medium">
-          {ok ? "plan approved — building" : "kept planning — asked for a revision"}
-        </span>
-      </div>
-    );
-  }
-
-  // stopped before deciding → a quiet cancelled verdict.
-  if (cancelled) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 font-sans text-[12px] text-[var(--color-faint)]">
-        <X size={13} />
-        <span>plan dismissed — stopped before deciding</span>
-      </div>
-    );
-  }
-
-  const fileName = proposal.planFilePath
-    ? proposal.planFilePath.split(/[\\/]/).filter(Boolean).pop()
-    : undefined;
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]">
-      <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
-          <ListChecks size={14} />
-        </span>
-        <span className="font-sans text-[12.5px] font-medium text-[var(--color-text)]">
-          ready to build — review the plan
-        </span>
-      </div>
-
-      {/* the proposed plan, rendered as markdown (same renderer as assistant prose),
-          capped to a scroll box so a long plan doesn't flood the transcript. */}
-      <div className="mx-3.5 mb-2 mt-1 max-h-[22rem] overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 px-3 py-2.5 text-[12.5px] leading-relaxed text-[var(--color-text-2)]">
-        <Markdown text={proposal.plan} />
-      </div>
-
-      {proposal.allowedPrompts.length > 0 && (
-        <div className="mx-3.5 mb-2 flex flex-col gap-1">
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-faint)]">
-            will run once you approve
-          </span>
-          {proposal.allowedPrompts.map((p, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-2 font-sans text-[11.5px] text-[var(--color-muted)]"
-            >
-              <span className="mt-0.5 shrink-0 rounded bg-[var(--color-bg)]/40 px-1.5 font-mono text-[9.5px] text-[var(--color-faint)]">
-                {p.tool ?? "tool"}
-              </span>
-              <span className="min-w-0">{p.prompt ?? ""}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showNote && (
-        <div className="mx-3.5 mb-2">
-          <textarea
-            autoFocus
-            value={note}
-            placeholder="optional notes for the model before it starts (or what to change)…"
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            className="block w-full resize-none rounded-lg border border-[var(--color-accent)]/50 bg-[var(--color-bg)]/40 px-2.5 py-1.5 font-sans text-[12px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
-          />
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 px-3.5 pb-3 pt-1">
-        <button
-          type="button"
-          onClick={() => onResolve(turn.id, "approve", note)}
-          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)]"
-        >
-          <Check size={13} /> approve &amp; build
-        </button>
-        <button
-          type="button"
-          onClick={() => onResolve(turn.id, "reject", note)}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-panel)]"
-        >
-          <ListChecks size={13} /> keep planning
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowNote((v) => !v)}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-sans text-[12px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-        >
-          {showNote ? "hide notes" : "add notes…"}
-        </button>
-        {fileName && (
-          <span
-            className="ml-auto inline-flex items-center gap-1 font-mono text-[10px] text-[var(--color-faint)]"
-            title={proposal.planFilePath}
-          >
-            <FileText size={11} /> {fileName}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Inline tool-approval card for a `can_use_tool` control request (non-bypass
- * modes). Allow once / Allow always / Deny → replied via the control protocol
- * (buildApprovalLine in chat.ts owns the exact shape). Once resolved the card
- * collapses to a one-line verdict so the transcript stays clean.
- */
-function ApprovalCard({
-  turn,
-  onResolve,
-}: {
-  turn: Extract<Turn, { kind: "approval" }>;
-  onResolve: (
-    requestId: string,
-    toolName: string,
-    decision: ApprovalDecision,
-  ) => void;
-}) {
-  const args = fullArgs(turn.input);
-
-  if (turn.decision) {
-    const denied = turn.decision === "deny";
-    return (
-      <div
-        className={`flex items-center gap-2 rounded-xl border bg-[var(--color-panel-2)]/40 px-3.5 py-2 font-sans text-[12px] backdrop-blur-md ${
-          denied
-            ? "border-[var(--color-danger)]/30 text-[var(--color-danger)]"
-            : "border-[var(--color-success)]/30 text-[var(--color-success)]"
-        }`}
-      >
-        {denied ? <X size={13} /> : <CheckCheck size={13} />}
-        <span className="font-mono text-[11.5px] text-[var(--color-text-2)]">
-          {turn.toolName}
-        </span>
-        <span className="shrink-0 opacity-80">
-          {turn.decision === "allow"
-            ? "allowed once"
-            : turn.decision === "allow_always"
-              ? "allowed for session"
-              : "denied"}
-        </span>
-        {/* echo WHAT was approved — the card used to erase the command on
-            resolution, leaving the transcript unauditable. Full text on hover
-            + one click to copy. */}
-        {args && (
-          <>
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--color-faint)]"
-              title={args}
-            >
-              {ellipsizeMid(args.replace(/\s+/g, " "), 64)}
-            </span>
-            <CopyButton
-              text={args}
-              size={11}
-              title="copy the approved command"
-              className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-            />
-          </>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--aios-glow-soft)]">
-      <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-2">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
-          <ShieldQuestion size={14} />
-        </span>
-        <span className="font-sans text-[12.5px] text-[var(--color-text)]">
-          allow{" "}
-          <span className="font-mono font-medium">{turn.toolName}</span>?
-        </span>
-      </div>
-      {args && (
-        <div className="relative mx-3.5 mb-2">
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-bg)]/40 px-2.5 py-1.5 pr-7 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
-            {args}
-          </pre>
-          <CopyButton
-            text={args}
-            size={11}
-            title="copy command"
-            className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-          />
-        </div>
-      )}
-      <div className="flex items-center gap-2 px-3.5 pb-3">
-        <button
-          type="button"
-          onClick={() => onResolve(turn.requestId, turn.toolName, "allow")}
-          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)]"
-        >
-          <Check size={13} /> allow once
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            onResolve(turn.requestId, turn.toolName, "allow_always")
-          }
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-panel)]"
-        >
-          <CheckCheck size={13} /> allow always
-        </button>
-        <button
-          type="button"
-          onClick={() => onResolve(turn.requestId, turn.toolName, "deny")}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-sans text-[12px] text-[var(--color-muted)] transition-colors hover:border-[var(--color-danger)]/40 hover:text-[var(--color-danger)]"
-        >
-          <X size={13} /> deny
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── markdown renderer (dependency-free, partial-stream safe) ──────────────────
-//
-// Deliberately small: blocks split on fenced ``` first (so a half-open fence
-// during streaming just renders as an open code block, never throws), then each
-// non-code block is rendered with inline spans for `code`, **bold**, *italic*,
-// and [links](url). Headings + bullet / numbered lists are handled at the line
-// level. Anything it doesn't recognize falls through as plain text.
-
-const HELP_TEXT = `**AIOS chat**
+const HELP_TEXT = `**OSAI chat**
 
 - type to talk to claude — streams token by token
 - \`/\` opens commands · \`@\` mentions files from the working dir
@@ -9014,1176 +7502,3 @@ const HELP_TEXT = `**AIOS chat**
 - stop (■) interrupts mid-turn; the session survives
 - hover a message to copy or regenerate`;
 
-/** Inline editor for /goal — a calm, themed popover scoped to the chat pane
- *  (replaces the off-brand native window.prompt). ⏎ saves · esc / backdrop
- *  cancels. Mounted inside PaneDropZone so it covers only this pane. */
-/** Full-size preview of an attached image — confirm it (or remove it) before
- *  sending. Click the backdrop or press Esc to close; clicking the image itself
- *  doesn't dismiss. Portaled to <body> so it floats above the whole app. */
-function ImagePreview({
-  image,
-  onClose,
-  onRemove,
-}: {
-  image: ImageChip;
-  onClose: () => void;
-  onRemove: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-5 bg-black/70 p-8 backdrop-blur-md"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={image.url}
-        alt="attachment preview"
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
-      />
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="glass-strong flex items-center gap-1.5 rounded-full p-1.5"
-      >
-        <span className="px-3 font-mono text-[11px] text-[var(--color-faint)]">
-          {image.path == null ? "saving…" : "ready to send"}
-        </span>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
-        >
-          <X size={13} /> remove
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--color-accent-fg)] transition-colors hover:bg-[var(--color-accent-hover)]"
-        >
-          <Check size={14} /> looks good
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function GoalEditorOverlay({
-  value,
-  onChange,
-  onCommit,
-  onCancel,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onCommit: (v: string) => void;
-  onCancel: () => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
-  }, []);
-  return (
-    <div
-      className="fade-in-up absolute inset-0 z-40 grid place-items-center bg-[var(--color-bg)]/60 px-6 backdrop-blur-sm"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-    >
-      <div
-        className="surface-pop focus-accent w-full max-w-md p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="ongoing goal"
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.defaultPrevented) {
-            e.preventDefault();
-            onCancel();
-            return;
-          }
-          trapTab(e, e.currentTarget);
-        }}
-      >
-        <div className="mb-2 flex items-center gap-1.5 text-[12px] text-[var(--color-text-2)]">
-          <Target size={13} className="text-[var(--color-accent)]" />
-          ongoing goal
-        </div>
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              onCommit(value);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              onCancel();
-            }
-          }}
-          rows={2}
-          placeholder="describe a goal — kept as context across turns until cleared"
-          spellCheck={false}
-          className="block w-full resize-none rounded-[var(--aios-radius-md)] bg-[var(--color-bg)] px-3 py-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
-        />
-        <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] text-[var(--color-faint)]">
-          <span>⏎ save · esc cancel</span>
-          <button
-            type="button"
-            onClick={() => onCommit(value)}
-            className="press rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-3 py-1 text-[11px] font-medium text-[var(--color-bg)]"
-          >
-            save goal
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Split text into fenced-code and non-code segments. Tolerates an unclosed
- *  trailing fence (mid-stream) by treating the remainder as an open block. */
-function splitFences(
-  text: string,
-): Array<{ code: true; lang: string; body: string } | { code: false; body: string }> {
-  const out: Array<
-    { code: true; lang: string; body: string } | { code: false; body: string }
-  > = [];
-  const re = /```([^\n`]*)\n?([\s\S]*?)```/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push({ code: false, body: text.slice(last, m.index) });
-    out.push({ code: true, lang: (m[1] || "").trim(), body: m[2] ?? "" });
-    last = re.lastIndex;
-  }
-  const rest = text.slice(last);
-  // an unclosed fence while streaming: render what we have as an open code block
-  const openIdx = rest.indexOf("```");
-  if (openIdx >= 0) {
-    if (openIdx > 0) out.push({ code: false, body: rest.slice(0, openIdx) });
-    const after = rest.slice(openIdx + 3);
-    const nl = after.indexOf("\n");
-    const lang = (nl >= 0 ? after.slice(0, nl) : after).trim();
-    const body = nl >= 0 ? after.slice(nl + 1) : "";
-    out.push({ code: true, lang, body });
-  } else if (rest) {
-    out.push({ code: false, body: rest });
-  }
-  return out;
-}
-
-const Markdown = memo(function Markdown({
-  text,
-  onOpenUrl,
-}: {
-  text: string;
-  onOpenUrl?: (url: string) => void;
-}) {
-  const segments = useMemo(() => splitFences(text), [text]);
-  return (
-    <div className="flex flex-col gap-2">
-      {segments.map((seg, i) =>
-        seg.code ? (
-          <CodeBlock key={i} lang={seg.lang} body={seg.body} />
-        ) : (
-          <MarkdownBlocks key={i} text={seg.body} onOpenUrl={onOpenUrl} />
-        ),
-      )}
-    </div>
-  );
-});
-
-/** Shell-ish fences get a "run in terminal" affordance. Single-statement blocks
- *  (no embedded newline once trimmed) seed + run directly; multi-line blocks open
- *  a terminal rooted at the session cwd and let the user run it (we still seed the
- *  whole block so it's typed in). */
-const SHELL_LANGS = new Set(["bash", "sh", "shell", "zsh", "console", "shell-session"]);
-
-function CodeBlock({ lang, body }: { lang: string; body: string }) {
-  // strip a single trailing newline so the block isn't bottom-heavy
-  const code = body.replace(/\n$/, "");
-  const cwd = useChatCwd();
-  const isShell = SHELL_LANGS.has(lang.trim().toLowerCase());
-  // Single-line shell snippet → safe to seed + auto-run. Multi-line scripts →
-  // don't auto-fire (avoid running half a heredoc); the block is copied to the
-  // clipboard on click so the fresh terminal is one paste away — before this
-  // the terminal opened completely blank and the code went nowhere.
-  const seedCmd = code.includes("\n") ? undefined : code.trim();
-  return (
-    <div className="glass overflow-hidden rounded-xl">
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-1">
-        <span className="font-mono text-[10.5px] text-[var(--color-faint)]">
-          {lang || "code"}
-        </span>
-        <div className="flex items-center gap-1.5">
-          {isShell && code.trim() && (
-            <button
-              type="button"
-              onClick={() => {
-                if (!seedCmd) void navigator.clipboard.writeText(code).catch(() => {});
-                spawnPane("terminal", { cwd: cwd ?? undefined, cmd: seedCmd });
-              }}
-              title={seedCmd ? "run in a new terminal pane" : "open a terminal here (multi-line — copied, paste to run)"}
-              className="flex items-center gap-1 rounded px-1 py-0.5 text-[10.5px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-accent)]"
-            >
-              <Terminal size={11} />
-              run in terminal
-            </button>
-          )}
-          <CopyButton text={code} size={12} title="copy code" />
-        </div>
-      </div>
-      <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-[var(--color-text)]">
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
-}
-
-/** Render the non-code body: split into block-level lines (headings / lists /
- *  paragraphs), each with inline formatting. */
-/** `[ ] item` / `[x] item` (after the list bullet was stripped). */
-const TASK_ITEM_RE = /^\[( |x|X)\]\s+(.*)$/;
-
-/**
- * Interactive task list inside assistant prose. Model-authored `[x]` items
- * render done; ticking an open item arms a "send progress" chip that reports
- * the newly-done items back into the conversation (steered mid-turn when the
- * engine allows, otherwise sent as the next message) — so the model's plan is
- * something you work THROUGH, not just read.
- */
-function Checklist({
-  items,
-  onOpenUrl,
-}: {
-  items: { checked: boolean; text: string }[];
-  onOpenUrl?: (url: string) => void;
-}) {
-  const submit = useChatSubmit();
-  // your ticks, layered over the authored state; reported indexes collapse the
-  // chip until something NEW is ticked.
-  const [ticks, setTicks] = useState<Record<number, boolean>>({});
-  const [reported, setReported] = useState<Record<number, boolean>>({});
-  const done = (i: number) => ticks[i] ?? items[i].checked;
-  const fresh = items
-    .map((_, i) => i)
-    .filter((i) => done(i) && !items[i].checked && !reported[i]);
-  const sendProgress = () => {
-    if (!submit || fresh.length === 0) return;
-    const remaining = items.map((_, i) => i).filter((i) => !done(i));
-    submit(
-      `Progress update — I've completed:\n${fresh.map((i) => `- ${items[i].text}`).join("\n")}${
-        remaining.length
-          ? `\n\nStill open:\n${remaining.map((i) => `- ${items[i].text}`).join("\n")}`
-          : "\n\nThat's everything on the list."
-      }`,
-    );
-    setReported((prev) => {
-      const next = { ...prev };
-      for (const i of fresh) next[i] = true;
-      return next;
-    });
-  };
-  return (
-    <div className="my-0.5 flex flex-col gap-1 pl-1">
-      {items.map((it, i) => {
-        const isDone = done(i);
-        return (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setTicks((prev) => ({ ...prev, [i]: !isDone }))}
-            className="group/task flex items-start gap-2 text-left"
-            title={isDone ? "mark as not done" : "mark as done"}
-          >
-            <span
-              className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded border transition-colors ${
-                isDone
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
-                  : "border-[var(--color-border-strong)] group-hover/task:border-[var(--color-accent)]/60"
-              }`}
-            >
-              {isDone && <Check size={11} />}
-            </span>
-            <span
-              className={`flex-1 transition-colors ${
-                isDone ? "text-[var(--color-faint)] line-through decoration-[var(--color-border-strong)]" : ""
-              }`}
-            >
-              <Inline text={it.text} onOpenUrl={onOpenUrl} />
-            </span>
-          </button>
-        );
-      })}
-      {submit != null && fresh.length > 0 && (
-        <button
-          type="button"
-          onClick={sendProgress}
-          className="mt-1 flex w-fit items-center gap-1.5 rounded-full border border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)]/20"
-        >
-          <CornerDownLeft size={11} />
-          tell the model — {fresh.length} done
-        </button>
-      )}
-    </div>
-  );
-}
-
-function MarkdownBlocks({
-  text,
-  onOpenUrl,
-}: {
-  text: string;
-  onOpenUrl?: (url: string) => void;
-}) {
-  if (!text.trim()) return null;
-  const lines = text.split("\n");
-  const out: React.ReactNode[] = [];
-  let listBuf: { ordered: boolean; items: string[] } | null = null;
-  let key = 0;
-
-  const flushList = () => {
-    if (!listBuf) return;
-    const { ordered, items } = listBuf;
-    // a task list (every item `[ ]`/`[x]`-shaped) renders as an INTERACTIVE
-    // checklist: tick what you've done, then hand the model a progress note in
-    // one click — the model's own plans become a working surface.
-    if (!ordered && items.length > 0 && items.every((it) => TASK_ITEM_RE.test(it))) {
-      const rows = items.map((it) => {
-        const m = it.match(TASK_ITEM_RE)!;
-        return { checked: m[1] !== " ", text: m[2] };
-      });
-      out.push(<Checklist key={`l${key++}`} items={rows} onOpenUrl={onOpenUrl} />);
-      listBuf = null;
-      return;
-    }
-    const cls =
-      "my-0.5 flex flex-col gap-1 pl-1 " +
-      (ordered ? "" : "");
-    out.push(
-      ordered ? (
-        <ol key={`l${key++}`} className={cls}>
-          {items.map((it, j) => (
-            <li key={j} className="flex gap-2">
-              <span className="select-none text-[var(--color-faint)]">{j + 1}.</span>
-              <span className="flex-1">
-                <Inline text={it} onOpenUrl={onOpenUrl} />
-              </span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <ul key={`l${key++}`} className={cls}>
-          {items.map((it, j) => (
-            <li key={j} className="flex gap-2">
-              <span className="select-none text-[var(--color-faint)]">•</span>
-              <span className="flex-1">
-                <Inline text={it} onOpenUrl={onOpenUrl} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      ),
-    );
-    listBuf = null;
-  };
-
-  // `| a | b |` → ["a","b"] (tolerant of missing outer pipes).
-  const splitRow = (l: string): string[] =>
-    l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
-  // a `|---|:--:|` separator row: only pipes/dashes/colons/space, with both a
-  // dash and a pipe (so a bare `---` reads as a horizontal rule, not a table).
-  const isTableSep = (l: string | undefined): boolean =>
-    !!l && /^[\s|:-]+$/.test(l.trim()) && l.includes("-") && l.includes("|");
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // table: a header row immediately followed by a |---| separator
-    if (line.includes("|") && isTableSep(lines[i + 1])) {
-      flushList();
-      const header = splitRow(line);
-      const rows: string[][] = [];
-      let j = i + 2;
-      while (j < lines.length && lines[j].trim() && lines[j].includes("|")) {
-        rows.push(splitRow(lines[j]));
-        j++;
-      }
-      const cell = "border border-[var(--color-border)] px-2.5 py-1 align-top";
-      out.push(
-        <div key={`tbl${key++}`} className="my-1 overflow-x-auto">
-          <table className="w-full border-collapse text-[12px]">
-            <thead>
-              <tr>
-                {header.map((c, ci) => (
-                  <th
-                    key={ci}
-                    className={`${cell} bg-[var(--color-panel)]/50 text-left font-semibold text-[var(--color-text)]`}
-                  >
-                    <Inline text={c} onOpenUrl={onOpenUrl} />
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, ri) => (
-                <tr key={ri}>
-                  {header.map((_, ci) => (
-                    <td key={ci} className={`${cell} text-[var(--color-text-2)]`}>
-                      <Inline text={r[ci] ?? ""} onOpenUrl={onOpenUrl} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>,
-      );
-      i = j - 1;
-      continue;
-    }
-    // horizontal rule (--- / *** / ___ on their own line)
-    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      flushList();
-      out.push(
-        <hr key={`hr${key++}`} className="my-2 border-0 border-t border-[var(--color-border)]" />,
-      );
-      continue;
-    }
-    // headings
-    const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) {
-      flushList();
-      const level = h[1].length;
-      const size =
-        level === 1
-          ? "text-[17px]"
-          : level === 2
-            ? "text-[15.5px]"
-            : "text-[14.5px]";
-      out.push(
-        <div
-          key={`h${key++}`}
-          className={`mt-1 font-sans font-semibold text-[var(--color-text)] ${size}`}
-        >
-          <Inline text={h[2]} onOpenUrl={onOpenUrl} />
-        </div>,
-      );
-      continue;
-    }
-    // blockquote
-    const bq = line.match(/^\s*>\s?(.*)$/);
-    if (bq) {
-      flushList();
-      out.push(
-        <blockquote
-          key={`bq${key++}`}
-          className="border-l-2 border-[var(--color-border)] pl-3 text-[var(--color-muted)]"
-        >
-          <Inline text={bq[1]} onOpenUrl={onOpenUrl} />
-        </blockquote>,
-      );
-      continue;
-    }
-    // unordered list
-    const ul = line.match(/^\s*[-*]\s+(.*)$/);
-    if (ul) {
-      if (!listBuf || listBuf.ordered) {
-        flushList();
-        listBuf = { ordered: false, items: [] };
-      }
-      listBuf.items.push(ul[1]);
-      continue;
-    }
-    // ordered list
-    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
-    if (ol) {
-      if (!listBuf || !listBuf.ordered) {
-        flushList();
-        listBuf = { ordered: true, items: [] };
-      }
-      listBuf.items.push(ol[1]);
-      continue;
-    }
-    // blank line → paragraph break
-    if (!line.trim()) {
-      flushList();
-      continue;
-    }
-    // plain paragraph line
-    flushList();
-    out.push(
-      <p key={`p${key++}`} className="whitespace-pre-wrap break-words">
-        <Inline text={line} onOpenUrl={onOpenUrl} />
-      </p>,
-    );
-  }
-  flushList();
-  return <>{out}</>;
-}
-
-/** Inline span formatting: `code`, **bold**, *italic* / _italic_, [text](url).
- *  Single-pass tokenizer — partial markers (e.g. a lone trailing `**` during
- *  streaming) just render literally, never throw. */
-function Inline({
-  text,
-  onOpenUrl,
-}: {
-  text: string;
-  onOpenUrl?: (url: string) => void;
-}) {
-  // deterministic cwd-anchored file open (context-provided), so a bare
-  // `foo.ts` mention resolves against the session cwd + existence-checks before
-  // opening — never a blind name search.
-  const openFile = useChatFileOpener();
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-  let k = 0;
-  let plain = "";
-  const flush = () => {
-    if (plain) {
-      nodes.push(<span key={`s${k++}`}>{plain}</span>);
-      plain = "";
-    }
-  };
-
-  while (i < text.length) {
-    const rest = text.slice(i);
-
-    // inline code `…`
-    if (text[i] === "`") {
-      const end = text.indexOf("`", i + 1);
-      if (end > i) {
-        flush();
-        const code = text.slice(i + 1, end);
-        const fileish = isPaneFileTarget(code);
-        nodes.push(
-          fileish ? (
-            <button
-              key={`c${k++}`}
-              type="button"
-              onClick={() => openFile(code)}
-              className="rounded bg-[var(--color-panel)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--color-accent)] underline decoration-[var(--color-accent)]/30 underline-offset-2 hover:decoration-[var(--color-accent)]"
-              title="open in pane"
-            >
-              {code}
-            </button>
-          ) : (
-            <code
-              key={`c${k++}`}
-              className="rounded bg-[var(--color-panel)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--color-text)]"
-            >
-              {code}
-            </code>
-          ),
-        );
-        i = end + 1;
-        continue;
-      }
-    }
-
-    // bold **…**
-    if (rest.startsWith("**")) {
-      const end = text.indexOf("**", i + 2);
-      if (end > i + 1) {
-        flush();
-        nodes.push(
-          <strong key={`b${k++}`} className="font-semibold text-[var(--color-text)]">
-            <Inline text={text.slice(i + 2, end)} onOpenUrl={onOpenUrl} />
-          </strong>,
-        );
-        i = end + 2;
-        continue;
-      }
-    }
-
-    // link [text](url)
-    if (text[i] === "[") {
-      const close = text.indexOf("]", i + 1);
-      if (close > i && text[close + 1] === "(") {
-        const paren = text.indexOf(")", close + 2);
-        if (paren > close) {
-          flush();
-          const label = text.slice(i + 1, close);
-          const url = text.slice(close + 2, paren);
-          const http = isHttpPaneTarget(url);
-          const fileish = isPaneFileTarget(url);
-          nodes.push(
-            <a
-              key={`a${k++}`}
-              href={url}
-              target={http ? "_blank" : undefined}
-              rel="noreferrer"
-              onClick={(e) => {
-                if (http) {
-                  e.preventDefault();
-                  if (onOpenUrl) onOpenUrl(url);
-                  else openUrlInPane(url);
-                  return;
-                }
-                if (fileish) {
-                  e.preventDefault();
-                  openFile(url);
-                }
-              }}
-              className="text-[var(--color-accent)] underline decoration-[var(--color-accent)]/40 underline-offset-2 hover:decoration-[var(--color-accent)]"
-            >
-              {label}
-            </a>,
-          );
-          // For real http(s) links, add a small inline "open in browser pane"
-          // affordance — a click spawns a native browser pane (don't auto-open).
-          if (http) {
-            nodes.push(
-              <button
-                key={`au${k++}`}
-                type="button"
-                onClick={() => spawnPane("browser", { url })}
-                title="open in a browser pane"
-                className="ml-0.5 inline-flex translate-y-[1px] items-center rounded p-0.5 align-baseline text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-accent)]"
-              >
-                <Globe size={11} />
-              </button>,
-            );
-          }
-          i = paren + 1;
-          continue;
-        }
-      }
-    }
-
-    // italic *…* or _…_  (avoid eating ** — handled above)
-    if ((text[i] === "*" && text[i + 1] !== "*") || text[i] === "_") {
-      const marker = text[i];
-      const end = text.indexOf(marker, i + 1);
-      if (end > i + 1) {
-        flush();
-        nodes.push(
-          <em key={`i${k++}`} className="italic">
-            {text.slice(i + 1, end)}
-          </em>,
-        );
-        i = end + 1;
-        continue;
-      }
-    }
-
-    plain += text[i];
-    i += 1;
-  }
-  flush();
-  return <>{nodes}</>;
-}
-
-// ── tiny dropdown primitive ──────────────────────────────────────────────────
-
-function Dropdown({
-  open,
-  onToggle,
-  trigger,
-  children,
-  align = "left",
-  triggerClassName,
-  label,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  trigger: React.ReactNode;
-  children: React.ReactNode;
-  align?: "left" | "right";
-  /** Override the trigger pill styling (e.g. the ultracode gradient). */
-  triggerClassName?: string;
-  /** Accessible name for icon-only triggers (the wrench). */
-  label?: string;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  // FIXED positioning (computed from the trigger on open) so the menu can
-  // never be clipped by the pane's overflow — the old absolute/bottom-full
-  // menu was cut off at the pane edge with the long model list. Opens upward
-  // when there's room (the composer lives at the bottom), else downward, and
-  // long lists scroll INSIDE the menu.
-  const [menuPos, setMenuPos] = useState<React.CSSProperties | null>(null);
-  useEffect(() => {
-    if (!open) {
-      setMenuPos(null);
-      return;
-    }
-    const r = rootRef.current?.getBoundingClientRect();
-    if (r) {
-      // open toward the LARGER side and never exceed it — the wrench/model
-      // lists used to clip at the window edge on short panes.
-      const spaceAbove = r.top - 10;
-      const spaceBelow = window.innerHeight - r.bottom - 10;
-      const openUp = spaceAbove >= spaceBelow;
-      const pos: React.CSSProperties = {};
-      if (align === "right") pos.right = Math.max(8, window.innerWidth - r.right);
-      else pos.left = Math.max(8, r.left);
-      if (openUp) pos.bottom = window.innerHeight - r.top + 6;
-      else pos.top = r.bottom + 6;
-      pos.maxHeight = Math.max(140, openUp ? spaceAbove : spaceBelow);
-      (pos as Record<string, string | number>)["--aios-origin"] = openUp
-        ? "bottom center"
-        : "top center";
-      setMenuPos(pos);
-    }
-    // repositioning mid-scroll is overkill — dismiss instead (standard menus).
-    const onScroll = (e: Event) => {
-      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
-      onToggle();
-    };
-    window.addEventListener("resize", onToggle);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("resize", onToggle);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [open, align, onToggle]);
-  // outside-click + Escape close — a pinned-open menu over the composer was
-  // the old behavior; standard dismissal everywhere else in the app. The menu
-  // lives in a body portal, so "inside" means trigger OR menu.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
-      onToggle();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onToggle();
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open, onToggle]);
-  return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={label}
-        title={label}
-        className={
-          triggerClassName ??
-          "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/50 px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-        }
-      >
-        {trigger}
-      </button>
-      {open &&
-        menuPos &&
-        // PORTAL to <body>: position:fixed is re-anchored by any ancestor with
-        // backdrop-filter/transform (the composer has backdrop-blur), which
-        // teleported menus into the wrong corner. From <body> the viewport
-        // coordinates are honored everywhere.
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            className="scale-in fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel-2)_82%,transparent)] p-1 shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl"
-            style={menuPos}
-          >
-            {children}
-          </div>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
-function MenuItem({
-  children,
-  active,
-  disabled,
-  title,
-  onClick,
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  title?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      disabled={disabled}
-      role="menuitem"
-      className={`relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors ${
-        disabled
-          ? "cursor-not-allowed text-[var(--color-faint)]"
-          : active
-            ? "bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-text)] shadow-[inset_0_0_24px_-14px_var(--color-accent)]"
-            : "text-[var(--color-text-2)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-      }`}
-    >
-      {active && !disabled && (
-        <span
-          aria-hidden
-          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
-        />
-      )}
-      <span className="min-w-0 flex-1">{children}</span>
-      {active && !disabled && (
-        <Check size={13} className="shrink-0 text-[var(--color-accent)]" />
-      )}
-    </button>
-  );
-}
-
-// ── slash / @ overlay primitives ─────────────────────────────────────────────
-
-interface SlashCommand {
-  id: string;
-  label: string;
-  desc: string;
-  icon: React.ReactNode;
-  run: () => void;
-}
-
-/** The floating panel that sits just above the composer for `/` and `@`. */
-function OverlayPanel({
-  children,
-  compact = false,
-  drop = "up",
-}: {
-  children: React.ReactNode;
-  /** compact = a left-anchored dropdown (slash menu) vs the full-width panel. */
-  compact?: boolean;
-  /** "up" above the composer (transcript view: composer at the bottom);
-   *  "down" below it (hero: composer near the top — upward would clip at the
-   *  pane edge, user-reported). */
-  drop?: "up" | "down";
-}) {
-  return (
-    <div
-      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
-        drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
-      } ${compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-function OverlayRow({
-  active,
-  onClick,
-  onMouseEnter,
-  icon,
-  label,
-  desc,
-  mono,
-}: {
-  active: boolean;
-  onClick: () => void;
-  onMouseEnter: () => void;
-  icon: React.ReactNode;
-  label: string;
-  desc?: string;
-  mono?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
-        active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel)]"
-      }`}
-    >
-      <span className="grid h-5 w-5 shrink-0 place-items-center">{icon}</span>
-      <span
-        className={`shrink-0 text-[12.5px] text-[var(--color-text)] ${
-          mono ? "font-mono" : "font-sans"
-        }`}
-      >
-        {label}
-      </span>
-      {desc && (
-        <span className="truncate font-sans text-[11px] text-[var(--color-faint)]">
-          {desc}
-        </span>
-      )}
-      {active && (
-        <>
-          <span className="flex-1" />
-          <CornerDownLeft size={12} className="shrink-0 text-[var(--color-faint)]" />
-        </>
-      )}
-    </button>
-  );
-}
-
-// ── /resume picker ────────────────────────────────────────────────────────────
-
-/**
- * Floating picker (surface-pop style) listing recent past chat sessions for
- * `/resume`. Sits just above the composer like the slash/@ menus. A sticky
- * search header filters by title; each row shows the title + a faint secondary
- * line with the cwd basename and a relative time. Arrow-key navigable (driven
- * from the search input — see onResumeKeyDown), click to pick, Esc to close.
- */
-function ResumePicker({
-  sessions,
-  total,
-  loading,
-  query,
-  activeIdx,
-  currentSessionId,
-  searchRef,
-  onQueryChange,
-  onKeyDown,
-  onHover,
-  onPick,
-  onClose,
-  drop = "up",
-}: {
-  sessions: ChatSessionInfo[];
-  total: number;
-  loading: boolean;
-  query: string;
-  activeIdx: number;
-  /** The engine session id currently open in THIS pane — its row gets an
-   *  accent ring + "current" dot so "which one am I in" is obvious. */
-  currentSessionId: string | null;
-  searchRef: React.RefObject<HTMLInputElement | null>;
-  onQueryChange: (v: string) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  onHover: (i: number) => void;
-  onPick: (s: ChatSessionInfo) => void;
-  onClose: () => void;
-  /** "up" above the composer (transcript view), "down" below it (hero —
-   *  opening upward there clipped the list at the pane edge, user-reported). */
-  drop?: "up" | "down";
-}) {
-  // grouped by DATE (today / yesterday / this week / this month / older) — the
-  // SAME buckets as the History pane, so the two surfaces read consistently.
-  // (Each row still shows its project in the meta line; sorted recent-first.)
-  const byDate = groupByDate([...sessions].sort((a, b) => b.mtime - a.mtime), Date.now());
-  let rowIndex = 0;
-  return (
-    <div
-      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md ${
-        drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
-      }`}
-    >
-      {/* sticky search header */}
-      <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
-        <History size={14} className="shrink-0 text-[var(--color-accent)]" />
-        <span className="shrink-0 font-sans text-[12px] text-[var(--color-text-2)]">
-          resume
-        </span>
-        <span className="shrink-0 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--color-faint)]">
-          {total} sessions
-        </span>
-        <span className="ml-1 flex min-w-0 flex-1 items-center gap-1.5">
-          <Search size={12} className="shrink-0 text-[var(--color-faint)]" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="search title, project, model, id…"
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent font-sans text-[12.5px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
-          />
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          title="close (esc)"
-          className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[var(--color-faint)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
-      {/* body */}
-      <div className="max-h-[22rem] overflow-y-auto py-1">
-        {loading ? (
-          <div className="flex items-center gap-2 px-3 py-3 font-sans text-[12px] text-[var(--color-faint)]">
-            <Loader2 size={13} className="animate-spin" />
-            loading codex + chatpane sessions…
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="px-3 py-3 font-sans text-[12px] text-[var(--color-faint)]">
-            {total === 0
-              ? "no past chat sessions yet"
-              : `no sessions match “${query}”`}
-          </div>
-        ) : (
-          byDate.map((grp) => (
-            <div key={grp.group}>
-              <div className="sticky top-0 z-10 flex items-center justify-between border-y border-[var(--color-border)] bg-[var(--color-panel-2)]/95 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] backdrop-blur first:border-t-0">
-                <span className="truncate">{grp.group}</span>
-                <span className="tracking-normal">{grp.entries.length}</span>
-              </div>
-              {grp.entries.map((s) => {
-                const i = rowIndex++;
-                return (
-                  <ResumeRow
-                    key={s.id}
-                    session={s}
-                    active={i === activeIdx}
-                    current={!!currentSessionId && s.id === currentSessionId}
-                    onMouseEnter={() => onHover(i)}
-                    onClick={() => onPick(s)}
-                  />
-                );
-              })}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** The accent color for an engine — so claude/codex/opencode rows are
- *  distinguishable at a glance (claude=accent, codex=blue, opencode=amber). */
-function engineColorVar(engine: string): string {
-  if (engine === "codex") return "var(--color-info)";
-  if (engine === "opencode") return "var(--color-warning)";
-  return "var(--color-accent)";
-}
-
-/** One row in the /resume picker. Shows the title (stable first message), an
- *  engine-colored badge, a "where you left off" preview of the LATEST user
- *  message, and a faint meta line (project · relative time · model · id). The
- *  session currently open in THIS pane gets an accent ring + "current" dot so
- *  it's unmistakable which one you're working in. */
-function ResumeRow({
-  session,
-  active,
-  current,
-  onMouseEnter,
-  onClick,
-}: {
-  session: ChatSessionInfo;
-  active: boolean;
-  current: boolean;
-  onMouseEnter: () => void;
-  onClick: () => void;
-}) {
-  const dir = baseName(session.cwd || "");
-  const when = session.mtime ? fmtRelativeTime(session.mtime) : "";
-  const engine = session.engine || "claude";
-  const model = session.model || "";
-  const shortId = session.id ? session.id.slice(0, 8) : "";
-  const preview = (session.last_user || "").trim();
-  const engineColor = engineColorVar(engine);
-  const sourceLabel =
-    engine === "codex" ? "codex terminal/chat" : engine === "opencode" ? "opencode" : "chatpane";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      style={current ? { boxShadow: `inset 2px 0 0 ${engineColor}` } : undefined}
-      className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${
-        active
-          ? "bg-[var(--color-accent-soft)]"
-          : current
-            ? "bg-[var(--color-panel)]/60"
-            : "hover:bg-[var(--color-panel)]"
-      }`}
-    >
-      <RotateCcw
-        size={14}
-        style={{ color: active || current ? engineColor : "var(--color-muted)" }}
-        className="mt-0.5 shrink-0"
-      />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-sans text-[13px] text-[var(--color-text)]">
-            {session.title || "untitled session"}
-          </span>
-          <span
-            style={{ color: engineColor, borderColor: `color-mix(in srgb, ${engineColor} 40%, transparent)` }}
-            className="shrink-0 rounded border px-1 py-0.5 font-mono text-[9px]"
-          >
-            {engine}
-          </span>
-          {current && (
-            <span
-              style={{ color: engineColor, borderColor: `color-mix(in srgb, ${engineColor} 50%, transparent)` }}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-sans text-[9px] uppercase tracking-[0.06em]"
-            >
-              <span style={{ background: engineColor }} className="h-1.5 w-1.5 rounded-full" />
-              current
-            </span>
-          )}
-        </span>
-        {preview && (
-          <span className="mt-0.5 truncate font-sans text-[11.5px] text-[var(--color-text-2)]">
-            {preview}
-          </span>
-        )}
-        <span className="mt-1 flex items-center gap-1.5 truncate font-sans text-[11px] text-[var(--color-faint)]">
-          {dir && (
-            <span className="inline-flex items-center gap-1">
-              <Folder size={10} />
-              {dir}
-            </span>
-          )}
-          {dir && when && <span className="text-[var(--color-border-strong)]">·</span>}
-          {when && (
-            <span className="inline-flex items-center gap-1">
-              <Clock size={10} />
-              {when}
-            </span>
-          )}
-          {model && <span className="text-[var(--color-border-strong)]">·</span>}
-          {model && <span className="truncate">{model}</span>}
-          {shortId && <span className="text-[var(--color-border-strong)]">·</span>}
-          {shortId && <span className="font-mono">{shortId}</span>}
-        </span>
-      </span>
-      <span className="hidden shrink-0 items-center gap-1.5 pt-0.5 sm:flex">
-        <span className="rounded-md border border-[var(--color-border)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--color-faint)]">
-          {sourceLabel}
-        </span>
-        {active && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-accent)]/40 bg-[var(--color-panel)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--color-text-2)]">
-            resume
-            <CornerDownLeft size={11} />
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
-
-/** Faint inline pill noting which past session this chat was resumed from. */
-function ResumedNote({ title, onClear }: { title: string; onClear: () => void }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/70 px-2.5 py-1 font-sans text-[11px] text-[var(--color-text-2)]">
-      <RotateCcw size={11} className="shrink-0 text-[var(--color-accent)]" />
-      <span className="truncate">resumed: {title}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        title="dismiss"
-        className="ml-0.5 shrink-0 rounded-full p-0.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-      >
-        <X size={11} />
-      </button>
-    </span>
-  );
-}

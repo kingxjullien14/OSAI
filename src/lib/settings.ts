@@ -59,6 +59,17 @@ export interface AppSettings {
   // reduce-motion still overrides it. One switch for the whole playful tier.
   funFx: boolean;
 
+  // petRoam — the glass-spirit desk creature roams the workspace floor
+  // (living-cockpit P2). ON by default; only gates the roaming overlay —
+  // the pet's room pane stays reachable either way.
+  petRoam: boolean;
+
+  // petVoice — the roaming spirit's speech bubbles (living-cockpit P4):
+  // rare USEFUL one-liners (finished run, error, usage pace, a care need),
+  // click-to-jump, hard rate-limited (lib/pet/voice.ts). Quiet mode, sleep
+  // and being carried silence it regardless. ON by default.
+  petVoice: boolean;
+
   // minimizeToTray — when ON, closing the window (X) hides AIOS to the system
   // tray and keeps it running (the tray icon's Show/Quit bring it back or
   // exit) instead of quitting. OFF by default → X quits. macOS keeps its dock
@@ -105,6 +116,18 @@ export interface AppSettings {
   // true in loadSettings). See PLAN-superapp-uiux.md §5.
   onboardingComplete: boolean;
   onboardedAt: number | null;
+
+  // localApiEndpoint — base URL of the "local" BYOK provider (any OpenAI-
+  // compatible server: LM Studio :1234, llama.cpp --server :8080, vLLM…).
+  // The launch sweep lists {endpoint}/models; chats POST {endpoint}/chat/….
+  localApiEndpoint: string;
+
+  // hiddenModels — "engine:id" keys the user removed from every model picker
+  // (composer menu + retry menus) via the menu's manage mode. Recoverable there.
+  hiddenModels: string[];
+  // recentModels — "engine:id" keys of recently picked models, newest first;
+  // powers the model menu's short-by-default "recent" group.
+  recentModels: string[];
 }
 
 /** Routing target for "send to AI" actions. */
@@ -143,6 +166,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisperUrl: "http://localhost:9000/inference",
   soundscape: false,
   funFx: true,
+  petRoam: true,
+  petVoice: true,
   minimizeToTray: false,
   showCodexUsage: true,
   regenerateContextOnChange: false,
@@ -159,6 +184,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   onboardingComplete: false,
   onboardedAt: null,
+
+  localApiEndpoint: "http://localhost:1234/v1",
+
+  hiddenModels: [],
+  recentModels: [],
 };
 
 type Listener = (s: AppSettings) => void;

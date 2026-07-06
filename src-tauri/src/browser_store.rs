@@ -370,9 +370,15 @@ pub fn browser_reveal_in_finder(path: String) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
+        // Explorer only honours /select with BACKSLASH paths — the app's paths
+        // often arrive with forward slashes, which silently degrades to just
+        // opening a folder instead of highlighting the item (VSCode-style).
+        let win_path = path.replace('/', "\\");
         let mut cmd = std::process::Command::new("explorer.exe");
-        cmd.arg(format!("/select,{path}"));
         use std::os::windows::process::CommandExt;
+        // raw_arg keeps explorer's odd `/select,"…"` shape intact; std's default
+        // quoting would wrap the WHOLE arg and break paths with spaces.
+        cmd.raw_arg(format!("/select,\"{win_path}\""));
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         // explorer /select returns exit code 1 even on success, so don't gate on it.
         cmd.spawn().map_err(|e| format!("explorer failed: {e}"))?;

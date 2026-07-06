@@ -5,10 +5,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, Check, Circle, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, Circle, ExternalLink, Eye } from "lucide-react";
 
 import { fileMtime, readTextFile, SaveConflictError, writeTextFile } from "../lib/fs";
-import { chord } from "../lib/platform";
+import { browserRevealInFinder } from "../lib/browser";
+import { chord, isApple } from "../lib/platform";
+import { dirname } from "../lib/paths.ts";
 import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
 import { languageForPath } from "../lib/editorLanguage";
 import {
@@ -19,7 +21,13 @@ import {
   onLspStatus,
   type LspStatusEvent,
 } from "../lib/lsp/manager";
-import { openFileInPane, registerPaneDropSink } from "../lib/paneBus";
+import {
+  openFileInPane,
+  openViewerFileInPane,
+  paneMenuExtras,
+  registerPaneDropSink,
+  spawnPane,
+} from "../lib/paneBus";
 import { PaneDropZone } from "./PaneDropZone";
 import { Skeleton } from "./ui";
 import { reportDiag } from "../lib/diag";
@@ -80,6 +88,11 @@ export function EditorPane({
   // Save-conflict prompt state: set on a blocked save (backend mtime guard) OR
   // by the idle external-change watcher below.
   const [conflict, setConflict] = useState(false);
+  // live caret for the header's Ln:Col readout.
+  const [cursor, setCursor] = useState<{ ln: number; col: number } | null>(null);
+  // view toggles surfaced in the window ⋯ menu (Monaco options, per pane).
+  const wrapRef = useRef(false);
+  const minimapRef = useRef(true);
   // "show diff" overlay (disk version vs the live buffer) while in conflict.
   const [diffOpen, setDiffOpen] = useState(false);
   // Language-server status for THIS file (null = no server involved → no pill).
@@ -208,6 +221,9 @@ export function EditorPane({
           setSavedAt(null);
         }
       });
+      editor.onDidChangeCursorPosition((ev) => {
+        if (!disposed) setCursor({ ln: ev.position.lineNumber, col: ev.position.column });
+      });
       // ⌘S / Ctrl+S → save
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveRef.current());
     })();
@@ -258,6 +274,75 @@ export function EditorPane({
       }),
     [],
   );
+
+  // ⋯-menu contributions (W7 pane 7) — the same registry the terminal and
+  // notes panes use. Getter form: disabled-ness/labels evaluate at menu-open.
+  useEffect(() => {
+    if (!paneKey) return;
+    paneMenuExtras.set(paneKey, () => [
+      {
+        key: "ed-save",
+        label: "Save",
+        hint: chord("S"),
+        disabled: !dirtyRef.current,
+        onSelect: () => saveRef.current(),
+      },
+      {
+        key: "ed-format",
+        label: "Format document",
+        onSelect: () => {
+          void editorRef.current
+            ?.getAction("editor.action.formatDocument")
+            ?.run()
+            .catch(() => {});
+        },
+      },
+      // the cross-jump ONLY (a viewer offers "open in editor", an editor
+      // offers "open in viewer") — the menu never names the mode you're in.
+      {
+        key: "ed-view",
+        label: "Open in viewer",
+        hint: /\.(md|markdown)$/i.test(path) ? "rendered" : undefined,
+        onSelect: () => openViewerFileInPane(path, name),
+      },
+      {
+        key: "ed-wrap",
+        label: wrapRef.current ? "Disable word wrap" : "Enable word wrap",
+        onSelect: () => {
+          wrapRef.current = !wrapRef.current;
+          editorRef.current?.updateOptions({ wordWrap: wrapRef.current ? "on" : "off" });
+        },
+      },
+      {
+        key: "ed-minimap",
+        label: minimapRef.current ? "Hide minimap" : "Show minimap",
+        onSelect: () => {
+          minimapRef.current = !minimapRef.current;
+          editorRef.current?.updateOptions({ minimap: { enabled: minimapRef.current } });
+        },
+      },
+      { key: "ed-sep", separator: true },
+      {
+        key: "ed-copy",
+        label: "Copy path",
+        onSelect: () => void navigator.clipboard?.writeText(path).catch(() => {}),
+      },
+      {
+        key: "ed-reveal",
+        label: isApple ? "Reveal in Finder" : "Reveal in Explorer",
+        onSelect: () => void browserRevealInFinder(path).catch(() => {}),
+      },
+      {
+        key: "ed-term",
+        label: "Open terminal here",
+        hint: "cd to folder",
+        onSelect: () => spawnPane("terminal", { cwd: dirname(path) }),
+      },
+    ]);
+    return () => {
+      paneMenuExtras.delete(paneKey);
+    };
+  }, [paneKey, path]);
 
   // Reload the file from disk, discarding local edits (conflict → "take disk").
   const reloadFromDisk = useCallback(async () => {
@@ -399,6 +484,13 @@ export function EditorPane({
     <PaneDropZone onPath={onDropFile} label="drop file to open">
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)]">
       <div className="pane-header gap-2">
+        {/* mode identity — pairs with the viewer's cyan "viewer" chip */}
+        <span
+          className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-[var(--color-accent)]"
+          title="editable — ⌘S saves to disk"
+        >
+          editor
+        </span>
         {dirty ? (
           <Circle size={8} className="shrink-0 fill-[var(--color-accent)] text-[var(--color-accent)]" />
         ) : savedAt ? (
@@ -409,6 +501,26 @@ export function EditorPane({
         </span>
         {dirty && !conflict && <span className="font-mono text-[10px] text-[var(--color-faint)]">{chord("S")} to save</span>}
         <span className="flex-1" />
+        {cursor && (
+          <span
+            className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]"
+            title="line : column"
+          >
+            {cursor.ln}:{cursor.col}
+          </span>
+        )}
+        <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-[var(--color-faint)]">
+          {languageForPath(path)}
+        </span>
+        {/\.(md|markdown)$/i.test(path) && (
+          <button
+            onClick={() => openViewerFileInPane(path, name)}
+            className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            title="Open rendered preview (viewer)"
+          >
+            <Eye size={12} />
+          </button>
+        )}
         {/* LSP status pill (TRACK B): only rendered once a server is involved */}
         {lsp && lsp.status !== "stopped" && (
           <span

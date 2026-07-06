@@ -1,7 +1,7 @@
 [package]
-name = "aios-shell"
-version = "1.1.1"
-description = "AIOS — your AI co-founder's command deck"
+name = "osai"
+version = "2.0.0"
+description = "OSAI — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"
 
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "aios_shell_lib"
+name = "osai_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -53,6 +53,9 @@ keyring = "2"
 # tokio runtime needed there). rustls so there's no openssl/native-tls on Windows
 # (sqlx already pulls rustls). See chat_api.rs (pure) + chat.rs run_api_turn (I/O).
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+# Files-pane delete goes to the OS trash (Recycle Bin / macOS Trash) so a
+# mis-click is recoverable — never a hard unlink of a folder tree.
+trash = "5"
 chrono = { version = "0.4", features = ["serde"] }
 portable-pty = "0.8"
 parking_lot = "0.12"

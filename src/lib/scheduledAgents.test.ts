@@ -35,7 +35,7 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
   withLocalStorage(() => {
     const agent = createScheduledAgent({ label: "research scout", mission: "find leads" });
     const seed = buildScheduledAgentChatSeed(agent);
-    assert.match(seed, /you are the aios research scout agent/);
+    assert.match(seed, /you are the osai research scout agent/);
     assert.match(seed, /mission: find leads/);
     assert.match(seed, /first task:/);
     assert.match(seed, /do not ask the user/);

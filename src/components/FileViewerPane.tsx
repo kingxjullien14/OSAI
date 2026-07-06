@@ -1,17 +1,36 @@
 /** A single file rendered in its own pane — images & PDFs via the asset
  *  protocol, text/code/markdown inline. Spawned from the Files pane's
- *  "open in pane" action so any file can live as a standalone pane. */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+ *  "open in pane" action so any file can live as a standalone pane.
+ *
+ *  Markdown renders through the HOUSE renderer (chat/Markdown — same one the
+ *  notes reader and files preview use), with relative links resolved against
+ *  THIS document's folder via the chat file-open context. */
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { openPath } from "@tauri-apps/plugin-opener";
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink, FileText, PenLine } from "lucide-react";
 
 import { fileSrc, readFilePreview, type FilePreview } from "../lib/fs";
-import { openFileInPane, openUrlInPane, registerPaneDropSink } from "../lib/paneBus";
-import { isHttpPaneTarget, isPaneFileTarget, resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
+import { browserRevealInFinder } from "../lib/browser";
+import { isApple } from "../lib/platform";
+import { dirname } from "../lib/paths.ts";
+import {
+  openEditorFileInPane,
+  openFileInPane,
+  paneMenuExtras,
+  registerPaneDropSink,
+  spawnPane,
+} from "../lib/paneBus";
+import { resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
+import { ChatFileOpenContext } from "./chat/context";
+import { Markdown } from "./chat/Markdown";
 import { OfficePreview } from "./OfficePreview";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
+
+function fmtKB(size: number): string {
+  return size >= 1_000_000 ? `${(size / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+}
 
 export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: string }) {
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -46,20 +65,94 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
     };
   }, [path]);
 
+  // ⋯-menu contributions — parity with terminal/notes/editor. Per the owner:
+  // a VIEWER offers "open in editor" (and never "open in viewer") — the
+  // cross-jump only, so the menu can't gaslight you about where you are.
+  useEffect(() => {
+    if (!paneKey) return;
+    paneMenuExtras.set(paneKey, () => [
+      {
+        key: "fv-edit",
+        label: "Open in editor",
+        hint: "source",
+        onSelect: () => openEditorFileInPane(path, path.split(/[\\/]/).pop() ?? path),
+      },
+      { key: "fv-sep0", separator: true },
+      {
+        key: "fv-copy",
+        label: "Copy path",
+        onSelect: () => void navigator.clipboard?.writeText(path).catch(() => {}),
+      },
+      {
+        key: "fv-reveal",
+        label: isApple ? "Reveal in Finder" : "Reveal in Explorer",
+        onSelect: () => void browserRevealInFinder(path).catch(() => {}),
+      },
+      {
+        key: "fv-term",
+        label: "Open terminal here",
+        hint: "cd to folder",
+        onSelect: () => spawnPane("terminal", { cwd: dirname(path) }),
+      },
+      {
+        key: "fv-external",
+        label: "Open externally",
+        onSelect: () => void openPath(path).catch((e) => reportDiag("fileviewer.open", e, { action: "openPath" })),
+      },
+    ]);
+    return () => {
+      paneMenuExtras.delete(paneKey);
+    };
+  }, [paneKey, path]);
+
+  // relative `[link](./other.md)` targets in a markdown DOC resolve against
+  // the doc's own folder (the chat renderer's default resolves against cwd).
+  const openRelative = useMemo(
+    () => (ref: string) => {
+      const resolved = resolvePaneFileTarget(ref, path);
+      openFileInPane(resolved, targetLabel(resolved));
+    },
+    [path],
+  );
+
   return (
     <PaneDropZone onPath={onDropFile} label="drop file to open">
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      <div className="pane-header justify-between">
-        <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]">
-          {preview?.name ?? path.split("/").pop()}
+      <div className="pane-header justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {/* mode identity — the owner asked for an unmissable viewer/editor tell */}
+          <span
+            className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--aios-accent-2)_35%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide"
+            style={{ color: "var(--aios-accent-2)" }}
+            title="read-only viewer — use the pen (or ⋯) to edit"
+          >
+            viewer
+          </span>
+          <span className="truncate font-mono text-[11px] text-[var(--color-text-2)]" title={path}>
+            {preview?.name ?? path.split("/").pop()}
+          </span>
         </span>
-        <button
-          onClick={() => openPath(path).catch((e) => reportDiag("fileviewer.open", e, { action: "openPath" }))}
-          className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
-          title="Open externally"
-        >
-          <ExternalLink size={12} />
-        </button>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {preview && (
+            <span className="font-mono text-[9.5px] uppercase tracking-wide text-[var(--color-faint)]">
+              {preview.kind} · {fmtKB(preview.size)}
+            </span>
+          )}
+          <button
+            onClick={() => openEditorFileInPane(path, preview?.name ?? path.split(/[\\/]/).pop() ?? path)}
+            className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            title="Open in editor (source)"
+          >
+            <PenLine size={12} />
+          </button>
+          <button
+            onClick={() => openPath(path).catch((e) => reportDiag("fileviewer.open", e, { action: "openPath" }))}
+            className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            title="Open externally"
+          >
+            <ExternalLink size={12} />
+          </button>
+        </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {loading ? (
@@ -81,7 +174,16 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
           />
         ) : preview?.kind === "text" ? (
           isMarkdown(path) ? (
-            <MarkdownDoc text={preview.text ?? ""} path={path} truncated={preview.truncated} />
+            <ChatFileOpenContext.Provider value={openRelative}>
+              <div className="mx-auto max-w-3xl px-5 py-4 text-[13px] leading-relaxed text-[var(--color-text-2)]">
+                <Markdown text={preview.text ?? ""} />
+                {preview.truncated && (
+                  <div className="mt-4 border-t border-[var(--color-border)] pt-2 text-[11px] text-[var(--color-faint)]">
+                    … truncated — open externally for the full file
+                  </div>
+                )}
+              </div>
+            </ChatFileOpenContext.Provider>
           ) : (
             <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
               {preview.text}
@@ -108,89 +210,4 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
 
 function isMarkdown(path: string): boolean {
   return /\.(md|markdown)$/i.test(path);
-}
-
-function MarkdownDoc({ text, path, truncated }: { text: string; path: string; truncated: boolean }) {
-  return (
-    <div className="mx-auto max-w-3xl px-5 py-4 font-sans text-[13px] leading-relaxed text-[var(--color-text-2)]">
-      {text.split("\n").map((line, i) => {
-        const heading = line.match(/^(#{1,4})\s+(.*)$/);
-        if (heading) {
-          const level = heading[1].length;
-          return (
-            <div
-              key={i}
-              className={`mt-3 mb-1 font-semibold text-[var(--color-text)] ${
-                level === 1 ? "text-[20px]" : level === 2 ? "text-[17px]" : "text-[14px]"
-              }`}
-            >
-              <InlineDoc text={heading[2]} basePath={path} />
-            </div>
-          );
-        }
-        const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-        if (bullet) {
-          return (
-            <div key={i} className="flex gap-2 pl-2">
-              <span className="select-none text-[var(--color-accent)]">•</span>
-              <span className="min-w-0 flex-1">
-                <InlineDoc text={bullet[1]} basePath={path} />
-              </span>
-            </div>
-          );
-        }
-        if (!line.trim()) return <div key={i} className="h-2" />;
-        return (
-          <p key={i} className="whitespace-pre-wrap break-words">
-            <InlineDoc text={line} basePath={path} />
-          </p>
-        );
-      })}
-      {truncated && <div className="mt-4 text-[12px] text-[var(--color-faint)]">… truncated</div>}
-    </div>
-  );
-}
-
-function InlineDoc({ text, basePath }: { text: string; basePath: string }) {
-  const nodes: ReactNode[] = [];
-  const re = /\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`/g;
-  let last = 0;
-  let k = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > last) nodes.push(<span key={`s${k++}`}>{text.slice(last, match.index)}</span>);
-    const label = match[1] ?? match[3] ?? "";
-    const target = match[2] ?? match[3] ?? "";
-    const clickable = isHttpPaneTarget(target) || isPaneFileTarget(target);
-    if (clickable) {
-      nodes.push(
-        <button
-          key={`l${k++}`}
-          type="button"
-          onClick={() => {
-            if (isHttpPaneTarget(target)) {
-              openUrlInPane(target, label || "browser");
-              return;
-            }
-            const resolved = resolvePaneFileTarget(target, basePath);
-            openFileInPane(resolved, targetLabel(resolved));
-          }}
-          className="font-mono text-[0.95em] text-[var(--color-accent)] underline decoration-[var(--color-accent)]/35 underline-offset-2 hover:decoration-[var(--color-accent)]"
-        >
-          {label}
-        </button>,
-      );
-    } else if (match[3]) {
-      nodes.push(
-        <code key={`c${k++}`} className="rounded bg-[var(--color-panel)] px-1 py-0.5 font-mono text-[0.9em] text-[var(--color-text)]">
-          {label}
-        </code>,
-      );
-    } else {
-      nodes.push(<span key={`p${k++}`}>{label}</span>);
-    }
-    last = re.lastIndex;
-  }
-  if (last < text.length) nodes.push(<span key={`s${k++}`}>{text.slice(last)}</span>);
-  return <>{nodes}</>;
 }

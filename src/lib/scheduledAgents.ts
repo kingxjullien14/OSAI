@@ -150,7 +150,7 @@ export function loadCustomScheduledAgents(): ScheduledAgentConfig[] {
         label: String(agent.label).trim(),
         shortLabel: String(agent.shortLabel || id).trim(),
         cwd: cleanseStored(agent.cwd) ?? agentHome(),
-        mission: String(agent.mission || "custom aios agent").trim(),
+        mission: String(agent.mission || "custom osai agent").trim(),
         schedule: String(agent.schedule || "manual").trim(),
       });
       return agents;
@@ -202,7 +202,7 @@ export function createScheduledAgent(input: {
     label,
     shortLabel: id,
     cwd: input.cwd?.trim() || agentHome(),
-    mission: input.mission?.trim() || "custom aios agent",
+    mission: input.mission?.trim() || "custom osai agent",
     schedule: input.schedule?.trim() || "manual",
   };
   // Persist only the user's inputs; the cwd default re-resolves at load.
@@ -306,7 +306,7 @@ export function dueScheduledAgents(now = Date.now()): ScheduledAgentConfig[] {
 
 export function buildScheduledAgentChatSeed(agent: ScheduledAgentConfig): string {
   return [
-    `you are the aios ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`,
+    `you are the osai ${agent.label} agent. execute this mission from this chatpane: ${agent.mission}.`,
     "",
     "context:",
     `- agent: ${agent.label}`,
@@ -318,7 +318,7 @@ export function buildScheduledAgentChatSeed(agent: ScheduledAgentConfig): string
     "- act like a live goal-moving operator, not a logger.",
     "- start by inspecting the workspace + recent context before proposing work.",
     "- do not ask the user to continue, approve, or tell you what to do next inside this agent chat.",
-    "- treat this chat as an ordered execution log for the aios shell to monitor and control.",
+    "- treat this chat as an ordered execution log for the osai shell to monitor and control.",
     "- continue autonomously inside your policy limits; when blocked, write a concise pending approval item instead of asking a question.",
     "- report concrete next actions, current blockers, and what moves the goal.",
     "- do not execute irreversible external actions. produce concrete next steps, artifacts, and pending approval items for the shell control plane.",

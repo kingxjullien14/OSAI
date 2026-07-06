@@ -129,7 +129,7 @@ export function AccountMenu({
       >
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12px] text-[var(--color-text)]">{name}</div>
-          <div className="truncate text-[10px] text-[var(--color-muted)]">aios</div>
+          <div className="truncate text-[10px] text-[var(--color-muted)]">osai</div>
         </div>
         <SettingsIcon size={13} className="text-[var(--color-muted)]" />
       </button>}

@@ -14,7 +14,7 @@
  * providers the user has configured.
  */
 
-export type ApiProviderId = "openrouter" | "anthropic" | "openai" | "ollama";
+export type ApiProviderId = "openrouter" | "anthropic" | "openai" | "ollama" | "local";
 
 /** How the runtime (chat.rs, next slice) must speak to the provider. */
 export type ApiProtocol = "anthropic-messages" | "openai-chat" | "ollama-chat";
@@ -92,6 +92,18 @@ export const API_PROVIDERS: ApiProvider[] = [
       { id: "o3", label: "o3", contextWindow: 200_000, toolUse: true },
       { id: "o4-mini", label: "o4-mini", contextWindow: 200_000, toolUse: true },
     ],
+  },
+  {
+    // Any OpenAI-compatible server on a user-set base URL — LM Studio,
+    // llama.cpp --server, vLLM, LiteLLM… Models are 100% live-discovered
+    // (GET {endpoint}/models via the launch sweep); no static floor exists
+    // for arbitrary servers. Endpoint lives in settings.localApiEndpoint.
+    id: "local",
+    label: "Local (OpenAI-compatible)",
+    protocol: "openai-chat",
+    endpoint: "http://localhost:1234/v1",
+    keyless: true,
+    models: [],
   },
   {
     id: "ollama",

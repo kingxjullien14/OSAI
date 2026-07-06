@@ -1,6 +1,6 @@
-# Releasing AIOS (signed self-update via GitHub Releases)
+# Releasing OSAI (signed self-update via GitHub Releases)
 
-AIOS ships an in-app updater (`tauri-plugin-updater`). On launch it quietly checks
+OSAI ships an in-app updater (`tauri-plugin-updater`). On launch it quietly checks
 GitHub Releases for a newer **signed** build and nudges you toward
 **Settings › about › software update**, which downloads, installs, and relaunches
 in place. This file is the release-side counterpart: how a new version gets built,
@@ -9,7 +9,7 @@ signed, and published so existing installs can find it.
 ## How it works
 
 - `src-tauri/tauri.conf.json` → `plugins.updater`:
-  - `endpoints`: `https://github.com/kingxjullien14/AIOS-Superapp/releases/latest/download/latest.json`
+  - `endpoints`: `https://github.com/kingxjullien14/OSAI/releases/latest/download/latest.json`
     — `releases/latest/download/...` always resolves to the newest release's asset,
     so you never have to update the endpoint.
   - `pubkey`: the **public** half of the updater signing key (safe to commit).
@@ -37,7 +37,8 @@ npx tauri signer generate -w "$env:USERPROFILE\.aios\keys\aios-updater.key" --ci
    - `src-tauri/tauri.conf.json` → `version`
    - `src-tauri/Cargo.toml` → `version`
    - `package.json` → `version`
-   - and the about-line literal in `src/components/Settings.tsx` (`v1.0.0 · Jul.Nazz`).
+   - and the two version literals in `src/components/Settings.tsx` (`v… · Jul.Nazz`
+     — the about hero + the sidebar footer).
 
 2. **Stage the psmux sidecar** (Windows builds — the bundled "native Windows
    tmux" that powers persistent/detachable terminal panes). Fetches the latest
@@ -60,7 +61,7 @@ npx tauri signer generate -w "$env:USERPROFILE\.aios\keys\aios-updater.key" --ci
    npm run tauri build
    ```
 
-   Output (Windows): `src-tauri/target/release/bundle/nsis/AIOS_<version>_x64-setup.exe`
+   Output (Windows): `src-tauri/target/release/bundle/nsis/OSAI_<version>_x64-setup.exe`
    plus a matching `…-setup.exe.sig`. (`createUpdaterArtifacts: true` in the config
    is what makes Tauri produce the `.sig`.)
 
@@ -77,13 +78,13 @@ npx tauri signer generate -w "$env:USERPROFILE\.aios\keys\aios-updater.key" --ci
 
    ```pwsh
    gh release create v<version> `
-     "src-tauri/target/release/bundle/nsis/AIOS_<version>_x64-setup.exe" `
+     "src-tauri/target/release/bundle/nsis/OSAI_<version>_x64-setup.exe" `
      "latest.json" -t "v<version>" -n "short changelog line"
    ```
 
    Re-publishing to an existing tag? `gh release upload v<version> <files> --clobber`.
 
-That's it — open an older AIOS install and within a few seconds of launch it'll
+That's it — open an older OSAI install and within a few seconds of launch it'll
 offer the new version, or check on demand in **Settings › about**.
 
 ## Notes / gotchas

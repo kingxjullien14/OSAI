@@ -9,6 +9,22 @@ export const paneWriters = new Map<string, (text: string) => void>();
  *  not just sit in the prompt. Keyed by pane key, same lifecycle as paneWriters. */
 export const paneSubmitters = new Map<string, (text: string) => void>();
 
+/** Extra entries a pane's CONTENT contributes to its shell's ... menu (W7
+ *  pane 1: the terminal's right-click is PASTE now, so copy/paste/clear/etc
+ *  live in the header dots menu). A GETTER so disabled-ness etc. is evaluated
+ *  at open time. Structurally compatible with PaneMenu's PaneMenuEntry -
+ *  duplicated here so lib/ never imports from components/. */
+export interface PaneShellMenuAction {
+  key: string;
+  label: string;
+  hint?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onSelect?: () => void;
+}
+export type PaneShellMenuEntry = PaneShellMenuAction | { key: string; separator: true };
+export const paneMenuExtras = new Map<string, () => PaneShellMenuEntry[]>();
+
 /** Handle a ChatPane publishes so App can decide what to do when its pane is
  *  closed: is a task in flight, and how to detach (keep running) vs kill. */
 export interface ChatHandle {
@@ -232,7 +248,14 @@ export function revealFileInPane(path: string, name: string): boolean {
 // a fresh pane of a given kind, carrying just enough context to root/seed it. App
 // translates the (kind, ctx) into a real PaneContent + label and spawns it
 // (reusing the existing `spawn`, so the exit-fullscreen-on-spawn behavior applies).
-export type SpawnPaneKind = "terminal" | "files" | "browser" | "chat";
+export type SpawnPaneKind =
+  | "terminal"
+  | "files"
+  | "browser"
+  | "chat"
+  // context-free tool panes (Settings' "open full pane" buttons, S1):
+  | "plugins"
+  | "bridges";
 
 /** Context a spawn carries. Only the fields relevant to the target kind are read:
  *  - terminal → `cwd` (shell starts there)
@@ -398,6 +421,30 @@ export function onAiosDrag(fn: DragListener): () => void {
   fn(dragActive); // sync current state on mount
   return () => {
     dragListeners.delete(fn);
+  };
+}
+
+// ── window-gesture signal (windowed workspace) ───────────────────────────────
+// FloatingWindow broadcasts while a window MOVE gesture is in flight so panes
+// hosting NATIVE child webviews (browser / appcast) can hide them for the
+// duration: the native view can only chase the chrome through async IPC — it
+// visibly ghosts behind the window — and it composites above every React
+// layer regardless. Same trick as the path-drag hide.
+let windowGestureActive = false;
+const windowGestureListeners = new Set<DragListener>();
+
+export function setWindowGesture(active: boolean) {
+  if (active === windowGestureActive) return;
+  windowGestureActive = active;
+  windowGestureListeners.forEach((fn) => fn(active));
+}
+
+/** Subscribe to the window-move signal. Returns an unsubscribe fn. */
+export function onWindowGesture(fn: DragListener): () => void {
+  windowGestureListeners.add(fn);
+  fn(windowGestureActive);
+  return () => {
+    windowGestureListeners.delete(fn);
   };
 }
 

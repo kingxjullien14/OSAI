@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { FolderOpen, MessageSquarePlus, RotateCw, X } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as Xterm } from "@xterm/xterm";
@@ -22,10 +22,11 @@ import {
   spawnTerminal,
   spawnTmux,
 } from "../lib/pty";
-import { homeDir, saveImageTemp } from "../lib/fs";
-import { chord, isApple } from "../lib/platform";
+import { homeDir, readTextFile, saveImageTemp } from "../lib/fs";
+import { chord, isApple, shellQuotePath as quotePath } from "../lib/platform";
 import { loadSettings, subscribe as subscribeSettings } from "../lib/settings";
-import { paneWriters, paneSubmitters, openUrlInPane, spawnPane } from "../lib/paneBus";
+import { paneWriters, paneSubmitters, paneMenuExtras, openUrlInPane, spawnPane } from "../lib/paneBus";
+import { saveToNotes } from "../lib/snc";
 import { isTauriRuntime } from "../lib/tauri";
 import { onPetError, onPetUsage, onPetUserMessage } from "../lib/pet";
 
@@ -43,7 +44,6 @@ function bracketed(text: string): string {
   // keystrokes. (The backend pty_paste applies the same sanitization.)
   return `${PASTE_START}${text.split(PASTE_END).join("")}${PASTE_END}`;
 }
-import { TerminalComposer } from "./TerminalComposer";
 import { PaneDropZone } from "./PaneDropZone";
 import { reportDiag } from "../lib/diag";
 
@@ -52,9 +52,12 @@ import { reportDiag } from "../lib/diag";
  *  liveXtermTheme). Hex is intentional here (xterm needs concrete colors) and
  *  this file is exempt from the design-token ratchet for exactly that reason. */
 const THEME = {
-  // translucent deep-void: lets the aurora layer behind the host glow through
-  // (allowTransparency must be on). ~66% opaque keeps text crisp over blooms.
-  background: "rgba(8, 5, 15, 0.66)",
+  // fully transparent: the frost is painted on the HOST div (which spans the
+  // whole pane) — .xterm only spans the fitted grid, so painting there left
+  // the sub-row remainder as a lighter band at the bottom (the owner's
+  // "terminal doesn't reach the bottom"; gap size = pane height % cell
+  // height, hence "changes when I resize").
+  background: "rgba(8, 5, 15, 0)",
   foreground: "#C4BEDA",
   cursor: "#A86BFF",
   cursorAccent: "#0A0713",
@@ -81,7 +84,7 @@ const THEME = {
 // fonts if installed (JetBrains Mono / Cascadia Code — the latter ships with
 // Windows Terminal, so it's a great native Windows default) → Consolas → generic.
 const FONT_FAMILY =
-  '"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", ui-monospace, monospace';
+  '"CaskaydiaCove Nerd Font", "CaskaydiaCove NF", "CascadiaCode NF", "JetBrainsMono Nerd Font", "SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", ui-monospace, monospace';
 
 /** Resolve a CSS custom property at call time, with a fallback. */
 function cssVar(name: string, fallback: string): string {
@@ -99,16 +102,6 @@ function liveXtermTheme(): typeof THEME {
     cursor: cssVar("--color-cursor", THEME.cursor),
     selectionBackground: cssVar("--color-selection", THEME.selectionBackground),
   };
-}
-
-/** Shell-quote a path (single-quote wrap) only when it needs it. POSIX shells
- *  escape an embedded quote as '\''; PowerShell doubles it — and backslashes
- *  are ordinary path characters on Windows, so they must NOT trigger quoting. */
-function quotePath(path: string): string {
-  if (!isApple) {
-    return /[\s'"&(){}\[\];,$]/.test(path) ? `'${path.replace(/'/g, "''")}'` : path;
-  }
-  return /[\s'"\\]/.test(path) ? `'${path.replace(/'/g, "'\\''")}'` : path;
 }
 
 /** Extension for a clipboard/file image mime, defaulting to png. */
@@ -156,17 +149,9 @@ export function termSessionName(paneKey?: string): string {
 export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<number | null>(null);
+  // the effect-scoped paste helper (image-aware), exposed to the menu.
+  const pasteRef = useRef<((sid: number | null) => Promise<void>) | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  // Compose box (multi-line prompt affordance). Default-open for the dedicated
-  // "claude code" pane so the chat-grade surface is there from the first frame.
-  // Default the compose box open wherever you're talking to a CLI AI — the
-  // "claude code" pane AND any agent/oracle or attached tmux session (those run
-  // claude too). A plain raw "terminal" stays closed-by-default (toggle button).
-  const [composerOpen, setComposerOpen] = useState(
-    kind.type === "oracle" ||
-      kind.type === "tmux" ||
-      (kind.type === "shell" && !!kind.cmd && kind.cmd.startsWith("claude")),
-  );
   const [savingImg, setSavingImg] = useState(false);
   // B3: the backend emits `pty-exit <sessionId>` when the child/reader dies.
   // When THIS pane's session exits we surface an inline "process exited" state
@@ -182,25 +167,17 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
   // [[btn: a | b | c]] sentinel → clickable buttons (mirrors the WhatsApp UX).
   const [buttons, setButtons] = useState<string[] | null>(null);
   const bufRef = useRef("");
-  // claude-code's live state, parsed best-effort from its TUI output (the raw
-  // PTY has no API to query it). Drives the composer's mode + model pills so they
-  // reflect REALITY instead of generic labels. Kept in a ref + state so the
-  // per-chunk parse only re-renders when something actually changes.
-  const [claudeStatus, setClaudeStatus] = useState<{
-    mode?: string;
-    model?: string;
-    ctxPct?: number;
-  }>({});
+  // claude-code's live ctx%, parsed best-effort from its TUI output (the raw
+  // PTY has no API to query it). Ref-only: it feeds the pet-usage bus (the
+  // composer pills it used to drive are gone — owner, W7 pane 1).
   const claudeStatusRef = useRef<{ mode?: string; model?: string; ctxPct?: number }>(
     {},
   );
   // Last time a ctx% change was forwarded to the pet bus (2s throttle).
   const petUsageAtRef = useRef(0);
   const lastBtnRef = useRef("");
-  // When the compose box is open, an "append to box" writer it registers — so
-  // global ⌘J dictation (App's single VoiceButton) lands in the box, exactly
-  // like ChatPane. null = no composer mounted → fall back to the PTY writer.
-  const composerAppendRef = useRef<((text: string) => void) | null>(null);
+  // last PowerShell prompt cwd seen in the stream (live "open files here").
+  const liveCwdRef = useRef<string | null>(null);
   // Live xterm handle so composerSend can snap the viewport to the prompt before
   // writing — the common "wrong spot" is a scrolled-up terminal (reading backlog
   // / tmux copy-mode) that would eat the sent line.
@@ -224,8 +201,9 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
-      // Alacritty copies the moment you finish a selection.
-      rightClickSelectsWord: true,
+      // right-button events are shielded from xterm entirely (see below), so
+      // right-click word-select can never fire — off for honesty.
+      rightClickSelectsWord: false,
       macOptionIsMeta: true,
       // Translucent theme bg → the aurora behind the host glows through (the
       // Neon Glass "frosted terminal"). Costs a per-cell alpha-blend on the WebGL
@@ -363,6 +341,30 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
         .catch((e) => reportDiag("terminal.clipboard", e, { action: "readText" }));
     };
     host.addEventListener("auxclick", onAuxClick);
+    pasteRef.current = pasteClipboard;
+    // RIGHT-CLICK SHIELD (owner: "right click pastes"): capture-phase stop so
+    // xterm NEVER sees the right button — no mouse-report to psmux (which
+    // pastes on right-click, the Windows-terminal convention), no
+    // word-select, no hidden-textarea relocation. Our menu is the only thing
+    // a right-click does.
+    const shieldRight = (e: MouseEvent) => {
+      if (e.button === 2) e.stopPropagation();
+    };
+    host.addEventListener("mousedown", shieldRight, true);
+    host.addEventListener("mouseup", shieldRight, true);
+    host.addEventListener("pointerdown", shieldRight, true);
+    host.addEventListener("pointerup", shieldRight, true);
+    // right-click = PASTE (owner: the Windows-terminal convention, wanted
+    // back — via OUR image-aware paste, so a copied screenshot lands as a
+    // vision-ready temp path). The shield above still starves xterm/psmux of
+    // the right button, so nothing double-pastes. The terminal's actions
+    // (copy/clear/…) moved to the window shell's ⋯ menu (paneMenuExtras).
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void pasteClipboard(sessionIdRef.current);
+    };
+    host.addEventListener("contextmenu", onCtx, true);
     // WebGL renderer for speed; silently fall back to the default if unavailable.
     // R2: WebGL renderer for speed. On sleep/wake (or GPU pressure) the browser
     // can drop the WebGL context — without handling onContextLoss the addon
@@ -446,7 +448,6 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           next.ctxPct !== prev.ctxPct
         ) {
           claudeStatusRef.current = next;
-          setClaudeStatus(next);
           // Pet bus: the terminal is where the agent actually runs — let the
           // companion feel the context window draining (ctxPct is "% left";
           // pet usage wants "% consumed"). Throttled: ctx moves a percent at a
@@ -458,6 +459,41 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
               onPetUsage({ pct: 100 - next.ctxPct });
             }
           }
+        }
+      }
+
+      // LIVE cwd (W7 pane 1, round 6): oh-my-posh broke the old "PS C:\\..>"
+      // prompt parse (it restyles AND abbreviates the visible path), so the
+      // robust source is the INVISIBLE escape: our OMP theme opts into
+      // `"pwd": "osc99"` → OSC 9;9;<full-path> on every prompt. Parsed from
+      // the RAW window (clean strips OSC). OSC 7 (file:// form) handled too;
+      // the plain "PS C:\\..>" prompt stays as the no-OMP fallback.
+      {
+        let next: string | undefined;
+        const osc99 = [...raw.matchAll(/\x1b\]9;9;("?)([^"\x07\x1b]+)\1(?:\x07|\x1b\\)/g)];
+        next = osc99[osc99.length - 1]?.[2]?.trim();
+        if (!next) {
+          const osc7 = [...raw.matchAll(/\x1b\]7;file:\/\/[^/\x07\x1b]*\/([^\x07\x1b]+)(?:\x07|\x1b\\)/g)];
+          const enc = osc7[osc7.length - 1]?.[1];
+          if (enc) {
+            try {
+              let dec = decodeURIComponent(enc);
+              // file://host/C:/dir → C:\dir (windows); posix paths keep slashes
+              if (/^[A-Za-z]:\//.test(dec)) dec = dec.replace(/\//g, "\\");
+              else dec = "/" + dec;
+              next = dec;
+            } catch {
+              /* malformed escape — ignore */
+            }
+          }
+        }
+        if (!next) {
+          const ps = [...clean.matchAll(/PS\s+([A-Za-z]:\\[^>\r\n]*?)>/g)];
+          next = ps[ps.length - 1]?.[1]?.trim();
+        }
+        if (next && next !== liveCwdRef.current) {
+          liveCwdRef.current = next;
+          setPaneCwd(next);
         }
       }
 
@@ -554,14 +590,11 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           })
           .catch((e) => reportDiag("terminal.listen", e, { action: "exit" }));
       }
-      // Pane writer for cross-cutting features (voice dictation, file drops).
-      // Prefer the compose box when it's open (so dictation lands in the box and
-      // is editable before send, like ChatPane); else write straight to the PTY.
+      // Pane writer for cross-cutting features (voice dictation, file drops):
+      // straight to the PTY (the compose box is gone — owner, W7 pane 1).
       if (paneKey)
         paneWriters.set(paneKey, (t) => {
-          const toBox = composerAppendRef.current;
-          if (toBox) toBox(t);
-          else ptyWrite(sessionId!, t).catch((e) => reportDiag("terminal.write", e, { action: "input" }));
+          ptyWrite(sessionId!, t).catch((e) => reportDiag("terminal.write", e, { action: "input" }));
         });
       inputDisposer = term.onData((d) => {
         if (sessionId != null) ptyWrite(sessionId, d).catch((e) => reportDiag("terminal.write", e, { action: "data" }));
@@ -612,6 +645,12 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       disposed = true;
       if (paneKey) paneWriters.delete(paneKey);
       host.removeEventListener("auxclick", onAuxClick);
+      host.removeEventListener("mousedown", shieldRight, true);
+      host.removeEventListener("mouseup", shieldRight, true);
+      host.removeEventListener("pointerdown", shieldRight, true);
+      host.removeEventListener("pointerup", shieldRight, true);
+      host.removeEventListener("contextmenu", onCtx, true);
+      pasteRef.current = null;
       ro.disconnect();
       if (resizeTimer != null) clearTimeout(resizeTimer);
       unsubSettings();
@@ -698,6 +737,73 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paneKey]);
 
+  // ⋯-menu contributions (W7 pane 1): the terminal's actions live in the
+  // window shell's dots menu now — the in-pane right-click is PASTE. Getter
+  // form: disabled-ness (e.g. "Copy selection") is evaluated at menu-open.
+  useEffect(() => {
+    if (!paneKey) return;
+    paneMenuExtras.set(paneKey, () => [
+      {
+        key: "term-copy",
+        label: "Copy selection",
+        hint: isApple ? "⌘C" : "Ctrl+Shift+C",
+        disabled: !termRef.current?.hasSelection(),
+        onSelect: () => {
+          const sel = termRef.current?.getSelection();
+          if (sel)
+            navigator.clipboard
+              .writeText(sel)
+              .catch((e) => reportDiag("terminal.clipboard", e, { action: "copySelection" }));
+        },
+      },
+      {
+        key: "term-paste",
+        label: "Paste",
+        hint: "right-click",
+        onSelect: () => void pasteRef.current?.(sessionIdRef.current),
+      },
+      { key: "term-selall", label: "Select all", onSelect: () => termRef.current?.selectAll() },
+      {
+        key: "term-notes",
+        label: "Save selection to notes",
+        hint: "stone & chisel",
+        disabled: !termRef.current?.hasSelection(),
+        onSelect: () => {
+          const sel = termRef.current?.getSelection();
+          if (sel?.trim())
+            saveToNotes("```console\n" + sel.trimEnd() + "\n```", {
+              title: `terminal · ${sel.trim().split("\n")[0]?.slice(0, 60) ?? "capture"}`,
+              tags: ["from-aios", "terminal"],
+            }).catch((e) => reportDiag("snc.termSave", e, { action: "saveSelection" }));
+        },
+      },
+      { key: "term-sep", separator: true },
+      {
+        key: "term-files",
+        label: "Open files here",
+        hint: paneCwd ? paneCwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : undefined,
+        onSelect: () => spawnPane("files", { path: paneCwd }),
+      },
+      { key: "term-interrupt", label: "Interrupt", hint: "^C", onSelect: () => interrupt() },
+      {
+        key: "term-clear",
+        label: "Clear terminal",
+        hint: "runs clear",
+        onSelect: () => {
+          sendRaw("\x03");
+          setTimeout(() => sendRaw("clear\r"), 120);
+          setTimeout(() => termRef.current?.clear(), 450);
+        },
+      },
+    ]);
+    return () => {
+      paneMenuExtras.delete(paneKey);
+    };
+    // interrupt/sendRaw close over stable refs; re-register on cwd change so
+    // the "Open files here" hint stays current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneKey, paneCwd]);
+
   // Interrupt the running CLI (^C) — visible "stop" affordance.
   const interrupt = () => {
     const id = sessionIdRef.current;
@@ -713,6 +819,47 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     if (id != null) ptyWrite(id, bytes).catch((e) => reportDiag("terminal.write", e, { action: "bytes" }));
   };
 
+  // LIVE cwd via the AIOS BEACON (W7 pane 1 — the mechanism that actually
+  // works): psmux repaints its own screen, so the inner shell's invisible
+  // escapes (OSC 9;9) never reach this stream, and psmux's
+  // #{pane_current_path} is frozen at spawn (both probed live). Instead the
+  // PowerShell profile writes $PWD to ~/.aios/state/cwd/<PSMUX_SESSION>.txt
+  // at every prompt (keyed by the env var psmux injects); we poll that file.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    if (kind.type === "shell" && !paneKey) return; // keyless panes can't map a session
+    const session =
+      kind.type === "tmux"
+        ? kind.session
+        : kind.type === "oracle"
+          ? `aios-${kind.identity}`
+          : `aios-term-${termSessionName(paneKey)}`;
+    let alive = true;
+    let home: string | null = null;
+    const tick = async () => {
+      try {
+        if (!home) home = await homeDir();
+        if (!home || !alive) return;
+        const raw = await readTextFile(`${home}\\.aios\\state\\cwd\\${session}.txt`);
+        const cwd = raw.replace(/^\uFEFF/, "").trim();
+        if (alive && cwd && cwd !== liveCwdRef.current) {
+          liveCwdRef.current = cwd;
+          setPaneCwd(cwd);
+        }
+      } catch {
+        /* no beacon yet (fresh session / non-AIOS shell) — keep last known */
+      }
+    };
+    const iv = setInterval(tick, 2500);
+    void tick();
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+    // kind/paneKey are mount-stable for a pane.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fall back to the home dir for the composer's context chip when this pane has
   // no explicit cwd (oracle / tmux / plain shell). Best-effort, label-only.
   useEffect(() => {
@@ -727,20 +874,6 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       alive = false;
     };
   }, [paneCwd]);
-
-  // Stable register callback for the compose box: it hands us its append-to-box
-  // writer so global ⌘J dictation routes into the box. Stable identity keeps the
-  // composer's effect from re-firing every render.
-  const registerComposer = useCallback((append: (text: string) => void) => {
-    composerAppendRef.current = append;
-  }, []);
-
-  // ESC → PTY. Claude code: stop generating; press again to edit the previous
-  // message. Lets you drive claude's Esc behaviour from the compose box.
-  const sendEscape = () => {
-    const id = sessionIdRef.current;
-    if (id != null) ptyWrite(id, "\x1b").catch((e) => reportDiag("terminal.write", e, { action: "escape" }));
-  };
 
   // Save a dropped image → temp file → insert its quoted path into the PTY.
   const insertImagePath = async (blob: Blob, mime: string) => {
@@ -819,35 +952,9 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       }}
       onDrop={onDrop}
     >
-      {/* HUD readout strip — live shell readouts (Terminal HUD mockup): status
-          dot + kind + cwd as mono stat chips. */}
-      <div className="relative z-[11] flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-accent)_6%,transparent)] px-3 py-1 backdrop-blur-md">
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              exited
-                ? "bg-[var(--color-danger)] shadow-[0_0_7px_var(--color-danger)]"
-                : "bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]"
-            }`}
-          />
-          <span className="text-[var(--color-faint)]">shell</span>
-          <b className="font-normal text-[var(--color-text-2)]">
-            {kind.type === "oracle" ? kind.identity : kind.type === "tmux" ? "tmux" : "shell"}
-          </b>
-        </span>
-        {paneCwd && (
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
-            <span className="text-[var(--color-faint)]">cwd</span>
-            <b className="min-w-0 max-w-[180px] truncate font-normal text-[var(--color-text-2)]" title={paneCwd}>
-              {paneCwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || paneCwd}
-            </b>
-          </span>
-        )}
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[color-mix(in_srgb,white_2%,transparent)] px-2 py-0.5 font-mono text-[10px]">
-          <span className="text-[var(--color-faint)]">status</span>
-          <b className="font-normal text-[var(--color-text-2)]">{exited ? "exited" : "live"}</b>
-        </span>
-      </div>
+      {/* (the HUD chip strip retired — W7 pane 1: the window title carries
+          identity, the composer rail carries cwd/repo, and the exited state
+          has its own overlay. Pure terminal from edge to edge.) */}
       <div className="relative min-h-0 flex-1">
         {/* aurora ground behind the translucent xterm — accent blooms over the
             void, so the frosted terminal glows like the mockup glass. */}
@@ -859,18 +966,19 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
               "radial-gradient(760px 480px at 14% -12%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 56%), radial-gradient(680px 480px at 112% 116%, color-mix(in srgb, var(--aios-accent-2) 12%, transparent), transparent 54%), var(--color-bg)",
           }}
         />
-        <div ref={hostRef} className="relative z-[1] h-full min-h-0 w-full" />
-        {/* Terminal HUD — corner brackets + a faint accent inset ring (the HUD
-            signature). pointer-events-none + below the interactive overlays
-            (z-10), so xterm + the floating buttons stay live. (No scanline veil:
-            it shimmered/moiréd over the real xterm canvas.) */}
-        <div aria-hidden className="pointer-events-none absolute inset-0 z-10">
-          <div className="absolute inset-0 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_14%,transparent)]" />
-          <span className="absolute left-1.5 top-1.5 h-4 w-4 rounded-tl-[5px] border-l-2 border-t-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-          <span className="absolute right-1.5 top-1.5 h-4 w-4 rounded-tr-[5px] border-r-2 border-t-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-          <span className="absolute bottom-1.5 left-1.5 h-4 w-4 rounded-bl-[5px] border-b-2 border-l-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-          <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-br-[5px] border-b-2 border-r-2 border-[color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-        </div>
+        {/* the HOST paints the frost: it spans the full pane, so the fitted
+            grid + the sub-row remainder share one surface to the bottom edge
+            (rgba matches this file's exempt ANSI palette). */}
+        <div
+          ref={hostRef}
+          className="relative z-[1] h-full min-h-0 w-full"
+          style={{ background: "rgba(8, 5, 15, 0.66)" }}
+        />
+        {/* (the terminal's own context menu retired — right-click pastes;
+            the actions live in the window shell's ⋯ menu via paneMenuExtras.) */}
+        {/* (the HUD corner brackets + inset ring retired — W7 pane 1: the
+            floating window chrome already frames the pane; the brackets sat
+            over content and clipped against the status bar.) */}
         {/* B3: process-exited overlay — the shell/CLI died, so writes would
             black-hole. Tell the user + offer ⏎ restart (respawn/reattach) and
             point at ⌘W to close. Replaces the silent corpse the old code left. */}
@@ -894,26 +1002,9 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
             </div>
           </div>
         )}
-        {/* spawn a files pane rooted at this terminal's cwd ("open files here") */}
-        <button
-          onClick={() => spawnPane("files", { path: paneCwd })}
-          title={`Open files here${paneCwd ? `\n${paneCwd}` : ""}`}
-          className="absolute left-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] opacity-40 backdrop-blur transition-all hover:text-[var(--color-text)] hover:opacity-100"
-        >
-          <FolderOpen size={13} />
-          <span>files</span>
-        </button>
-        {/* toggle the compose box (chat-grade prompt surface for CLI AIs) */}
-        {!composerOpen && (
-          <button
-            onClick={() => setComposerOpen(true)}
-            title="open compose box"
-            className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-text-2)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
-          >
-            <MessageSquarePlus size={13} />
-            <span>compose</span>
-          </button>
-        )}
+        {/* (the floating files/compose buttons retired — right-click owns
+            "Open files here" + "Compose message" now; they overlapped the
+            shell's first lines. Owner-reported.) */}
         {savingImg && (
           <div className="absolute left-2 top-2 z-20 rounded-md bg-[var(--color-panel)]/90 px-2 py-1 text-[11px] text-[var(--color-faint)] backdrop-blur">
             saving image…
@@ -947,23 +1038,6 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           </div>
         )}
       </div>
-      {composerOpen && (
-        <TerminalComposer
-          onSend={composerSend}
-          onRaw={sendRaw}
-          onInterrupt={interrupt}
-          onEscape={sendEscape}
-          onClose={() => {
-            composerAppendRef.current = null;
-            setComposerOpen(false);
-          }}
-          register={registerComposer}
-          cwd={paneCwd}
-          liveMode={claudeStatus.mode}
-          liveModel={claudeStatus.model}
-          liveCtxPct={claudeStatus.ctxPct}
-        />
-      )}
     </div>
     </PaneDropZone>
   );

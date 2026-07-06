@@ -48,73 +48,82 @@ test("terminal pane keeps xterm behind terminal runtime", () => {
   assert.match(runtime, /@xterm\/xterm/);
 });
 
-test("pet pane uses a seeded code-drawn 8-bit game pet", () => {
+test("pet is the glass spirit: soul-driven room + companion + roaming overlay", () => {
   const pane = read("src/components/PetPane.tsx");
+  const body = read("src/components/pet/PetBody.tsx");
+  const overlay = read("src/components/pet/PetOverlay.tsx");
   const idle = read("src/components/IdleControlCenter.tsx");
+  const app = read("src/App.tsx");
   const css = read("src/App.css");
 
-  assert.match(pane, /PET_VARIANT_KEY/);
-  assert.match(pane, /PET_LEGACY_VARIANT_KEY/);
-  assert.match(pane, /PET_REROLL_DAILY_LIMIT/);
-  assert.match(pane, /PET_REROLL_KEY/);
-  assert.match(pane, /PET_ONBOARDING_KEY/);
-  assert.match(pane, /ACCENT_ORDER/);
-  assert.match(pane, /setAccent/);
-  assert.match(pane, /accentToHex/);
-  assert.match(pane, /subscribeAccent/);
-  assert.match(pane, /THEME_TONES/);
-  assert.match(pane, /theme locked/);
-  assert.match(pane, /first hatch/);
-  assert.match(pane, /chooseStarter/);
-  assert.match(pane, /makeVariant/);
-  assert.match(pane, /TOPPERS/);
-  assert.match(pane, /PATTERNS/);
-  assert.match(pane, /TAILS/);
-  assert.match(pane, /variant\.tone/);
-  assert.match(pane, /variant\.eyes/);
-  assert.match(pane, /variant\.legs/);
-  assert.match(pane, /variant\.environment/);
-  assert.match(pane, /variant\.topper/);
-  assert.match(pane, /variant\.pattern/);
-  assert.match(pane, /variant\.tail/);
-  assert.match(pane, /ACTIVITY_BY_MOOD/);
-  assert.match(pane, /pet-pixel/);
-  assert.match(pane, /pet-pixel-body/);
-  assert.match(pane, /pet-pixel-pattern/);
-  assert.match(pane, /pet-pixel-tail/);
-  assert.match(pane, /pet-world/);
-  assert.match(pane, /pet-job/);
-  assert.match(pane, /hatch roll/);
-  assert.match(pane, /PetDashboardCompanion/);
-  assert.match(pane, /pet-dashboard/);
-  assert.match(pane, /ask jarvis/);
-  assert.match(idle, /PetDashboardCompanion/);
-  assert.match(idle, /onOpenPet/);
-  assert.match(pane, /disabled=\{rerollsLeft <= 0\}/);
-  assert.doesNotMatch(pane, /pet-antenna/);
+  // ONE rig everywhere: room, idle tile and the desk creature all draw
+  // PetBody, steered by the persisted soul (lib/pet/engine + store).
+  assert.match(pane, /from "\.\/pet\/PetBody"/);
+  assert.match(overlay, /from "\.\/PetBody"/);
+  for (const source of [pane, overlay]) {
+    assert.match(source, /loadSoul/);
+    assert.match(source, /subscribeSoul/);
+    assert.match(source, /applyCare/);
+    assert.match(source, /suggestActivity/);
+  }
+  assert.match(body, /data-pose/);
+  assert.match(body, /data-mood/);
+  // code-drawn, token-tinted — no images, no hex (the ratchet test owns hex).
   assert.doesNotMatch(pane, /<img/);
-  assert.match(css, /seeded code-drawn 8-bit game pet/);
-  assert.match(css, /\.pet-reroll-bank/);
-  assert.match(css, /\.pet-action-btn:disabled/);
-  assert.match(css, /\.pet-dashboard/);
-  assert.match(css, /\.pet-dashboard-canvas/);
-  assert.match(css, /\.pet-hatch-onboarding/);
-  assert.match(css, /\.pet-hatch-swatch/);
-  assert.match(css, /\.pet-starter-card/);
-  assert.match(css, /\.pet-pixel--starter/);
-  assert.match(css, /\.pet-canvas--arcade/);
-  assert.match(css, /\.pet-canvas--lagoon/);
-  assert.match(css, /--pet-room-glow/);
-  assert.match(css, /\.pet-world-avatar/);
-  assert.match(css, /\.pet-job--coding/);
-  assert.match(css, /\.pet-pixel-topper--horns/);
-  assert.match(css, /\.pet-pixel-tail--spark/);
-  assert.match(css, /\.pet-pixel-pattern--stripe/);
-  assert.match(css, /\.pet-pixel/);
-  assert.match(css, /image-rendering: pixelated/);
-  assert.match(css, /grid-template-columns: repeat\(var\(--pet-leg-count\), 1fr\)/);
-  assert.match(css, /\.pet-pixel--happy/);
-  assert.match(css, /\.pet-pixel--critical/);
+  assert.doesNotMatch(body, /<img/);
+  assert.match(body, /color-mix\(in srgb, var\(--color-accent\)/);
+
+  // the ROOM (P3): honest vitals from the engine's TUNING, care with
+  // cooldown notes, bond/journey, affinity flavor, milestone keepsakes.
+  assert.match(pane, /TUNING/);
+  assert.match(pane, /cooldownLeft/);
+  assert.match(pane, /keepsakesOf/);
+  assert.match(pane, /bondLevel/);
+  assert.match(pane, /nextStageOf/);
+  assert.match(pane, /savePetName/);
+  for (const label of ["vitals", "care", "bond & journey", "favorite places"]) {
+    assert.ok(pane.includes(label), `room card "${label}" must exist`);
+  }
+  // chat/terminal liveness still lands in the room via the pet bus
+  assert.match(pane, /subscribePetReactions/);
+  assert.match(pane, /subscribePetBubbles/);
+
+  // P5 residency: on the idle home the spirit lives ON the horizon line
+  // (soul-steered walker; click = its room). The old corner tile is gone.
+  assert.match(idle, /HorizonPet/);
+  assert.match(idle, /onOpenPet/);
+  assert.match(idle, /suggestActivity/);
+  assert.doesNotMatch(idle, /PetDashboardCompanion/);
+  assert.doesNotMatch(css, /aios-pet-mini/);
+
+  // the DESK CREATURE (P2): mounted in the shell, gated by the petRoam
+  // setting, grab/toss physics intact.
+  assert.match(app, /<PetOverlay/);
+  assert.match(overlay, /petRoam/);
+  assert.match(overlay, /setPointerCapture/);
+  assert.match(overlay, /subscribeNotifications/);
+
+  // the VOICE (P4): the pure decider gates every line (global gap + per-kind
+  // cooldowns + quiet/asleep/carried silences), the petVoice setting is the
+  // master switch, and bubbles deep-link via the notification opener.
+  assert.match(overlay, /tryVoice/);
+  assert.match(overlay, /petVoice/);
+  assert.match(overlay, /onOpenTarget/);
+  assert.match(overlay, /usagePaceRisk/);
+  assert.match(overlay, /subscribePetBubbles/);
+  assert.match(app, /onOpenTarget=\{openNotificationTarget\}/);
+
+  // the rig's keyframe family lives in App.css, stilled by reduce-motion
+  assert.match(css, /the glass-spirit pet \(P1, living-cockpit\)/);
+  for (const kf of ["pet2-breathe", "pet2-hop", "pet2-celebrate", "pet2-dangle", "pet2-spin", "pet2-land"]) {
+    assert.ok(css.includes(`@keyframes ${kf}`), `@keyframes ${kf} must exist`);
+  }
+  assert.match(css, /\[data-reduce-motion="true"\] \.aios-pet \*/);
+
+  // the 8-bit pixel pet is fully retired — no orphan markup or CSS anywhere
+  assert.doesNotMatch(pane, /pet-pixel|PET_VARIANT_KEY|makeVariant|hatch roll/);
+  assert.doesNotMatch(css, /\.pet-pixel|\.pet-world|\.pet-hatch|\.pet-starter|\.pet-canvas|\.pet-dashboard\b/);
+  assert.doesNotMatch(css, /image-rendering: pixelated/);
 });
 
 test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
@@ -345,7 +354,7 @@ test("scheduled agents open as chatpane-backed agents", () => {
   assert.match(section, /chatStateLabel/);
   assert.match(section, /onOpenAgentChat/);
   assert.doesNotMatch(section, /Terminal/);
-  assert.match(pane, /aios agents/);
+  assert.match(pane, /osai agents/);
   assert.match(pane, /open chatpane/);
   assert.match(pane, /run pulse now/);
   assert.match(pane, /control update for all agents/);
@@ -364,38 +373,82 @@ test("scheduled agents open as chatpane-backed agents", () => {
   assert.match(agents, /createScheduledAgent/);
 });
 
-test("idle dashboard is Mission Control: hero + composer + quick-launch tiles + agents/recent/usage, not lanes", () => {
+test("idle home is the Horizon lock screen: starfield sky + clock on the line + living ground", () => {
   const app = read("src/App.tsx");
   const idle = read("src/components/IdleDashboard.tsx");
   const controlCenter = read("src/components/IdleControlCenter.tsx");
   const usageGlance = read("src/components/dashboard/UsageGlance.tsx");
   const sidebarUsage = read("src/components/SidebarUsage.tsx");
+  const css = read("src/App.css");
 
   // IdleDashboard is a thin loader that hands data to IdleControlCenter.
   assert.match(idle, /<IdleControlCenter/);
   assert.match(idle, /notifications=\{notifications\}/);
 
-  // The home is the Mission Control dashboard: a top strip + greeting/composer
-  // hero, glass quick-launch tiles, two-column active-agents + recent cards, and
-  // claude+codex usage via the shared ProviderBlock. (The old hero clock was
-  // dropped to match the approved Mission Control mockup.)
-  assert.match(controlCenter, /Mission Control/);
-  assert.match(controlCenter, /Eyebrow/);
-  assert.match(controlCenter, /quick launch/);
-  assert.match(controlCenter, /MiniHistory/);
-  assert.match(controlCenter, /CommandLine/);
-  assert.match(controlCenter, /ProviderBlock/);
-  assert.match(controlCenter, /useUsageRates/);
-  assert.match(controlCenter, /recent/);
-  assert.match(controlCenter, /QuickActions/);
-  assert.match(controlCenter, /PetDashboardCompanion/);
+  // The landscape (owner picked sketch B): proportional bands — no scroll,
+  // no fit-scale hack — with the composer-grade command line kept center.
+  assert.match(controlCenter, /const HORIZON = \d+/);
+  assert.match(controlCenter, /function SkyField/);
+  assert.match(controlCenter, /function ClockBlock/);
+  assert.match(controlCenter, /function HorizonPet/);
+  assert.match(controlCenter, /function LockDock/);
+  assert.match(controlCenter, /function ContinueShelf/);
+  assert.match(controlCenter, /function CommandLine/);
+  assert.match(controlCenter, /aios-horizon-line/);
+  assert.match(controlCenter, /aios-lock-fly/);
+  assert.match(controlCenter, /aios-lock-ridge-a/);
 
-  // The overloaded control-center lanes are gone (deleted, not just hidden).
-  assert.doesNotMatch(controlCenter, /JarvisBriefingLane/);
-  assert.doesNotMatch(controlCenter, /NotificationCommandLane/);
-  assert.doesNotMatch(controlCenter, /AgentOperationsLane/);
-  assert.doesNotMatch(controlCenter, /ControlCenterCharts/);
-  assert.doesNotMatch(controlCenter, /PulseIdentityBand/);
+  // the dock is exactly the owner's three: chat · terminal · notes
+  assert.match(controlCenter, /type: "notes"/);
+  assert.doesNotMatch(controlCenter, /label: "browser"/);
+  assert.doesNotMatch(controlCenter, /label: "history"/);
+
+  // the ONE glanceable status row: agents chip opens the agents surface,
+  // usage comes from the shared source, streak opens pulse.
+  assert.match(controlCenter, /useUsageRates/);
+  assert.match(controlCenter, /onOpenScheduledAgents/);
+  assert.match(controlCenter, /currentStreak/);
+  assert.match(controlCenter, /type: "pulse"/);
+
+  // continue shelf: resume-layout card + work sessions (done/remove) +
+  // recent projects w/ drift dots + overflow into the projects pane.
+  // Rows are GROUND_PILLs — one material/scale family with the dock and the
+  // command line (L4 owner feedback: "the different sizes feel weird").
+  assert.match(controlCenter, /resumeLayout/);
+  assert.match(controlCenter, /onResumeSession/);
+  assert.match(controlCenter, /all projects →/);
+  assert.match(controlCenter, /type: "projects"/);
+  assert.match(controlCenter, /const GROUND_PILL/);
+  assert.doesNotMatch(controlCenter, /surface-card/);
+
+  // "continue" ordering = real access recency (opens + cwd spawns), never fs
+  // mtime alone — agents editing files must not reorder the shelf (L4).
+  assert.match(controlCenter, /projectAccessTimes/);
+  assert.match(controlCenter, /lastAccessFor/);
+  assert.match(app, /touchProjectAccess/);
+
+  // exactly ONE pet on screen: the workspace's roaming overlay hides while
+  // the home overlay covers it (the lock screen has its own resident).
+  assert.match(app, /\{!homeOverlay && panes\.length > 0 && \(/);
+
+  // the ambience family exists in CSS, stilled by reduce-motion
+  for (const kf of [
+    "aios-horizon-flow",
+    "aios-lock-twinkle",
+    "aios-lock-shoot",
+    "aios-lock-fly",
+    "aios-lock-ridge",
+    "aios-lock-sat",
+  ]) {
+    assert.ok(css.includes(`@keyframes ${kf}`), `@keyframes ${kf} must exist`);
+  }
+  assert.match(css, /\[data-reduce-motion="true"\] :is\(\.aios-lock-star/);
+
+  // the Mission Control era is fully retired on this surface
+  assert.doesNotMatch(controlCenter, /Mission Control/);
+  assert.doesNotMatch(controlCenter, /QuickActions/);
+  assert.doesNotMatch(controlCenter, /MiniHistory/);
+  assert.doesNotMatch(controlCenter, /PetDashboardCompanion/);
 
   // usage rendering is shared: SidebarUsage aliases the dashboard UsageGlance,
   // so the sidebar + home draw the bars from one source.
@@ -434,7 +487,9 @@ test("top bar can be compacted or hidden", () => {
   assert.doesNotMatch(app, /ThemeSwitcher/);
   assert.doesNotMatch(app, /superapp/i);
   assert.doesNotMatch(settingsPane, /superapp/i);
-  assert.match(settingsPane, /prompt<\/span>/);
+  // the appearance preview shows the CURRENT anatomy (S2, living-cockpit):
+  // a floating window + composer deck, prompt line "❯ ship it".
+  assert.match(settingsPane, /ship it/);
 });
 
 test("command palette promotes chatpane intelligence for freeform search", () => {
@@ -443,7 +498,7 @@ test("command palette promotes chatpane intelligence for freeform search", () =>
 
   assert.match(palette, /onAsk/);
   assert.match(palette, /onDeepSearch/);
-  assert.match(palette, /ask aios:/);
+  assert.match(palette, /ask osai:/);
   assert.match(palette, /deep search:/);
   assert.match(app, /askFromPalette/);
   assert.match(app, /deepSearchFromPalette/);

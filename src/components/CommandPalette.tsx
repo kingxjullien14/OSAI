@@ -10,7 +10,7 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "re
  *  Caps DOM churn so typing stays smooth even with hundreds of commands. */
 const MAX_RESULTS = 50;
 
-import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Monitor, Moon, Search, Sun } from "lucide-react";
+import { AlertTriangle, Brain, CornerDownLeft, MessageSquare, Monitor, Moon, Sun } from "lucide-react";
 import { reportUsage } from "../lib/diag";
 import {
   ACCENT_ORDER,
@@ -193,6 +193,10 @@ interface Scored extends Command {
   _score: number;
 }
 
+/** Scope tabs — the real command groups worth narrowing to (matched against
+ *  `Command.group`); "all" passes everything. */
+const SCOPES = ["all", "open", "resume", "workspaces", "run"] as const;
+
 export function CommandPalette({
   open,
   onClose,
@@ -211,15 +215,19 @@ export function CommandPalette({
   // (heavier) re-rank/re-render runs at lower priority — React's built-in debounce.
   const deferredQuery = useDeferredValue(query);
   const [sel, setSel] = useState(0);
+  // scope tabs (console omnibar, K2+K3): narrow the fuzzy search to one command
+  // family. `tab` cycles; the "> verbs" tab is the existing verb mode's query.
+  const [scope, setScope] = useState<(typeof SCOPES)[number]>("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // reset query + selection every time it opens; focus the input.
+  // reset query + selection + scope every time it opens; focus the input.
   useEffect(() => {
     if (open) {
       setQuery("");
       setSel(0);
+      setScope("all");
       // focus after paint so the autofocus lands reliably
       requestAnimationFrame(() => inputRef.current?.focus());
     }
@@ -345,7 +353,7 @@ export function CommandPalette({
           ...(onAsk
             ? [{
                 id: `ai.ask.${q}`,
-                title: `ask aios: ${q}`,
+                title: `ask osai: ${q}`,
                 subtitle: "open chatpane with this as the prompt",
                 group: "ai",
                 icon: <MessageSquare size={14} />,
@@ -369,11 +377,15 @@ export function CommandPalette({
         ]
       : [];
 
+    // scope filter (omnibar tabs): narrow the registry BEFORE ranking. The AI
+    // intents always pass — the escape hatch must survive any scope.
+    const scoped = scope === "all" ? commands : commands.filter((c) => c.group === scope);
+
     let scored: Scored[];
     if (!q) {
       // empty query: a "recent" group (MRU) first, then the full registry in
       // its natural order. Recent commands are deduped from their normal group.
-      const byId = new Map(commands.map((c) => [c.id, c]));
+      const byId = new Map(scoped.map((c) => [c.id, c]));
       const seen = new Set<string>();
       const recent: Scored[] = [];
       for (const id of loadMru()) {
@@ -383,17 +395,24 @@ export function CommandPalette({
           seen.add(id);
         }
       }
-      const rest: Scored[] = commands
+      const rest: Scored[] = scoped
         .filter((c) => !seen.has(c.id))
         .map((c) => ({ ...c, _idx: [], _score: 0 }));
       scored = [...recent, ...rest];
     } else {
       scored = [];
-      for (const c of [...intentCommands, ...commands]) {
+      for (const c of [...intentCommands, ...scoped]) {
         const m = scoreCommand(deferredQuery, c);
         if (m) scored.push({ ...c, _idx: m.idx, _score: m.score });
       }
       scored.sort((a, b) => b._score - a._score);
+      // the ask-AIOS intent is the omnibar's HERO row — pin it on top so the
+      // escape hatch is always one glance (and never buried mid-list).
+      const askIdx = scored.findIndex((s) => s.id.startsWith("ai.ask."));
+      if (askIdx > 0) {
+        const [ask] = scored.splice(askIdx, 1);
+        scored.unshift(ask);
+      }
     }
 
     // group while preserving order — first-seen group wins position.
@@ -410,7 +429,7 @@ export function CommandPalette({
     const flat: Scored[] = [];
     for (const g of order) flat.push(...byGroup.get(g)!);
     return flat.slice(0, MAX_RESULTS);
-  }, [commands, onAsk, onDeepSearch, deferredQuery]);
+  }, [commands, onAsk, onDeepSearch, deferredQuery, scope]);
 
   // clamp selection when results shrink
   useEffect(() => {
@@ -487,6 +506,21 @@ export function CommandPalette({
       move(e.key === "n" ? 1 : -1);
       return;
     }
+    // ⌥1–9 jump-runs a numbered row without arrowing to it (console omnibar).
+    if (e.altKey && /^[1-9]$/.test(e.key)) {
+      const c = results[Number(e.key) - 1];
+      if (c) {
+        e.preventDefault();
+        if (c.id.startsWith("verbmenu.")) {
+          setQuery(`>${c.id.slice("verbmenu.".length)} `);
+          inputRef.current?.focus();
+          return;
+        }
+        onClose();
+        runCommand(c);
+      }
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -497,8 +531,13 @@ export function CommandPalette({
         move(-1);
         break;
       case "Tab":
+        // tab cycles the SCOPE tabs (selection moves with ↑↓/⌃n·p).
         e.preventDefault();
-        move(e.shiftKey ? -1 : 1);
+        setScope((s) => {
+          const i = SCOPES.indexOf(s);
+          return SCOPES[(i + (e.shiftKey ? -1 : 1) + SCOPES.length) % SCOPES.length];
+        });
+        setSel(0);
         break;
       case "Home":
         e.preventDefault();
@@ -549,6 +588,10 @@ export function CommandPalette({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {/* THE CONSOLE OMNIBAR (sketch board rev 4 — K2 + K3, locked): a lone
+          glowing pill bar that speaks mono (the ❯ prompt), scope tabs riding
+          the seam, and a detached results card with numbered rows, the
+          ask-AIOS hero, and the filament as its bottom edge. */}
       <m.div
         {...pop}
         initial={morphOpen ? false : pop.initial}
@@ -556,12 +599,12 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
-        className="absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_80%,transparent)] shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl"
+        className="absolute top-[12vh] flex max-h-[68vh] w-[620px] flex-col"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // focus can sit on a clicked row, not just the input — Escape still
           // closes and Tab still cycles inside (trapTab skips when the input
-          // already consumed Tab as move-selection).
+          // already consumed Tab as scope-cycling).
           if (e.key === "Escape" && !e.defaultPrevented) {
             e.preventDefault();
             onClose();
@@ -570,9 +613,11 @@ export function CommandPalette({
           trapTab(e, e.currentTarget);
         }}
       >
-        {/* search row */}
-        <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">
-          <Search size={17} className="shrink-0 text-[var(--color-muted)]" />
+        {/* the bar */}
+        <div className="flex items-center gap-3 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-panel-2)_90%,transparent)] px-5 py-3 shadow-[0_0_34px_-8px_color-mix(in_srgb,var(--color-accent)_45%,transparent),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+          <span aria-hidden className="shrink-0 font-mono text-[15px] font-semibold text-[var(--color-accent)]">
+            ❯
+          </span>
           <input
             ref={inputRef}
             role="combobox"
@@ -589,139 +634,206 @@ export function CommandPalette({
             placeholder="launch, ask, or resume anything…"
             spellCheck={false}
             autoComplete="off"
-            className="w-full bg-transparent text-[15px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+            className="w-full bg-transparent font-mono text-[14px] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
           />
           {results.length > 0 && (
             <span aria-live="polite" className="shrink-0 font-mono text-[10px] text-[var(--color-faint)]">
               {results.length}
             </span>
           )}
-        </div>
-
-        {/* results */}
-        <div ref={listRef} id="palette-listbox" role="listbox" aria-label="results" className="flex-1 overflow-y-auto py-2">
-          {results.length === 0 ? (
-            <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
-              <img src="/mascot.png" alt="" className="h-10 w-10 rounded-full object-cover opacity-40" />
-              <div className="text-[12.5px] text-[var(--color-muted)]">no command matches “{query}”</div>
-              {/* never dead-end: offer the AI intent instead */}
-              {query.trim() && onAsk && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onAsk(query.trim());
-                  }}
-                  className="press mt-1 inline-flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/50"
-                >
-                  <MessageSquare size={13} /> ask aios about “{query.trim()}” instead
-                </button>
-              )}
-            </div>
-          ) : (
-            results.map((c) => {
-              rowPos += 1;
-              const pos = rowPos;
-              const g = c.group ?? "";
-              const showHeader = g && g !== lastGroup;
-              lastGroup = g;
-              const active = pos === sel;
-              return (
-                <div key={c.id}>
-                  {showHeader && (
-                    <div className="px-4 pb-1 pt-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
-                      {g}
-                    </div>
-                  )}
-                  <div className="px-2">
-                    <button
-                      data-row={pos}
-                      id={`palette-opt-${pos}`}
-                      role="option"
-                      aria-selected={active}
-                      onMouseMove={() => setSel(pos)}
-                      onClick={() => {
-                        // verb-menu rows refine the query in place (no close)
-                        if (c.id.startsWith("verbmenu.")) {
-                          setQuery(`>${c.id.slice("verbmenu.".length)} `);
-                          inputRef.current?.focus();
-                          return;
-                        }
-                        onClose();
-                        runCommand(c);
-                      }}
-                      className={`relative flex w-full items-center gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-2 text-left transition-colors ${
-                        active
-                          ? "bg-[color-mix(in_srgb,var(--color-accent)_13%,transparent)] shadow-[inset_0_0_26px_-12px_var(--color-accent)]"
-                          : "hover:bg-[var(--color-panel-2)]/50"
-                      } ${c.disabled ? "opacity-50" : ""}`}
-                      title={c.disabled ? "unavailable right now — running it explains why" : undefined}
-                    >
-                      {active && (
-                        <span
-                          aria-hidden
-                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
-                        />
-                      )}
-                      {c.icon && (
-                        <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--aios-radius-sm)] border transition-colors ${
-                            active
-                              ? "border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-                              : "border-[var(--color-border)] bg-[var(--color-panel-2)]/50 text-[var(--color-muted)]"
-                          }`}
-                        >
-                          {c.icon}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] text-[var(--color-text)]">
-                        <Highlight text={c.title} idx={c._idx} />
-                      </span>
-                      {c.danger && (
-                        <AlertTriangle
-                          size={11}
-                          className="shrink-0 text-[var(--color-danger)]"
-                          aria-label={`caution: ${c.danger}`}
-                        />
-                      )}
-                      {c.subtitle && (
-                        <span className="shrink-0 truncate font-mono text-[10.5px] text-[var(--color-faint)]">
-                          {c.subtitle}
-                        </span>
-                      )}
-                      {active && (
-                        <span className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)]">
-                          {c.actionLabel ?? "select"} <CornerDownLeft size={10} />
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* preview strip — what the selected command will actually touch
-            (workspace panes, session engine+age, project path). Only renders
-            when the row carries preview lines: no empty chrome. */}
-        {selected?.preview && selected.preview.length > 0 && (
-          <div className="border-t border-[var(--color-border)] bg-[var(--color-panel-2)]/40 px-4 py-2">
-            {selected.preview.slice(0, 3).map((ln, i) => (
-              <div key={i} className="truncate font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
-                {ln}
-              </div>
-            ))}
-          </div>
-        )}
-        {/* footer hint */}
-        <div className="flex items-center gap-3.5 border-t border-[var(--color-border)] px-4 py-2 font-mono text-[10px] text-[var(--color-faint)]">
-          <span>↑↓ navigate</span>
-          <span className="flex items-center gap-1">
-            <CornerDownLeft size={10} /> {selAction}
+          <span className="shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[9.5px] text-[var(--color-faint)]">
+            esc
           </span>
-          <span>esc close</span>
-          <span className="ml-auto">&gt; verbs</span>
+        </div>
+
+        {/* scope tabs — riding the seam between bar and card. tab cycles. */}
+        <div className="mt-2 flex items-center gap-[3px] px-2 font-mono text-[10px] text-[var(--color-faint)]">
+          {SCOPES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setScope(s);
+                setSel(0);
+                inputRef.current?.focus();
+              }}
+              className={`rounded-[7px] px-2.5 py-[3px] transition-colors ${
+                scope === s && !query.startsWith(">")
+                  ? "bg-[color-mix(in_srgb,var(--color-panel-2)_85%,transparent)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]"
+                  : "hover:text-[var(--color-text)]"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setQuery(">");
+              setSel(0);
+              inputRef.current?.focus();
+            }}
+            className={`ml-auto rounded-[7px] px-2.5 py-[3px] transition-colors ${
+              query.startsWith(">")
+                ? "bg-[color-mix(in_srgb,var(--color-panel-2)_85%,transparent)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]"
+                : "hover:text-[var(--color-text)]"
+            }`}
+          >
+            &gt; verbs
+          </button>
+        </div>
+
+        {/* the results card — detached, filament bottom edge */}
+        <div className="relative mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel)_88%,transparent)] shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
+          <div ref={listRef} id="palette-listbox" role="listbox" aria-label="results" className="min-h-0 flex-1 overflow-y-auto py-1.5">
+            {results.length === 0 ? (
+              <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
+                <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] opacity-40">
+                  <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]" />
+                </span>
+                <div className="text-[12.5px] text-[var(--color-muted)]">
+                  no {scope === "all" ? "command" : scope + " command"} matches “{query}”
+                </div>
+                {/* never dead-end: offer the AI intent instead */}
+                {query.trim() && onAsk && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onAsk(query.trim());
+                    }}
+                    className="press mt-1 inline-flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/50"
+                  >
+                    <MessageSquare size={13} /> ask osai about “{query.trim()}” instead
+                  </button>
+                )}
+              </div>
+            ) : (
+              results.map((c) => {
+                rowPos += 1;
+                const pos = rowPos;
+                const g = c.group ?? "";
+                const hero = c.id.startsWith("ai.ask.");
+                const showHeader = g && g !== lastGroup && !hero;
+                lastGroup = hero ? lastGroup : g;
+                const active = pos === sel;
+                return (
+                  <div key={c.id}>
+                    {showHeader && (
+                      <div className="px-4 pb-1 pt-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
+                        {g}
+                      </div>
+                    )}
+                    <div className={hero ? "" : "px-2"}>
+                      <button
+                        data-row={pos}
+                        id={`palette-opt-${pos}`}
+                        role="option"
+                        aria-selected={active}
+                        onMouseMove={() => setSel(pos)}
+                        onClick={() => {
+                          // verb-menu rows refine the query in place (no close)
+                          if (c.id.startsWith("verbmenu.")) {
+                            setQuery(`>${c.id.slice("verbmenu.".length)} `);
+                            inputRef.current?.focus();
+                            return;
+                          }
+                          onClose();
+                          runCommand(c);
+                        }}
+                        className={`relative flex w-full items-center gap-2.5 px-2.5 py-2 text-left transition-colors ${
+                          hero
+                            ? `border-b border-[var(--color-border)] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_10%,transparent),color-mix(in_srgb,var(--aios-accent-2)_5%,transparent)_70%,transparent)] px-4 ${
+                                active ? "bg-[var(--color-accent-soft)]" : ""
+                              }`
+                            : `rounded-[var(--aios-radius-md)] ${
+                                active
+                                  ? "bg-[color-mix(in_srgb,var(--color-accent)_13%,transparent)] shadow-[inset_0_0_26px_-12px_var(--color-accent)]"
+                                  : "hover:bg-[var(--color-panel-2)]/50"
+                              }`
+                        } ${c.disabled ? "opacity-50" : ""}`}
+                        title={c.disabled ? "unavailable right now — running it explains why" : undefined}
+                      >
+                        {active && !hero && (
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                          />
+                        )}
+                        {/* row number — ⌥1–9 jump-runs it */}
+                        <span aria-hidden className="w-[17px] shrink-0 text-right font-mono text-[9.5px] tabular-nums text-[var(--color-faint)]">
+                          {!hero && pos < 9 ? String(pos + 1).padStart(2, "0") : ""}
+                        </span>
+                        {c.icon && (
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--aios-radius-sm)] border transition-colors ${
+                              active || hero
+                                ? "border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                                : "border-[var(--color-border)] bg-[var(--color-panel-2)]/50 text-[var(--color-muted)]"
+                            }`}
+                          >
+                            {c.icon}
+                          </span>
+                        )}
+                        <span
+                          className={`min-w-0 flex-1 truncate ${
+                            hero ? "font-sans text-[13px]" : "font-mono text-[12.5px]"
+                          } text-[var(--color-text)]`}
+                        >
+                          <Highlight text={c.title} idx={c._idx} />
+                        </span>
+                        {c.danger && (
+                          <AlertTriangle
+                            size={11}
+                            className="shrink-0 text-[var(--color-danger)]"
+                            aria-label={`caution: ${c.danger}`}
+                          />
+                        )}
+                        {c.subtitle && (
+                          <span className="shrink-0 truncate font-mono text-[10.5px] text-[var(--color-faint)]">
+                            {c.subtitle}
+                          </span>
+                        )}
+                        {active && (
+                          <span className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)]">
+                            {c.actionLabel ?? "select"} <CornerDownLeft size={10} />
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* preview strip — what the selected command will actually touch
+              (workspace panes, session engine+age, project path). Only renders
+              when the row carries preview lines: no empty chrome. */}
+          {selected?.preview && selected.preview.length > 0 && (
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-panel-2)]/40 px-4 py-2">
+              {selected.preview.slice(0, 3).map((ln, i) => (
+                <div key={i} className="truncate font-mono text-[10.5px] leading-relaxed text-[var(--color-faint)]">
+                  {ln}
+                </div>
+              ))}
+            </div>
+          )}
+          {/* footer hint */}
+          <div className="flex items-center gap-3.5 border-t border-[var(--color-border)] px-4 py-2 pb-2.5 font-mono text-[10px] text-[var(--color-faint)]">
+            <span>↑↓ navigate</span>
+            <span className="flex items-center gap-1">
+              <CornerDownLeft size={10} /> {selAction}
+            </span>
+            <span>⌥1–9 jump</span>
+            <span>tab scope</span>
+            <span className="ml-auto">&gt; verbs</span>
+          </div>
+          {/* the filament — same DNA as the composer deck's top edge */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-3.5 bottom-0 z-10 h-[2px] rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--aios-accent-2),transparent)] opacity-60"
+          />
         </div>
       </m.div>
     </m.div>

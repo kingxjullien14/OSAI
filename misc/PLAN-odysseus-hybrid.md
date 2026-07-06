@@ -67,14 +67,22 @@ This is AGPL-safe (network use, no code copying) and reversible.
 ## Phasing
 
 - **P0 — licensing stance** ✅ decided by this doc: ideas only, never copy Odysseus code.
-- **P1 — local models in BYOK** (extends active Tier-4 epic): OpenAI-compatible custom
-  endpoint provider (base URL + optional key), model listing via `/v1/models`, works with
-  Ollama/LM Studio/llama.cpp out of the box.
-- **P2 — ChatPane UX adoption pass**: the row-2 cherry-picks, folded into the ongoing
-  ChatPane restyle (Neon Glass).
+- **P1 — local models in BYOK** ✅ SHIPPED (2026-07-04): new `local` provider =
+  any OpenAI-compatible server on a user-set base URL (Settings → api keys →
+  "local endpoint"; default LM Studio's `http://localhost:1234/v1`). Models are
+  100% live-discovered (`GET {endpoint}/models` in the launch sweep, 2s fail-fast,
+  last-good cache); chats POST `{endpoint}/chat/completions` (SSE, usage chunk);
+  keyless but honors an optional stored "local" key as a Bearer (LiteLLM/vLLM
+  gateways). Ollama (native protocol) was already in. Save in Settings pushes the
+  endpoint to Rust + re-sweeps so models appear immediately. Needs a live smoke
+  test against LM Studio/llama.cpp.
+- **P2 — the Odysseus FEEL** — expanded into its own epic after the owner ran Odysseus
+  and fell for the windowed UX: see **`PLAN-odysseus-feel.md`** (windowed workspace
+  revamp + context menus + chat stream anatomy + density). The chat cherry-picks
+  originally listed here live there as W4.
 - **P3 — polish sprint on the four pillars** (owner's explicit pain): projects/workspaces,
   history, files, terminals. Audit each against "daily-driver" bar; separate tracker.
-- **P4 — Compare pane** (needs P1).
+- **P4 — Compare pane** ~~(needs P1)~~ — DROPPED 2026-07-04: owner won't use it.
 - **P5 — Odysseus-as-service integration**: docker preset + BrowserPane bookmark + claude
   skill install flow in Settings → Integrations.
 - **P6 — Cookbook-lite** (stretch): hardware scan + model download + llama.cpp serve
@@ -82,9 +90,14 @@ This is AGPL-safe (network use, no code copying) and reversible.
 
 ## Status
 
-- [ ] P1 local-endpoint provider
+- [x] P1 local-endpoint provider — shipped 2026-07-04 (needs live smoke vs LM Studio)
 - [ ] P2 chat UX cherry-picks
 - [ ] P3 pillar polish tracker
-- [ ] P4 Compare
-- [ ] P5 Odysseus service integration
-- [ ] P6 Cookbook-lite
+- [x] P4 Compare — dropped (owner decision, 2026-07-04)
+- [x] P5 Odysseus service integration — DROPPED (owner, 2026-07-04). Checked
+  their claude skill bundle first (`integrations/claude`): it contains exactly
+  ONE skill (`odysseus`) whose every tool calls a RUNNING Odysseus server via
+  ODYSSEUS_URL + a scope-gated token — without the Docker server there is
+  nothing to pull. If email/notes/calendar ever matter, this whole item
+  revives as a unit (server + skill).
+- [x] P6 Cookbook-lite — DROPPED (owner, 2026-07-04).

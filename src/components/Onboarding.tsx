@@ -15,7 +15,6 @@ import {
   Moon,
   Plug,
   RefreshCw,
-  Sparkles,
   Sun,
   Terminal,
 } from "lucide-react";
@@ -150,7 +149,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
         className="surface-pop focus-accent w-full max-w-[440px] p-6"
         role="dialog"
         aria-modal="true"
-        aria-label="welcome to aios"
+        aria-label="welcome to osai"
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
         {/* progress pips — width springs as the active step advances */}
@@ -187,9 +186,9 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             <div className="relative flex flex-col items-center text-center">
               {/* ambient texture — pure SVG, masked to the center, no motion */}
               <DotPattern className="opacity-60" gap={20} />
-              {/* brand mark: accent-soft tile with a single light travelling its rim */}
-              <span className="brand-logo relative mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                <Sparkles size={28} />
+              {/* brand mark: the OSAI diamond with a single light travelling its rim */}
+              <span className="brand-logo relative mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-[var(--color-accent-soft)]">
+                <span className="block h-7 w-7 rotate-45 rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_16px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
                 <BorderBeam duration={6} size={44} />
               </span>
               <h1 className="hero-title mb-2">
@@ -198,7 +197,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                     "welcome",
                     "to",
                     <span key="brand" className="text-[var(--color-accent)]">
-                      AIOS
+                      OSAI
                     </span>,
                   ]}
                   startDelay={0.08}
@@ -312,7 +311,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             <div>
               <h2 className="hero-title mb-1">connect your tools</h2>
               <p className="mb-4 text-[13px] text-[var(--color-muted)]">
-                aios reads your MCP servers from <span className="font-mono text-[12px]">~/.claude.json</span>.
+                osai reads your MCP servers from <span className="font-mono text-[12px]">~/.claude.json</span>.
               </p>
               {mcps === null ? (
                 <div className="flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
@@ -425,7 +424,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               onClick={next}
               className="btn-glow flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-[var(--color-accent-fg)]"
             >
-              {step === 0 ? "get started" : step === last ? "enter aios" : "continue"}
+              {step === 0 ? "get started" : step === last ? "enter osai" : "continue"}
               <ArrowRight size={14} />
             </button>
           </HoverBorderGradient>

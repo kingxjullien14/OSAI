@@ -262,7 +262,10 @@ fn ensure_started(app: AppHandle) {
                 continue;
             }
 
-            let resp = match rx.recv_timeout(Duration::from_secs(5)) {
+            // 15s (was 5): the notes.* verbs proxy to Stone & Chisel over the
+            // network — a Neon cold start can take several seconds, and a slow
+            // reply beats telling the agent "timed out" while the write lands.
+            let resp = match rx.recv_timeout(Duration::from_secs(15)) {
                 Ok(mut reply) => {
                     // strip the internal id; clients only care about ok/result/error.
                     if let Some(m) = reply.as_object_mut() {

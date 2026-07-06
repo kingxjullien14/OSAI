@@ -128,7 +128,10 @@ export function OracleRoster({
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 5000);
+    // settings → oracles → "auto-refresh interval" (S3: the stepper existed
+    // but the cadence was hardcoded at 5s — the setting never did anything).
+    const secs = Math.max(5, loadSettings().autoRefreshSeconds || 15);
+    const interval = setInterval(refresh, secs * 1000);
     return () => clearInterval(interval);
   }, [refresh]);
 
@@ -158,13 +161,15 @@ export function OracleRoster({
 
   if (iconsOnly) {
     return (
-      <div className="flex flex-col items-center gap-1 border-t border-[var(--color-border)] pt-2">
+      <div className="flex flex-col items-center gap-1 pt-1">
+        {/* soft hairline — matches the icon-rail space dividers (W1.6) */}
+        <div className="mb-1 h-px w-8 bg-[var(--color-border)]" />
         <button
           onClick={toggleCollapsed}
           className="grid h-8 w-8 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
           title={`agents (${oracles.length})`}
         >
-          <Radio size={14} />
+          <Radio size={18} />
         </button>
         {!collapsed && nativeReady && !defaultRunning && (
           <button
@@ -173,7 +178,7 @@ export function OracleRoster({
             className="grid h-8 w-8 place-items-center rounded-md border border-dashed border-[var(--color-border)] text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
             title="spawn an oracle"
           >
-            {spawning ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
+            {spawning ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
           </button>
         )}
         {!collapsed &&
@@ -200,7 +205,7 @@ export function OracleRoster({
               className="grid h-8 w-8 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
               title={`reattach ${s.label?.trim() || s.name}`}
             >
-              <Terminal size={13} />
+              <Terminal size={16} />
             </button>
           ))}
         {scheduledAgentsSlot}
@@ -212,10 +217,11 @@ export function OracleRoster({
     <div className="flex flex-col gap-3">
       {/* ---- oracles ---- */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        {/* aligned with SpaceHeader (TOOLS/PINNED): same left inset (W1.6b) */}
+        <div className="flex items-center justify-between pl-1.5 pr-1">
           <button
             onClick={toggleCollapsed}
-            className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+            className="flex items-center gap-1.5 py-1 pl-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
             title={collapsed ? "show agents" : "hide agents"}
           >
             <ChevronRight size={11} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
@@ -269,16 +275,19 @@ export function OracleRoster({
             <button
               onClick={spawnDefault}
               disabled={spawning}
-              className="group flex items-center gap-2 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1.5 text-left transition-colors hover:border-[var(--color-accent)]/60 hover:bg-[var(--color-panel-2)] disabled:opacity-60"
+              className="group flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-all duration-150 hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)] disabled:opacity-60"
               title={`spawn your oracle (aios-${defaultOracleIdentity()})`}
             >
-              {spawning ? (
-                <RefreshCw size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />
-              ) : (
-                <Play size={13} className="shrink-0 text-[var(--color-accent)]" />
-              )}
+              {/* icon chip — same language as the rail rows (W1.6) */}
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+                {spawning ? (
+                  <RefreshCw size={18} className="animate-spin text-[var(--color-accent)]" />
+                ) : (
+                  <Play size={18} className="text-[var(--color-accent)]" />
+                )}
+              </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] text-[var(--color-text)]">
+                <div className="truncate text-[12.5px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
                   {spawning ? `spawning ${defaultOracleIdentity()}…` : "spawn an oracle"}
                 </div>
                 <div className="truncate text-[10px] text-[var(--color-faint)]">
@@ -319,7 +328,7 @@ export function OracleRoster({
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setShowHidden((v) => !v)}
-              className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
+              className="flex items-center gap-1.5 py-1 pl-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
             >
               <ChevronRight size={11} className={`transition-transform ${showHidden ? "rotate-90" : ""}`} />
               hidden ({hiddenOracles.length})
@@ -359,7 +368,7 @@ export function OracleRoster({
           headline feature; only the misc "other sessions" list stays hidden there. */}
       {!collapsed && reattachable.length > 0 && (
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">
+          <div className="py-1 pl-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)]">
             reattach ({reattachable.length})
           </div>
           {reattachable.map((s) => (
@@ -389,11 +398,13 @@ export function OracleRoster({
       )}
 
       {/* ---- other (non-AIOS) tmux sessions ---- */}
-      {!collapsed && plainSessions.length > 0 && !chatpaneAgentsOnly && (
+      {/* S3: "show non-aios sessions" now actually gates this block (the
+          toggle existed but everything always showed). */}
+      {!collapsed && plainSessions.length > 0 && !chatpaneAgentsOnly && loadSettings().showNonAiosSessions && (
         <div className="flex flex-col gap-1">
           <button
             onClick={() => setShowAll((v) => !v)}
-            className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+            className="flex items-center gap-1.5 py-1 pl-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)] transition-colors hover:text-[var(--color-muted)]"
           >
             <ChevronRight
               size={11}
@@ -460,8 +471,11 @@ function OracleRow({
           if (v && v !== oracle.identity) onRename(v);
           setEditing(false);
         }}
-        className="flex items-center gap-1 rounded-lg border border-[var(--color-accent)]/50 bg-[var(--color-panel-2)] px-2 py-1.5"
+        className="flex items-center gap-2 rounded-lg border border-[var(--color-accent)]/40 bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] py-1 pl-1.5 pr-2"
       >
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)]">
+          <Pencil size={14} className="text-[var(--color-accent)]" />
+        </span>
         <input
           autoFocus
           value={draft}
@@ -484,31 +498,36 @@ function OracleRow({
   }
 
   return (
-    <div className="group flex flex-col gap-1 rounded-md border border-transparent px-2 py-1 transition-all hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]/60">
-      <div className="flex items-center gap-2.5">
-      <button onClick={onAttach} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-        <span
-          className={`status-dot shrink-0 ${
-            oracle.attached
-              ? "status-dot--active"
-              : oracle.running
-                ? "status-dot--idle"
-                : "status-dot--cold"
-          }`}
-        />
-        <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span className="truncate text-[12px] text-[var(--color-text)]">{oracle.display_name}</span>
-          <span className="truncate text-[9px] text-[var(--color-faint)] opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="group relative flex items-center rounded-lg border border-transparent transition-all duration-150 hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)]">
+      <button onClick={onAttach} className="flex min-w-0 flex-1 items-center gap-2 py-1 pl-1.5 pr-1 text-left">
+        {/* icon chip — same language as the tool rows (W1.6); the status dot
+            lives inside the chip so agents read as one family with tools. */}
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+          <span
+            className={`status-dot shrink-0 ${
+              oracle.attached
+                ? "status-dot--active"
+                : oracle.running
+                  ? "status-dot--idle"
+                  : "status-dot--cold"
+            }`}
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
+            {oracle.display_name}
+          </div>
+          <div className="truncate font-mono text-[10px] text-[var(--color-faint)]">
             {oracle.running ? oracle.session : "not running"}
-          </span>
+          </div>
         </div>
       </button>
 
-      {/* row actions */}
-      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      {/* row actions — hover-revealed ghost cluster, right-aligned */}
+      <div className="mr-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <button
           onClick={onHide}
-          className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
+          className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
           title="hide"
         >
           <EyeOff size={11} />
@@ -518,7 +537,7 @@ function OracleRow({
             setDraft(oracle.identity);
             setEditing(true);
           }}
-          className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
+          className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
           title="rename"
         >
           <Pencil size={11} />
@@ -526,7 +545,7 @@ function OracleRow({
         {confirmDel ? (
           <button
             onClick={() => onDelete(false)}
-            className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+            className="grid h-6 w-6 place-items-center rounded-md bg-[var(--color-danger)]/15 text-[var(--color-danger)]"
             title="click again to confirm"
           >
             <Check size={12} />
@@ -534,13 +553,12 @@ function OracleRow({
         ) : (
           <button
             onClick={() => setConfirmDel(true)}
-            className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)]"
+            className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)]"
             title="delete"
           >
             <Trash2 size={11} />
           </button>
         )}
-      </div>
       </div>
     </div>
   );
@@ -581,8 +599,11 @@ function TmuxRow({
           if (v && v !== display) onRename(v);
           setEditing(false);
         }}
-        className="flex items-center gap-1 rounded-md border border-[var(--color-accent)]/50 bg-[var(--color-panel-2)] px-2 py-1.5"
+        className="flex items-center gap-2 rounded-lg border border-[var(--color-accent)]/40 bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] py-1 pl-1.5 pr-2"
       >
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)]">
+          <Pencil size={14} className="text-[var(--color-accent)]" />
+        </span>
         <input
           autoFocus
           value={draft}
@@ -598,32 +619,38 @@ function TmuxRow({
   }
 
   return (
-    <div className="group flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/30 px-2 py-1.5 transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-panel-2)]">
+    <div className="group relative flex items-center rounded-lg border border-transparent transition-all duration-150 hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)]">
       <button
         onClick={onAttach}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="flex min-w-0 flex-1 items-center gap-2 py-1 pl-1.5 pr-1 text-left"
         title={`reattach ${session.socket}:${session.name}`}
       >
-        <span
-          className={`status-dot shrink-0 ${session.attached ? "status-dot--active" : "status-dot--cold"}`}
-          title={session.attached ? "open in a pane" : "detached — click to reattach"}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[12px] text-[var(--color-text-2)]">{display}</span>
-          <span className="truncate text-[9px] text-[var(--color-faint)]">
+        {/* terminal chip — the icon warms with attachment state; the subtitle
+            carries the open/detached word so the row scans without hovering. */}
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+          <Terminal
+            size={18}
+            className={session.attached ? "text-[var(--color-accent)]" : "text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"}
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
+            {display}
+          </div>
+          <div className="truncate font-mono text-[10px] text-[var(--color-faint)]">
             {session.attached ? "open" : "detached"} · {session.socket}
-          </span>
+          </div>
         </div>
       </button>
 
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="mr-1 flex shrink-0 items-center gap-0.5">
         {onRename && (
           <button
             onClick={() => {
               setDraft(display);
               setEditing(true);
             }}
-            className="rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg)] hover:text-[var(--color-text)] group-hover:opacity-100"
+            className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] opacity-0 transition-all hover:bg-[var(--color-bg)] hover:text-[var(--color-text)] group-focus-within:opacity-100 group-hover:opacity-100"
             title="rename"
           >
             <Pencil size={11} />
@@ -632,7 +659,7 @@ function TmuxRow({
         {confirmKill ? (
           <button
             onClick={onKill}
-            className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
+            className="grid h-6 w-6 place-items-center rounded-md bg-[var(--color-danger)]/15 text-[var(--color-danger)]"
             title="click again to confirm kill"
           >
             <Check size={12} />
@@ -640,7 +667,7 @@ function TmuxRow({
         ) : (
           <button
             onClick={() => setConfirmKill(true)}
-            className="rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)] group-hover:opacity-100"
+            className="grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] opacity-0 transition-all hover:bg-[var(--color-bg)] hover:text-[var(--color-danger)] group-focus-within:opacity-100 group-hover:opacity-100"
             title="kill session"
           >
             <Trash2 size={11} />
@@ -670,9 +697,9 @@ function CreateOracleForm({
         e.preventDefault();
         if (name.trim()) onCreate(name.trim(), launch);
       }}
-      className="flex flex-col gap-2 rounded-lg border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)]/60 p-2"
+      className="flex flex-col gap-2 rounded-xl border border-[var(--color-accent)]/35 bg-[color-mix(in_srgb,var(--color-panel-2)_60%,transparent)] p-2.5 backdrop-blur-md"
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 transition-colors focus-within:border-[var(--color-accent)]/60">
         <span className="font-mono text-[11px] text-[var(--color-faint)]">aios-</span>
         <input
           ref={ref}
@@ -681,7 +708,12 @@ function CreateOracleForm({
           placeholder="name"
           className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
         />
-        <button type="button" onClick={onCancel} className="text-[var(--color-muted)]" title="cancel">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+          title="cancel"
+        >
           <X size={13} />
         </button>
       </div>
@@ -700,7 +732,7 @@ function CreateOracleForm({
       <button
         type="submit"
         disabled={!name.trim()}
-        className="rounded-md bg-[var(--color-accent)] px-2 py-1 text-[11px] font-semibold text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
+        className="press rounded-lg bg-[var(--color-accent)] px-2 py-1.5 text-[11px] font-semibold text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
       >
         create
       </button>

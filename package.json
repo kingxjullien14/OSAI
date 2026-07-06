@@ -1,12 +1,12 @@
 {
-  "name": "aios-superapp",
+  "name": "osai",
   "private": true,
-  "version": "1.1.1",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test:chatpane": "node --experimental-strip-types --test src/lib/chatPaneState.test.ts src/lib/chatScroll.test.ts src/lib/runEvents.test.ts src/lib/paneLayout.test.ts src/lib/scheduledAgents.test.ts src/lib/chatStream.test.ts src/lib/subagentFleet.test.ts src/lib/bundleBoundaries.test.ts src/lib/paths.test.ts src/lib/sessionLabel.test.ts src/lib/paneOpenActions.test.ts src/lib/conductor.test.ts src/lib/urlNormalize.test.ts src/lib/textDiff.test.ts src/lib/historyManage.test.ts src/lib/chatTimeline.test.ts src/lib/projectWorkspaces.test.ts src/lib/chatBranching.test.ts src/lib/workSessions.test.ts src/lib/control.test.ts src/lib/sessionUsage.test.ts src/lib/providers.test.ts src/lib/chatTree.test.ts src/lib/apiMessages.test.ts src/lib/chatTreePersist.test.ts src/lib/lsp/protocol.test.ts",
+    "test:chatpane": "node --experimental-strip-types --test src/lib/chatPaneState.test.ts src/lib/chatScroll.test.ts src/lib/runEvents.test.ts src/lib/paneLayout.test.ts src/lib/scheduledAgents.test.ts src/lib/chatStream.test.ts src/lib/subagentFleet.test.ts src/lib/bundleBoundaries.test.ts src/lib/paths.test.ts src/lib/sessionLabel.test.ts src/lib/paneOpenActions.test.ts src/lib/conductor.test.ts src/lib/urlNormalize.test.ts src/lib/textDiff.test.ts src/lib/historyManage.test.ts src/lib/chatTimeline.test.ts src/lib/projectWorkspaces.test.ts src/lib/chatBranching.test.ts src/lib/workSessions.test.ts src/lib/control.test.ts src/lib/sessionUsage.test.ts src/lib/providers.test.ts src/lib/chatTree.test.ts src/lib/apiMessages.test.ts src/lib/chatTreePersist.test.ts src/lib/windowing.test.ts src/lib/sncCore.test.ts src/lib/sncMerge.test.ts src/lib/sncOutbox.test.ts src/lib/pet/engine.test.ts src/lib/pet/voice.test.ts src/lib/lsp/protocol.test.ts",
     "preview": "vite preview",
     "tauri": "tauri"
   },

@@ -1,39 +1,40 @@
 /**
- * IdleControlCenter — the AIOS home screen, shown when no panes are open.
+ * IdleControlCenter — the HORIZON lock screen (L1–L3 + P5, living-cockpit;
+ * owner picked sketch B: "i love B, but the working world, please make it
+ * dynamic… busy but nice on the eyes… stars and all that. motions.").
  *
- * Minimal in structure, premium in finish (Option B). One clear focal hierarchy:
+ * The composition is a landscape:
  *
- *   clock  →  command line  →  usage glance  →  launch row
+ *   SKY (top ~63%)      aurora blooms · twinkling stars · drifting satellites
+ *                       · the occasional shooting star. Lower-left, sitting ON
+ *                       the horizon: date → a monumental mono clock → greeting.
+ *                       Right, riding the line: the ONE glanceable status row
+ *                       (agents · claude usage · streak · unread).
  *
- * A gorgeous hero clock + calm greeting is the centre of gravity. Below it the
- * one thing you touch: a composer-grade "start something…" input that seeds a
- * fresh chat with whatever you type. Claude + codex usage sit quiet to the right
- * of the clock (the shared UsageGlance ProviderBlock — ONE source with the
- * sidebar). One launch row near the bottom — recent projects + quick actions +
- * pinned chips + a thin status footer — is the "jump back into work" affordance.
- * A tiny ambient pet sits in the top-right corner as the one playful touch.
+ *   THE HORIZON         a full-width gradient line with a slow light-pulse
+ *                       traveling along it. The glass spirit LIVES on it —
+ *                       wandering the line, sleeping on it at night (P5
+ *                       residency; click = its room; confetti lands here).
  *
- * Everything else the old control center carried (jarvis lane, notification
- * cards, the agent-ops grid, charts, the 8-metric vanity band, the duplicate
- * heatmap) is gone — that's pane material, opened on purpose, not home-at-rest
- * noise.
+ *   GROUND (bottom)     the working world, alive: parallax ridge glows,
+ *                       fireflies drifting up — and the real controls:
+ *                       quick-start dock (chat · terminal · notes, owner's
+ *                       pick), the composer-grade command line center, and
+ *                       the "continue" shelf right (resume-layout pill,
+ *                       work sessions w/ done/remove, recent projects w/ git
+ *                       drift dots + shape chips, overflow → projects pane).
  *
- * Craft language is borrowed from the chat-pane composer (TerminalComposer):
- * the rounded glass surface (radius-xl), the focus glow + accent top-edge sheen,
- * the gradient accent send button, refined type hierarchy on the theme vars.
+ * Everything moves, nothing scrolls: the layout is proportional (absolute
+ * bands), so it fits any viewport without the old fit-scale hack. All motion
+ * is transform/opacity-only CSS (aios-lock-* keyframes in App.css), stilled
+ * by the reduce-motion guards.
  *
- * The faint ambient drift + entrance fade respect Settings' reduce-motion
- * (`data-reduce-motion` on :root) via the shared App.css rules.
- *
- * TDZ note (this caused a black idle screen historically): every derived const
- * (`recent`, the count expressions, `weeks`) is declared at the top of the
- * component BEFORE any JSX or hook reads it — never forward-referenced. The data
- * loading lives one level up in IdleDashboard; this component is presentation +
- * the command-line local state only.
+ * TDZ note (this caused a black idle screen historically): every derived
+ * const is declared BEFORE any JSX/hook reads it — never forward-referenced.
+ * Data loading lives one level up in IdleDashboard; this component is
+ * presentation + the command-line local state only.
  */
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -44,8 +45,8 @@ import {
 import {
   ArrowUp,
   Check,
+  Feather,
   FolderGit2,
-  Globe,
   History,
   Search,
   Sparkles,
@@ -65,27 +66,39 @@ import type { SidebarItem, SidebarState } from "../lib/sidebar";
 import type { UsageExtras } from "../lib/stats";
 import { AnimatePresence, m } from "motion/react";
 
-import { ProviderBlock, useUsageRates } from "./dashboard/UsageGlance";
-import { listChatHistory, chatHistoryMeta, type HistoryEntry } from "../lib/chatHistory";
 import { type Workspace } from "../lib/workspaces";
 import { type WorkSession } from "../lib/workSessions";
+import { lastAccessFor, projectAccessTimes } from "../lib/projectRecents";
 import { displayName, subscribe as subscribeSettings } from "../lib/settings";
 import { chord } from "../lib/platform";
 import { setPaletteMorphSource } from "../lib/paletteMorph";
+import {
+  flavorOf,
+  moodOf,
+  stageOf,
+  suggestActivity,
+  tick,
+} from "../lib/pet/engine";
+import { loadSoul, saveSoul, subscribeSoul } from "../lib/pet/store";
+import { subscribePetConfetti, subscribePetReactions } from "../lib/pet";
 import { BlurText } from "./fx/BlurText";
 import { Confetti } from "./fx/Confetti";
-import { DotPattern } from "./fx/DotPattern";
 import { Ripple } from "./fx/Ripple";
 import { Spotlight } from "./fx/Spotlight";
 import { spotlightMove } from "./fx/spotlightGlow";
 import { useFunFx } from "./fx/funFx";
 import { useRotatingPlaceholder } from "./fx/useRotatingPlaceholder";
 import { useVanish } from "./fx/useVanish";
-import { subscribePetConfetti } from "../lib/pet";
+import { useUsageRates } from "./dashboard/UsageGlance";
+import { PetBody, type PetPose } from "./pet/PetBody";
 
-const PetDashboardCompanion = lazy(() =>
-  import("./PetPane").then((mod) => ({ default: mod.PetDashboardCompanion })),
-);
+/** Where the sky ends and the working world begins (% of the stage height). */
+const HORIZON = 63;
+
+const isNightNow = () => {
+  const h = new Date().getHours();
+  return h < 7 || h >= 22;
+};
 
 export function IdleControlCenter({
   projects,
@@ -118,7 +131,7 @@ export function IdleControlCenter({
   projects: ProjectInfo[];
   sidebar: SidebarState;
   extras: UsageExtras | null;
-  /** claude's 5h/7d/ctx — kept for the ctx glance; bars come from useUsageRates. */
+  /** claude's 5h/7d/ctx — kept for the interface; bars come from useUsageRates. */
   rate: IdleRate | null;
   focus: MemoryFocus | null;
   pulse: RepoPulse[];
@@ -134,23 +147,31 @@ export function IdleControlCenter({
   /** resume the most recent chat session (omitted when there are none). */
   onResumeLast?: () => void;
   resumeLabel?: string;
-  /** "pick up where you left off" — panes to bring back; null hides the pill. */
+  /** "pick up where you left off" — panes to bring back; null hides the card. */
   resumeLayout?: { count: number; labels: string[] } | null;
   onResumeLayout?: () => void;
   /** seed a fresh chat pane with the command-line text (spawns a chat). */
   onTalkToJarvis: (seed: string) => void;
   /** restore a saved workspace (named pane layout) from its launch-row chip. */
   onApplyWorkspace?: (ws: Workspace) => void;
-  /** root → shape label for structured workspaces; RecentProjects shows a hint chip. */
+  /** root → shape label for structured workspaces; shelf rows show a hint chip. */
   shapeByRoot?: Record<string, string>;
-  /** Work Sessions for the "Continue working" rail + a one-click resume (Tier 1). */
+  /** Work Sessions for the continue shelf + a one-click resume (Tier 1). */
   workSessions?: WorkSession[];
   onResumeSession?: (s: WorkSession) => void;
   onRemoveSession?: (id: string) => void;
   onDoneSession?: (id: string) => void;
 }) {
   // ── derived state — declared BEFORE any JSX/hook that reads them (TDZ-safe) ──
-  const recent = [...projects].sort((a, b) => b.mtime - a.mtime).slice(0, 5);
+  // "continue" ordering = REAL access recency (projects opened / panes spawned
+  // with a cwd inside them), not fs mtime — agents editing files kept bumping
+  // folders the owner never opened. Never-touched projects fall back to mtime.
+  const accessTimes = projectAccessTimes();
+  const recent = [...projects]
+    .map((p) => ({ p, at: lastAccessFor(p.root, accessTimes) }))
+    .sort((a, b) => b.at - a.at || b.p.mtime - a.p.mtime)
+    .map((x) => x.p)
+    .slice(0, 5);
   const activeAgents = scheduledAgents.filter(
     (agent) => agent.health === "due" || agent.health === "scheduled",
   ).length;
@@ -158,57 +179,41 @@ export function IdleControlCenter({
   const dirtyProjects = pulse.filter(
     (repo) => repo.dirty || repo.ahead || repo.behind,
   ).length;
-  const { claude, codex, hasClaude, hasCodex } = useUsageRates();
-  const hasUsage = hasClaude || hasCodex;
 
-  // recent chats for the "pick up where you left off" card (durable history).
-  const [recentChats, setRecentChats] = useState<HistoryEntry[]>([]);
-  useEffect(() => {
-    let alive = true;
-    listChatHistory(6)
-      .then((h) => alive && setRecentChats(h))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Props retained for the interface but no longer rendered on this surface —
-  // the bottom status/ambient band + workspace/pinned chips were removed by
-  // design (owner: "the bottom part feels out").
+  // Props retained for the interface but not rendered on this surface.
   void onApplyWorkspace;
   void onOpenSidebarItem;
-  void onOpenScheduledAgents;
+  void onRevealSidebar;
+  void onResumeLast;
+  void resumeLabel;
   void sidebar;
   void rate;
-  void extras;
   void focus;
 
-  // liveness 0..1 — the backdrop breathes with what the system is actually
-  // doing (agents running, repos with unpushed work, unread signals). Idle
-  // reads calm-dim; a busy cockpit warms up. Opacity-only (composite-cheap),
-  // 2s ease so wake-ups breathe in rather than snap.
+  // liveness 0..1 — the sky breathes with what the system is actually doing.
   const liveness = Math.min(
     1,
     activeAgents * 0.45 + Math.min(dirtyProjects, 3) * 0.12 + (unread > 0 ? 0.18 : 0),
   );
 
-  // personality layer (W5-5): the ripple rides high liveness; confetti bursts
-  // when the pet earns it (long clean run). Both gate on funFx + reduce-motion.
+  // personality layer (W5-5): confetti bursts where the pet lives when it
+  // earns one (long clean run); the ripple rides high liveness behind it.
   const funFx = useFunFx();
   const [confettiKey, setConfettiKey] = useState(0);
   useEffect(() => subscribePetConfetti(() => setConfettiKey((k) => k + 1)), []);
 
+  // the ONE glanceable status row — usage from the same source as the sidebar.
+  const { claude, hasClaude } = useUsageRates();
+  const claudePct = hasClaude ? claude!.fiveHour.pct : null;
+  const streak = extras?.currentStreak ?? 0;
+
   return (
-    // .aios-stage = the same animated aurora ground the chat pane uses, so the
-    // home and chat share one background (owner request). The drift blooms below
-    // layer extra life on top, like the chat empty-hero.
+    // .aios-stage = the same animated aurora ground the chat pane uses.
     <div className="aios-stage relative flex h-full flex-col overflow-hidden">
-      {/* masked dot grid — quiet texture under the hero (pure SVG, no motion) */}
-      <DotPattern />
-      {/* one-shot accent spotlight sweep on arrival, settling over the blobs */}
+      {/* one-shot accent spotlight sweep on arrival */}
       <Spotlight />
-      {/* drifting accent + cyan blooms — the aurora breathes; reduce-motion kills it */}
+
+      {/* aurora blooms — breathe with liveness; reduce-motion kills the drift */}
       <div
         className="pointer-events-none absolute inset-0 overflow-hidden"
         style={{ opacity: 0.6 + liveness * 0.4, transition: "opacity 2s ease-in-out" }}
@@ -218,82 +223,122 @@ export function IdleControlCenter({
           style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 70%)" }}
         />
         <div
-          className="aios-drift-b absolute h-[44vh] w-[44vh] rounded-full blur-[120px]"
+          className="aios-drift-b absolute right-[-8%] top-[6%] h-[44vh] w-[44vh] rounded-full blur-[120px]"
           style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--aios-accent-2) 14%, transparent), transparent 70%)" }}
         />
       </div>
 
-      {/* tiny ambient pet — top-right corner, low-key. Scaled down via
-          .aios-pet-mini (hides the head/actions, shrinks the world). The whole
-          tile is the click target → opens the full pet pane, since the inner
-          inspect button is hidden in the mini variant. */}
+      {/* the sky — stars, satellites, a shooting star */}
+      <SkyField />
+
+      {/* clock block — lower-left, standing on the horizon */}
+      <ClockBlock />
+
+      {/* the one glanceable status row — riding the line, right side */}
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpenPet}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpenPet())}
-        title="open the pet pane"
-        className="aios-pet-mini aios-fade-in pointer-events-auto absolute right-5 top-5 z-20 hidden cursor-pointer sm:block"
-        style={{ animationDelay: "260ms" }}
+        className="absolute right-[4%] z-[11] flex flex-wrap items-center justify-end gap-2"
+        style={{ bottom: `${100 - HORIZON + 1.6}%` }}
       >
-        {/* liveness ripple behind + earned confetti over the companion tile */}
-        {funFx && liveness > 0.4 && <Ripple />}
-        <Suspense fallback={null}>
-          <PetDashboardCompanion onOpenPet={onOpenPet} onTalkToJarvis={onTalkToJarvis} />
-        </Suspense>
-        <Confetti trigger={confettiKey} />
+        {activeAgents > 0 && (
+          <button
+            type="button"
+            onClick={onOpenScheduledAgents}
+            title="open scheduled agents"
+            className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/55 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]" />
+            {activeAgents} agent{activeAgents === 1 ? "" : "s"} live
+          </button>
+        )}
+        {claudePct != null && (
+          <span className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/55 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)]">
+            claude 5h
+            <span className="h-1 w-10 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-text)_12%,transparent)]">
+              <span
+                className="block h-full rounded-full"
+                style={{
+                  width: `${Math.round(claudePct)}%`,
+                  background:
+                    claudePct >= 85 ? "var(--color-danger)" : claudePct >= 65 ? "var(--color-warning)" : "var(--color-accent)",
+                }}
+              />
+            </span>
+            {Math.round(claudePct)}%
+          </span>
+        )}
+        {streak > 0 && (
+          <button
+            type="button"
+            onClick={() => onSpawn({ type: "pulse" } as AppDef["kind"], "pulse")}
+            title="open pulse"
+            className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/55 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+          >
+            <span className="h-1.5 w-1.5 rotate-45 rounded-[1px] bg-[var(--aios-accent-2)] shadow-[0_0_7px_color-mix(in_srgb,var(--aios-accent-2)_70%,transparent)]" />
+            {streak}-day streak
+          </button>
+        )}
+        {unread > 0 && (
+          <span className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/55 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
+            {unread} unread
+          </span>
+        )}
       </div>
 
-      {/* one centred, scrollable deck: the hero (clock + command + usage) AND
-          the launch row, centred as ONE group via min-h-full + justify-center.
-          This scrolls cleanly when tall (top stays reachable — no clipped
-          greeting) and keeps the launch row adjacent to the content instead of
-          slammed to the bottom with a dead band above it. */}
-      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-8 px-7 py-7">
-          {/* top strip — brand mark + live status (Mission Control) */}
-          <div className="flex items-center gap-3">
-            <span className="grid h-7 w-7 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)]">
-              <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-            </span>
-            <span className="font-mono text-[13px] font-semibold tracking-[0.3em] text-[var(--color-text-2)]">AIOS</span>
-            <span className="flex-1" />
-            {activeAgents > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/40 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)] backdrop-blur">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]" />
-                {activeAgents} live
-              </span>
-            )}
+      {/* the resident — the glass spirit lives ON the horizon (P5) */}
+      <HorizonPet
+        onOpenPet={onOpenPet}
+        confettiKey={confettiKey}
+        showRipple={funFx && liveness > 0.4}
+      />
+
+      {/* ── the working world (ground band) ── */}
+      <div className="absolute inset-x-0 bottom-0 z-[9] overflow-hidden" style={{ top: `${HORIZON}%` }}>
+        {/* the horizon line + the light traveling along it */}
+        <div className="aios-horizon-line absolute inset-x-0 top-0 h-px" />
+        <div className="aios-horizon-flow absolute inset-x-0 top-0 h-[2px]" />
+
+        {/* ground wash — the world below is a shade more solid than the sky */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, color-mix(in srgb, var(--color-panel) 30%, transparent), color-mix(in srgb, var(--color-bg) 72%, transparent))",
+          }}
+        />
+
+        {/* parallax ridge glows — two soft terrain bands drifting at different speeds */}
+        <div className="aios-lock-ridge-a pointer-events-none absolute -bottom-8 left-0 h-28 w-[200%]" />
+        <div className="aios-lock-ridge-b pointer-events-none absolute -bottom-12 left-0 h-32 w-[200%]" />
+
+        {/* fireflies — tiny sparks rising out of the working world */}
+        {FLIES.map((f, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className="aios-lock-fly pointer-events-none absolute bottom-0 rounded-full"
+            style={{
+              left: `${f.x}%`,
+              width: f.s,
+              height: f.s,
+              background: f.c === "a" ? "var(--color-accent)" : "var(--aios-accent-2)",
+              boxShadow: `0 0 6px ${f.c === "a" ? "color-mix(in srgb, var(--color-accent) 80%, transparent)" : "color-mix(in srgb, var(--aios-accent-2) 80%, transparent)"}`,
+              ["--delay" as string]: `${f.delay}s`,
+              ["--dur" as string]: `${f.dur}s`,
+              ["--sway" as string]: `${f.sway}px`,
+            }}
+          />
+        ))}
+
+        {/* the real controls — dock · command line · continue shelf */}
+        <div className="relative z-10 mx-auto flex h-full w-full max-w-[1280px] items-center gap-7 px-[4%]">
+          <div className="hidden shrink-0 flex-col gap-2.5 sm:flex">
+            <Eyebrow>quick start</Eyebrow>
+            <LockDock onSpawn={onSpawn} />
           </div>
 
-          {/* hero — greeting + the one question, with the composer below */}
-          <div className="flex flex-col items-center gap-5 pt-1">
-            <div className="flex flex-col items-center gap-2 text-center">
-              <Greeting />
-              <h1 className="text-[28px] font-semibold tracking-tight text-[var(--color-text)]">
-                what should we{" "}
-                <span className="bg-[linear-gradient(120deg,var(--color-accent),var(--aios-accent-2))] bg-clip-text text-transparent">
-                  work
-                </span>{" "}
-                on?
-              </h1>
-            </div>
-            {resumeLayout && onResumeLayout && (
-              <button
-                type="button"
-                onClick={onResumeLayout}
-                title={resumeLayout.labels.join(" · ")}
-                className="aios-fade-in pill press flex items-center gap-1.5"
-                style={{ animationDelay: "70ms" }}
-              >
-                <History size={11} className="shrink-0 text-[var(--color-muted)]" />
-                pick up where you left off
-                <span className="font-mono text-[10px] text-[var(--color-faint)]">
-                  {resumeLayout.count} pane{resumeLayout.count === 1 ? "" : "s"}
-                </span>
-              </button>
-            )}
-            <div className="w-full max-w-[640px]">
+          <div className="min-w-0 flex-1">
+            <div className="mx-auto w-full max-w-[560px]">
               <CommandLine
                 onSeedChat={onTalkToJarvis}
                 onOpenPalette={onOpenPalette}
@@ -304,101 +349,106 @@ export function IdleControlCenter({
             </div>
           </div>
 
-          {/* quick launch — glass tiles */}
-          <div className="flex flex-col gap-3">
-            <Eyebrow>quick launch</Eyebrow>
-            <QuickActions
-              onSpawn={onSpawn}
-              onOpenPalette={onOpenPalette}
-              onRevealSidebar={onRevealSidebar}
-              onResumeLast={onResumeLast}
-              resumeLabel={resumeLabel}
+          <div className="hidden w-[300px] shrink-0 flex-col gap-2.5 lg:flex">
+            <Eyebrow>continue</Eyebrow>
+            <ContinueShelf
+              projects={recent}
+              pulse={pulse}
+              shapeByRoot={shapeByRoot}
+              onOpenProject={onOpenProject}
+              resumeLayout={resumeLayout}
+              onResumeLayout={onResumeLayout}
+              sessions={workSessions}
+              onResumeSession={onResumeSession}
+              onRemoveSession={onRemoveSession}
+              onDoneSession={onDoneSession}
+              onAllProjects={() => onSpawn({ type: "projects" } as AppDef["kind"], "projects")}
             />
           </div>
-
-          {/* two columns — recent projects + pick-up-where-you-left-off (chats) */}
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="flex flex-col gap-3">
-              <Eyebrow>recent projects</Eyebrow>
-              <RecentProjects projects={recent} pulse={pulse} onOpen={onOpenProject} shapeByRoot={shapeByRoot} />
-            </div>
-            <div className="flex flex-col gap-3">
-              <Eyebrow>continue working</Eyebrow>
-              {workSessions && workSessions.some((s) => s.status !== "done") && onResumeSession ? (
-                <ContinueWorking
-                  sessions={workSessions}
-                  onResume={onResumeSession}
-                  onRemove={onRemoveSession}
-                  onDone={onDoneSession}
-                />
-              ) : (
-                <MiniHistory
-                  chats={recentChats}
-                  onOpen={(c) =>
-                    onSpawn(
-                      { type: "chat", resume: { id: c.id, title: c.title, engine: c.engine } } as AppDef["kind"],
-                      c.title || "chat",
-                    )
-                  }
-                />
-              )}
-            </div>
-          </div>
-
-          {/* usage — one glass card per provider (claude / codex / opencode) */}
-          {hasUsage && (
-            <div className="flex flex-col gap-3">
-              <Eyebrow>usage</Eyebrow>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {hasClaude && (
-                  <div className="surface-card rounded-2xl p-4">
-                    <ProviderBlock
-                      name="claude"
-                      fiveHour={claude!.fiveHour}
-                      sevenDay={claude!.sevenDay}
-                      models={claude!.models}
-                      showRemaining
-                    />
-                  </div>
-                )}
-                {hasCodex && (
-                  <div className="surface-card rounded-2xl p-4">
-                    <ProviderBlock
-                      name="codex"
-                      fiveHour={codex!.fiveHour}
-                      sevenDay={codex!.sevenDay}
-                      models={codex!.models}
-                      showRemaining
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── greeting + clock ─────────────────────────────────────────────────────────
+// ── the sky ───────────────────────────────────────────────────────────────────
 
-/** Time-of-day greeting + lowercased date. 30s tick — cheap, isolated. */
-function Greeting() {
+/** Hand-placed starfield (deterministic — no per-render randomness): twinkling
+ *  stars at staggered phases, two satellites crossing on long orbits, and one
+ *  shooting star on a lazy ~15s cycle. Pure transform/opacity animation. */
+const STARS: Array<{ x: number; y: number; s: number; d: number; dur: number; hi: number; glow?: boolean }> = [
+  { x: 4, y: 8, s: 2, d: 0.0, dur: 4.4, hi: 0.75 },
+  { x: 9, y: 26, s: 1.5, d: 1.2, dur: 5.1, hi: 0.5 },
+  { x: 14, y: 13, s: 2, d: 2.6, dur: 4.0, hi: 0.65 },
+  { x: 19, y: 34, s: 1.5, d: 0.8, dur: 5.8, hi: 0.45 },
+  { x: 23, y: 7, s: 2.5, d: 1.9, dur: 4.6, hi: 0.85, glow: true },
+  { x: 28, y: 21, s: 1.5, d: 3.4, dur: 5.2, hi: 0.5 },
+  { x: 33, y: 11, s: 2, d: 0.4, dur: 4.2, hi: 0.7 },
+  { x: 38, y: 30, s: 1.5, d: 2.2, dur: 6.0, hi: 0.4 },
+  { x: 43, y: 5, s: 2, d: 1.5, dur: 4.8, hi: 0.6 },
+  { x: 47, y: 18, s: 1.5, d: 3.0, dur: 5.4, hi: 0.5 },
+  { x: 52, y: 9, s: 2.5, d: 0.6, dur: 4.4, hi: 0.9, glow: true },
+  { x: 56, y: 27, s: 1.5, d: 2.8, dur: 5.0, hi: 0.45 },
+  { x: 61, y: 14, s: 2, d: 1.1, dur: 4.6, hi: 0.65 },
+  { x: 65, y: 33, s: 1.5, d: 3.6, dur: 5.6, hi: 0.4 },
+  { x: 70, y: 6, s: 2, d: 0.2, dur: 4.2, hi: 0.7 },
+  { x: 74, y: 22, s: 1.5, d: 1.7, dur: 5.2, hi: 0.5 },
+  { x: 79, y: 12, s: 2.5, d: 2.4, dur: 4.8, hi: 0.85, glow: true },
+  { x: 83, y: 29, s: 1.5, d: 0.9, dur: 5.8, hi: 0.45 },
+  { x: 88, y: 8, s: 2, d: 3.2, dur: 4.4, hi: 0.7 },
+  { x: 92, y: 24, s: 1.5, d: 1.4, dur: 5.4, hi: 0.5 },
+  { x: 96, y: 15, s: 2, d: 2.0, dur: 4.6, hi: 0.6 },
+  { x: 36, y: 42, s: 1.5, d: 2.9, dur: 6.2, hi: 0.35 },
+  { x: 58, y: 44, s: 1.5, d: 0.7, dur: 6.4, hi: 0.35 },
+  { x: 12, y: 46, s: 1.5, d: 1.8, dur: 6.0, hi: 0.35 },
+];
+
+function SkyField() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-[5]" style={{ height: `${HORIZON}%` }}>
+      {STARS.map((st, i) => (
+        <span
+          key={i}
+          className="aios-lock-star absolute rounded-full"
+          style={{
+            left: `${st.x}%`,
+            top: `${st.y}%`,
+            width: st.s,
+            height: st.s,
+            background: "color-mix(in srgb, var(--color-text) 85%, var(--aios-accent-2))",
+            boxShadow: st.glow ? "0 0 8px color-mix(in srgb, var(--aios-accent-2) 70%, transparent)" : undefined,
+            ["--delay" as string]: `${st.d}s`,
+            ["--dur" as string]: `${st.dur}s`,
+            ["--hi" as string]: st.hi,
+          }}
+        />
+      ))}
+      {/* satellites — slow, straight, faint */}
+      <span className="aios-lock-sat absolute left-0 top-[10%] h-[2px] w-[2px] rounded-full bg-[var(--color-text)] opacity-40" />
+      <span
+        className="aios-lock-sat absolute left-0 top-[24%] h-[2px] w-[2px] rounded-full bg-[var(--aios-accent-2)] opacity-30"
+        style={{ animationDuration: "150s", animationDelay: "38s" }}
+      />
+      {/* one shooting star, top-right, on a lazy cycle */}
+      <span className="aios-lock-shoot absolute right-[8%] top-[9%] h-px w-24" />
+    </div>
+  );
+}
+
+// ── clock block — date · monumental clock · greeting ─────────────────────────
+
+function ClockBlock() {
   const [now, setNow] = useState(() => new Date());
   const [name, setName] = useState(() => displayName("there"));
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
+    const t = setInterval(() => setNow(new Date()), 15_000);
     return () => clearInterval(t);
   }, []);
-  // pick up the onboarding/Settings name live (single source: settings.userName).
   useEffect(() => subscribeSettings(() => setName(displayName("there"))), []);
+
   const h = now.getHours();
   const part =
     h < 5 ? "still up" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
-  // per-word blur-rise entrance (BlurText); the trailing word is the gradient
-  // name node so it keeps its accent shimmer. Keyed by part+name so a time-of-
-  // day flip or rename replays the entrance once (not on the 30s tick).
   const partWords = part.split(" ");
   const words: ReactNode[] = [
     ...partWords.map((w, i) => (i === partWords.length - 1 ? `${w},` : w)),
@@ -406,16 +456,399 @@ function Greeting() {
       {name}
     </span>,
   ];
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+
   return (
-    <div className="aios-fade-in flex flex-col items-center gap-1">
+    <div
+      className="aios-fade-in pointer-events-none absolute z-[11] flex flex-col gap-1"
+      style={{ left: "4.5%", bottom: `${100 - HORIZON + 2.2}%` }}
+    >
+      <span className="font-mono text-[11px] uppercase tracking-[0.32em] text-[var(--color-muted)]">
+        {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }).toLowerCase()}
+      </span>
+      <span
+        className="font-mono font-semibold leading-[0.92] tracking-[-0.02em] text-[var(--color-text)] [font-variant-numeric:tabular-nums]"
+        style={{
+          fontSize: "clamp(56px, 10.5vw, 148px)",
+          textShadow: "0 0 38px color-mix(in srgb, var(--color-accent) 40%, transparent)",
+        }}
+      >
+        {hh}:{mm}
+      </span>
       <BlurText
         key={`${part}|${name}`}
         words={words}
         className="text-[15px] font-medium tracking-tight text-[var(--color-text-2)]"
       />
-      <span className="font-mono text-[11px] tracking-[0.08em] text-[var(--color-muted)]">
-        {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }).toLowerCase()}
-      </span>
+    </div>
+  );
+}
+
+// ── the resident — the spirit on the horizon (P5) ────────────────────────────
+
+/** The glass spirit walks the horizon line: soul-steered (wanders when
+ *  energetic, sleeps ON the line at night), celebrate/startle reactions from
+ *  the pet bus, a "needs you" whisper when it's struggling. Click = its room.
+ *  Same perf contract as the workspace overlay: the wander loop mutates the
+ *  wrapper transform directly — zero per-frame renders. */
+function HorizonPet({
+  onOpenPet,
+  confettiKey,
+  showRipple,
+}: {
+  onOpenPet: () => void;
+  confettiKey: number;
+  showRipple: boolean;
+}) {
+  const [soul, setSoul] = useState(loadSoul);
+  useEffect(() => subscribeSoul(setSoul), []);
+  const soulRef = useRef(soul);
+  soulRef.current = soul;
+
+  // metabolism keeps moving while the lock screen is up (no active minutes —
+  // the workspace overlay owns focus/affinity sampling; ticks are idempotent).
+  useEffect(() => {
+    const advance = () => {
+      const next = tick(soulRef.current, { now: Date.now(), isNight: isNightNow() });
+      if (next !== soulRef.current) saveSoul(next);
+    };
+    advance();
+    const t = setInterval(advance, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const [override, setOverride] = useState<{ pose: PetPose; until: number } | null>(null);
+  const playPose = useCallback((pose: PetPose, ms: number) => {
+    setOverride({ pose, until: Date.now() + ms });
+    window.setTimeout(
+      () => setOverride((cur) => (cur && Date.now() >= cur.until ? null : cur)),
+      ms + 40,
+    );
+  }, []);
+  useEffect(
+    () =>
+      subscribePetReactions((r) => {
+        if (r === "celebrate") playPose("celebrate", 2_800);
+        else if (r === "wince") playPose("startled", 2_400);
+      }),
+    [playPose],
+  );
+
+  const [steady, setSteady] = useState<PetPose>(() =>
+    suggestActivity(soulRef.current, { isNight: isNightNow() }),
+  );
+  useEffect(() => {
+    const recompute = () => setSteady(suggestActivity(soulRef.current, { isNight: isNightNow() }));
+    recompute();
+    const t = setInterval(recompute, 30_000);
+    return () => clearInterval(t);
+  }, [soul]);
+  const pose: PetPose = override && Date.now() < override.until ? override.pose : steady;
+  const poseRef = useRef(pose);
+  poseRef.current = pose;
+
+  // wander the line — style-mutating rAF, bounds from the live stage width.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const xRef = useRef(0.62); // fraction of the strip width (starts right of center)
+  const facingRef = useRef<1 | -1>(-1);
+  const [facing, setFacing] = useState<1 | -1>(-1);
+  const pauseUntilRef = useRef(0);
+  // first paint: place the pet from the measured strip width (the inline
+  // style guess uses vw, which drifts from the stage width once the sidebar
+  // is open — one corrective write keeps xRef and the visual in agreement).
+  useEffect(() => {
+    const strip = stripRef.current;
+    const el = elRef.current;
+    if (strip && el) {
+      el.style.transform = `translateX(${xRef.current * Math.max(strip.clientWidth, 1)}px)`;
+    }
+  }, []);
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    const SPEED = 26; // px/s — a lazier stroll than the workspace floor
+    const loop = (t: number) => {
+      const dt = Math.min((t - last) / 1000, 0.05);
+      last = t;
+      const strip = stripRef.current;
+      const el = elRef.current;
+      if (strip && el && poseRef.current === "wander" && t >= pauseUntilRef.current) {
+        const w = Math.max(strip.clientWidth, 1);
+        let x = xRef.current * w + facingRef.current * SPEED * dt;
+        const min = w * 0.03;
+        const max = w * 0.97 - 54;
+        if (x <= min || x >= max) {
+          facingRef.current = (facingRef.current * -1) as 1 | -1;
+          setFacing(facingRef.current);
+          x = Math.max(min, Math.min(max, x));
+        } else if (Math.random() < dt / 8) {
+          // stroll in beats: every ~8s, pause to take the view in
+          pauseUntilRef.current = t + 1_800 + Math.random() * 3_600;
+          if (Math.random() < 0.3) {
+            facingRef.current = (facingRef.current * -1) as 1 | -1;
+            setFacing(facingRef.current);
+          }
+        }
+        xRef.current = x / w;
+        el.style.transform = `translateX(${x}px)`;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const isNight = isNightNow();
+  const mood = moodOf(soul, { isNight });
+  const needsYou = mood === "sick" || mood === "grumpy" || mood === "hungry";
+  const now = Date.now();
+
+  return (
+    <div ref={stripRef} className="absolute inset-x-0 z-[12]" style={{ top: `${HORIZON}%` }}>
+      <div
+        ref={elRef}
+        role="button"
+        tabIndex={0}
+        onClick={onOpenPet}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpenPet())}
+        title={`${mood} — open its room`}
+        className="absolute bottom-0 cursor-pointer"
+        style={{ width: 54, height: 54, transform: "translateX(62vw)" }}
+      >
+        {showRipple && <Ripple />}
+        {needsYou && (
+          <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-2 py-0.5 font-mono text-[9px] text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)]">
+            needs you
+          </span>
+        )}
+        <PetBody
+          size={54}
+          mood={mood}
+          pose={pose}
+          stage={stageOf(soul, now)}
+          flavor={flavorOf(soul, now)}
+          facing={facing}
+        />
+        <Confetti trigger={confettiKey} />
+      </div>
+    </div>
+  );
+}
+
+// ── the working world's furniture ─────────────────────────────────────────────
+
+/** Fireflies — deterministic drift specs (x%, size, stagger, sway). */
+const FLIES: Array<{ x: number; s: number; delay: number; dur: number; sway: number; c: "a" | "b" }> = [
+  { x: 6, s: 3, delay: 0, dur: 11, sway: 26, c: "b" },
+  { x: 15, s: 2, delay: 3.2, dur: 13, sway: -18, c: "a" },
+  { x: 24, s: 2.5, delay: 6.5, dur: 12, sway: 22, c: "b" },
+  { x: 34, s: 2, delay: 1.6, dur: 14, sway: -24, c: "a" },
+  { x: 45, s: 2, delay: 8.4, dur: 12, sway: 16, c: "b" },
+  { x: 55, s: 2.5, delay: 4.8, dur: 13, sway: -20, c: "a" },
+  { x: 66, s: 2, delay: 2.4, dur: 11, sway: 24, c: "b" },
+  { x: 76, s: 2.5, delay: 7.2, dur: 14, sway: -16, c: "b" },
+  { x: 86, s: 2, delay: 5.6, dur: 12, sway: 20, c: "a" },
+  { x: 94, s: 2, delay: 9.6, dur: 13, sway: -22, c: "b" },
+];
+
+/** The ground band's shared pill material — the SAME surface family as the
+ *  command line (border-strong, panel gradient, radius-2xl, pop shadow), so
+ *  dock, shelf and composer read as one scale (owner: "the different sizes
+ *  feel weird"). */
+const GROUND_PILL =
+  "aios-spotlight press group flex items-center gap-2.5 rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-150 hover:-translate-y-0.5 hover:text-[var(--color-text)]";
+
+/** The quick-start dock — exactly the three the owner asked for, cut from
+ *  the command bar's cloth (same height, same material). */
+function LockDock({ onSpawn }: { onSpawn: (kind: AppDef["kind"], label: string) => void }) {
+  const actions: Array<{ label: string; icon: ReactNode; run: () => void }> = [
+    { label: "chat", icon: <Sparkles size={16} />, run: () => onSpawn({ type: "chat" } as AppDef["kind"], "chat") },
+    { label: "terminal", icon: <Terminal size={16} />, run: () => onSpawn({ type: "shell" } as AppDef["kind"], "terminal") },
+    { label: "notes", icon: <Feather size={16} />, run: () => onSpawn({ type: "notes" } as AppDef["kind"], "notes") },
+  ];
+  return (
+    <div className="flex items-center gap-2.5">
+      {actions.map((a) => (
+        <button
+          key={a.label}
+          type="button"
+          onClick={a.run}
+          onMouseMove={spotlightMove}
+          className={`${GROUND_PILL} px-4 py-3 text-[13.5px] text-[var(--color-text-2)]`}
+        >
+          <span className="text-[var(--color-accent)] transition-transform group-hover:scale-110">{a.icon}</span>
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The continue shelf — one compact surface: the resume-layout card, live work
+ *  sessions (with done/remove on hover), then recent projects to fill; the
+ *  footer link overflows into the projects pane. */
+function ContinueShelf({
+  projects,
+  pulse,
+  shapeByRoot,
+  onOpenProject,
+  resumeLayout,
+  onResumeLayout,
+  sessions,
+  onResumeSession,
+  onRemoveSession,
+  onDoneSession,
+  onAllProjects,
+}: {
+  projects: ProjectInfo[];
+  pulse: RepoPulse[];
+  shapeByRoot?: Record<string, string>;
+  onOpenProject: (p: ProjectInfo) => void;
+  resumeLayout?: { count: number; labels: string[] } | null;
+  onResumeLayout?: () => void;
+  sessions?: WorkSession[];
+  onResumeSession?: (s: WorkSession) => void;
+  onRemoveSession?: (id: string) => void;
+  onDoneSession?: (id: string) => void;
+  onAllProjects: () => void;
+}) {
+  const liveSessions = (sessions ?? []).filter((s) => s.status !== "done");
+  const sessionRows = onResumeSession ? liveSessions.slice(0, 2) : [];
+  const slotsLeft = Math.max(0, 4 - sessionRows.length - (resumeLayout && onResumeLayout ? 1 : 0));
+  const projectRows = projects.slice(0, slotsLeft);
+  const pulseFor = (root: string) => pulse.find((r) => r.root === root) ?? null;
+
+  // pills, not a card box (owner: "in pills like the quick actions, and that
+  // projects box is too high") — each row is its own GROUND_PILL, same
+  // material + scale as the dock and the command line.
+  return (
+    <div className="flex flex-col items-stretch gap-2">
+      {resumeLayout && onResumeLayout && (
+        <button
+          type="button"
+          onClick={onResumeLayout}
+          onMouseMove={spotlightMove}
+          title={resumeLayout.labels.join(" · ")}
+          className={`${GROUND_PILL} px-4 py-2.5`}
+        >
+          <History size={15} className="shrink-0 text-[var(--aios-accent-2)]" />
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">
+            pick up where you left off
+          </span>
+          <span className="shrink-0 font-mono text-[9.5px] text-[var(--color-faint)]">
+            {resumeLayout.count} pane{resumeLayout.count === 1 ? "" : "s"}
+          </span>
+        </button>
+      )}
+
+      {sessionRows.map((s) => {
+        const paneCount = s.panes.length + (s.chatSessionIds.length > 0 ? 1 : 0);
+        return (
+          <div key={s.id} onMouseMove={spotlightMove} className={`${GROUND_PILL} pl-4 pr-2 py-2.5`}>
+            <button
+              type="button"
+              onClick={() => onResumeSession?.(s)}
+              title={s.goal || s.title}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            >
+              <History size={15} className="shrink-0 text-[var(--color-accent)]" />
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">
+                {s.title || "work session"}
+              </span>
+              <span className="shrink-0 font-mono text-[9.5px] text-[var(--color-faint)]">
+                {paneCount}p · {ago(Math.floor(s.lastActiveAt / 1000))}
+              </span>
+            </button>
+            <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+              {onDoneSession && (
+                <button
+                  type="button"
+                  onClick={() => onDoneSession(s.id)}
+                  title="mark done"
+                  className="press grid place-items-center rounded-md p-1 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-success)]"
+                >
+                  <Check size={12} />
+                </button>
+              )}
+              {onRemoveSession && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveSession(s.id)}
+                  title="remove"
+                  className="press grid place-items-center rounded-md p-1 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-danger)]"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {projectRows.map((p) => {
+        const repo = pulseFor(p.root);
+        const shape = shapeByRoot?.[p.root];
+        // show WHEN YOU last opened it (the sort key) — fs mtime lies when an
+        // agent has been editing files in there; fall back for never-opened.
+        const openedAt = lastAccessFor(p.root);
+        const drift =
+          repo && (repo.dirty > 0 || repo.ahead > 0 || repo.behind > 0)
+            ? [
+                repo.branch,
+                repo.dirty > 0 ? `${repo.dirty} dirty` : "",
+                repo.ahead > 0 ? `↑${repo.ahead}` : "",
+                repo.behind > 0 ? `↓${repo.behind}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : null;
+        return (
+          <button
+            key={p.root}
+            onClick={() => onOpenProject(p)}
+            onMouseMove={spotlightMove}
+            title={drift ? `open ${p.root}\n${drift}` : `open ${p.root}`}
+            className={`${GROUND_PILL} px-4 py-2.5`}
+          >
+            <FolderGit2 size={15} className="shrink-0 text-[var(--color-accent)]" />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">{p.name}</span>
+            {drift && (
+              <span
+                className={`status-dot shrink-0 ${repo!.dirty > 0 ? "status-dot--idle" : "status-dot--dormant"}`}
+                style={{ width: 6, height: 6 }}
+                aria-label={drift}
+              />
+            )}
+            {shape && (
+              <span
+                className="shrink-0 rounded-[4px] border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] px-1 py-px font-mono text-[8.5px] uppercase tracking-wide text-[var(--color-accent)]"
+                title="structured workspace — opens a component picker"
+              >
+                {shape}
+              </span>
+            )}
+            <span className="shrink-0 font-mono text-[9.5px] text-[var(--color-muted)]">
+              {ago(openedAt || p.mtime)}
+            </span>
+          </button>
+        );
+      })}
+
+      {projectRows.length === 0 && sessionRows.length === 0 && !(resumeLayout && onResumeLayout) && (
+        <div className="px-2 py-2 text-[11.5px] text-[var(--color-faint)]">
+          nothing to pick back up yet — the world is quiet
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onAllProjects}
+        className="press self-end rounded-md px-2 py-0.5 font-mono text-[10px] text-[var(--color-faint)] transition-colors hover:text-[var(--color-text-2)]"
+      >
+        all projects →
+      </button>
     </div>
   );
 }
@@ -679,7 +1112,9 @@ function CommandLine({
   );
 }
 
-// ── relative-time helper ──────────────────────────────────────────────────────
+// ── small shared bits ─────────────────────────────────────────────────────────
+
+/** Relative-time helper. */
 function ago(ts: number): string {
   if (!ts) return "";
   const ms = ts > 1e12 ? ts : ts * 1000;
@@ -692,10 +1127,7 @@ function ago(ts: number): string {
   return `${Math.floor(hh / 24)}d`;
 }
 
-// ── dashboard primitives (Mission Control) ──────────────────────────────────
-
-/** Section eyebrow — a glowing tick + mono label + a fading rule. Sits ABOVE a
- *  glass card, matching the Mission Control mockup. */
+/** Section eyebrow — a glowing tick + mono label + a fading rule. */
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-0.5">
@@ -705,316 +1137,3 @@ function Eyebrow({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-/** Engine → its accent tint for the chat badge/icon (claude=accent, codex=cyan,
- *  opencode=green). Keeps the card colourful instead of flat grey. */
-function engineTint(engine: string): string {
-  const e = (engine || "").toLowerCase();
-  if (e.includes("codex") || e.includes("gpt")) return "var(--aios-accent-2)";
-  if (e.includes("opencode")) return "var(--color-success)";
-  return "var(--color-accent)";
-}
-
-/** "pick up where you left off" — recent durable chats; click resumes the
- *  session in a fresh chat pane. The right column of the dashboard. */
-function MiniHistory({
-  chats,
-  onOpen,
-}: {
-  chats: HistoryEntry[];
-  onOpen: (c: HistoryEntry) => void;
-}) {
-  return (
-    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
-      {chats.length === 0 ? (
-        <div className="px-2 py-3 text-[12px] text-[var(--color-faint)]">no conversations yet</div>
-      ) : (
-        chats.slice(0, 4).map((c) => {
-          const tint = engineTint(c.engine);
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => onOpen(c)}
-              onMouseMove={spotlightMove}
-              title={c.title}
-              className="aios-spotlight group flex items-start gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
-            >
-              <span
-                className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg border"
-                style={{
-                  borderColor: `color-mix(in srgb, ${tint} 32%, transparent)`,
-                  background: `color-mix(in srgb, ${tint} 12%, transparent)`,
-                  color: tint,
-                }}
-              >
-                <History size={12} />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
-                    {c.title || "untitled"}
-                  </span>
-                  <span
-                    className="shrink-0 rounded border px-1 py-0.5 font-mono text-[8.5px] uppercase tracking-wide"
-                    style={{ borderColor: `color-mix(in srgb, ${tint} 38%, transparent)`, color: tint }}
-                  >
-                    {c.engine || "chat"}
-                  </span>
-                </span>
-                {c.last_user && (
-                  <span className="truncate text-[11.5px] text-[var(--color-text-2)]">{c.last_user}</span>
-                )}
-                <span className="font-mono text-[9.5px] text-[var(--color-faint)]">{ago(c.mtime)}</span>
-              </span>
-            </button>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-/** "Continue working" — recent Work Sessions (goal + chat thread + panes). Click
- *  restores the deck + re-threads the chat. Replaces the recent-chats column when
- *  any session exists (falls back to that column otherwise). */
-function ContinueWorking({
-  sessions,
-  onResume,
-  onRemove,
-  onDone,
-}: {
-  sessions: WorkSession[];
-  onResume: (s: WorkSession) => void;
-  onRemove?: (id: string) => void;
-  onDone?: (id: string) => void;
-}) {
-  const visible = sessions.filter((s) => s.status !== "done").slice(0, 5);
-  // per-session message count (summed across its bound chats' durable logs) —
-  // a sub-friendly activity readout (no $ cost; meta has no token total).
-  const [msgsById, setMsgsById] = useState<Record<string, number>>({});
-  const metaKey = visible.map((s) => `${s.id}:${s.chatSessionIds.join(",")}`).join("|");
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      visible.map(async (s) => {
-        let msgs = 0;
-        for (const id of s.chatSessionIds) {
-          try {
-            msgs += (await chatHistoryMeta(id)).message_count || 0;
-          } catch {
-            /* no durable log for this chat — skip */
-          }
-        }
-        return [s.id, msgs] as const;
-      }),
-    ).then((pairs) => {
-      if (alive) setMsgsById(Object.fromEntries(pairs.filter(([, n]) => n > 0)));
-    });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metaKey]);
-  return (
-    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
-      {visible.length === 0 ? (
-        <div className="px-2 py-3 text-[12px] text-[var(--color-faint)]">no saved sessions yet</div>
-      ) : (
-        visible.map((s) => {
-          const paneCount = s.panes.length + (s.chatSessionIds.length > 0 ? 1 : 0);
-          const proj = s.projectRoot
-            ? s.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? ""
-            : "";
-          return (
-            <div
-              key={s.id}
-              onMouseMove={spotlightMove}
-              className="aios-spotlight group flex items-center gap-1 rounded-lg border border-transparent pr-1 transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
-            >
-              <button
-                type="button"
-                onClick={() => onResume(s)}
-                title={s.goal || s.title}
-                className="flex min-w-0 flex-1 items-start gap-2.5 px-2 py-1.5 text-left"
-              >
-                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)]">
-                  <History size={12} />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="flex items-center gap-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
-                      {s.title || "work session"}
-                    </span>
-                    {proj && (
-                      <span className="shrink-0 truncate rounded border border-[var(--color-border)] px-1 py-0.5 font-mono text-[8.5px] uppercase tracking-wide text-[var(--color-muted)]">
-                        {proj}
-                      </span>
-                    )}
-                  </span>
-                  {s.goal && (
-                    <span className="truncate text-[11.5px] text-[var(--color-text-2)]">{s.goal}</span>
-                  )}
-                  <span className="font-mono text-[9.5px] text-[var(--color-faint)]">
-                    {paneCount} pane{paneCount === 1 ? "" : "s"}
-                    {msgsById[s.id] ? ` · ${msgsById[s.id]} msg${msgsById[s.id] === 1 ? "" : "s"}` : ""} ·{" "}
-                    {ago(Math.floor(s.lastActiveAt / 1000))}
-                  </span>
-                </span>
-              </button>
-              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                {onDone && (
-                  <button
-                    type="button"
-                    onClick={() => onDone(s.id)}
-                    title="mark done — archive from this list"
-                    className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-success)]"
-                  >
-                    <Check size={13} />
-                  </button>
-                )}
-                {onRemove && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(s.id)}
-                    title="remove from continue-working"
-                    className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-danger)]"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-// ── recent projects ────────────────────────────────────────────────────────────
-
-function RecentProjects({
-  projects,
-  pulse,
-  onOpen,
-  shapeByRoot,
-}: {
-  projects: ProjectInfo[];
-  /** git summary for these roots — already polled by IdleDashboard; rows
-   *  surface it as a status dot (it used to be only a footer count). */
-  pulse: RepoPulse[];
-  onOpen: (p: ProjectInfo) => void;
-  /** root → shape label for structured workspaces (split/environments); a hint
-   *  chip that signals "opening this offers a component picker". */
-  shapeByRoot?: Record<string, string>;
-}) {
-  const pulseFor = (root: string) => pulse.find((r) => r.root === root) ?? null;
-  return (
-    <div className="surface-card flex flex-col gap-0.5 rounded-2xl p-2.5">
-      {projects.length === 0 ? (
-        <div className="px-1 py-1.5 text-[12px] text-[var(--color-faint)]">no projects yet — add a scan root in settings</div>
-      ) : (
-        projects.map((p) => {
-          const repo = pulseFor(p.root);
-          const shape = shapeByRoot?.[p.root];
-          const drift =
-            repo && (repo.dirty > 0 || repo.ahead > 0 || repo.behind > 0)
-              ? [
-                  repo.branch,
-                  repo.dirty > 0 ? `${repo.dirty} dirty` : "",
-                  repo.ahead > 0 ? `↑${repo.ahead}` : "",
-                  repo.behind > 0 ? `↓${repo.behind}` : "",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : null;
-          return (
-            <button
-              key={p.root}
-              onClick={() => onOpen(p)}
-              onMouseMove={spotlightMove}
-              title={drift ? `open terminal in ${p.root}\n${drift}` : `open terminal in ${p.root}`}
-              className="aios-spotlight group flex items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:bg-[var(--color-panel-2)]"
-            >
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)]">
-                <FolderGit2 size={12} />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
-                {p.name}
-              </span>
-              {drift && (
-                <span
-                  className={`status-dot shrink-0 ${repo!.dirty > 0 ? "status-dot--idle" : "status-dot--dormant"}`}
-                  style={{ width: 6, height: 6 }}
-                  aria-label={drift}
-                />
-              )}
-              {shape ? (
-                <span
-                  className="shrink-0 rounded-[4px] border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-[var(--color-accent)]"
-                  title="structured workspace — opens a component picker"
-                >
-                  {shape}
-                </span>
-              ) : (
-                <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[color-mix(in_srgb,var(--color-accent)_65%,var(--color-faint))]">{p.kind}</span>
-              )}
-              <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">{ago(p.mtime)}</span>
-            </button>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-// ── quick actions ──────────────────────────────────────────────────────────────
-
-function QuickActions({
-  onSpawn,
-  onOpenPalette,
-  onRevealSidebar,
-  onResumeLast,
-  resumeLabel,
-}: {
-  onSpawn: (kind: AppDef["kind"], label: string) => void;
-  onOpenPalette: () => void;
-  onRevealSidebar: () => void;
-  onResumeLast?: () => void;
-  resumeLabel?: string;
-}) {
-  const actions: Array<{ label: string; hint: string; icon: ReactNode; run: () => void; title?: string }> = [
-    { label: "new chat", hint: "ask aios", icon: <Sparkles size={17} />, run: () => onSpawn({ type: "chat" }, "chat") },
-    { label: "terminal", hint: "shell", icon: <Terminal size={17} />, run: () => onSpawn({ type: "shell" }, "terminal") },
-    { label: "files", hint: "browse", icon: <FolderGit2 size={17} />, run: () => onSpawn({ type: "files" } as AppDef["kind"], "files") },
-    { label: "browser", hint: "web", icon: <Globe size={17} />, run: () => onSpawn({ type: "browser" } as AppDef["kind"], "browser") },
-    { label: "history", hint: "resume", icon: <History size={17} />, run: () => onSpawn({ type: "history" } as AppDef["kind"], "history") },
-  ];
-  // unused-prop guard: these still feed other entry points; keep them referenced.
-  void onOpenPalette;
-  void onRevealSidebar;
-  void onResumeLast;
-  void resumeLabel;
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {actions.map((action) => (
-        <button
-          key={action.label}
-          type="button"
-          onClick={action.run}
-          onMouseMove={spotlightMove}
-          title={action.title}
-          className="aios-spotlight surface-card group flex flex-col gap-2.5 rounded-2xl p-3.5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--color-accent)_40%,transparent)] hover:shadow-[var(--aios-glow-soft)]"
-        >
-          <span className="grid h-9 w-9 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] transition-transform group-hover:scale-105">
-            {action.icon}
-          </span>
-          <span className="text-[13px] font-medium text-[var(--color-text)]">{action.label}</span>
-          <span className="font-mono text-[9.5px] text-[var(--color-faint)]">{action.hint}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-

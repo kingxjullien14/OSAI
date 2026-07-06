@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="docs/cover/cover.png" alt="AIOS — one native window to drive your AI coding agents" width="100%" />
+<img src="docs/screenshots/lockscreen.png" alt="OSAI — the Horizon lock screen: a living landscape with a clock, your projects, and a resident spirit" width="100%" />
 
 <br /><br />
 
-# AIOS
+# OSAI
 
 **The superapp for driving AI coding agents — one native window.**
 
@@ -26,6 +26,9 @@ a push-to-talk conductor that builds your workspace from a sentence.
 
 <sub>Actively developed — it's the author's daily driver, updated most days.</sub>
 
+<sub>Based on <a href="https://github.com/ferazfhansurie/aios-superapp"><b>Firaz Fhansurie's AIOS</b></a> —
+OSAI is its Windows-first evolution, rebuilt and carried forward by Jul.Nazz.</sub>
+
 </div>
 
 ---
@@ -38,26 +41,28 @@ a push-to-talk conductor that builds your workspace from a sentence.
 
 <br />
 
-AIOS is a desktop **superapp** for driving AI coding agents — a Rust (Tauri v2)
+OSAI is a desktop **superapp** for driving AI coding agents — a Rust (Tauri v2)
 backend and a React + xterm.js frontend fused into a single native window where
 **every pane is a tool**. One codebase, native on **macOS and Windows**.
 
-> **It degrades gracefully.** AIOS runs fine on a plain machine with nothing but a
+> **It degrades gracefully.** OSAI runs fine on a plain machine with nothing but a
 > terminal. No `claude` CLI? The chat pane sits quiet. No multiplexer (`tmux` on
 > macOS/Linux, `psmux` on Windows)? The agent roster is just empty. Nothing
 > errors — missing pieces simply go quiet.
 
 ## 📸 Screenshots
 
-| The deck | Tile everything |
+| One window, every tool | Agent-native chat |
 | --- | --- |
-| ![deck](docs/screenshots/deck.png) | ![grid](docs/screenshots/grid.png) |
-| **Light theme + model picker** | **Embedded browser** |
-| ![light](docs/screenshots/light.png) | ![browser](docs/screenshots/browser.png) |
+| ![workspace](docs/screenshots/workspace.png) | ![chat](docs/screenshots/chat.png) |
+| **⌘K — launch, ask, or resume anything** | **Notes — synced to your own cloud** |
+| ![palette](docs/screenshots/palette.png) | ![notes](docs/screenshots/notes.png) |
+| **The resident — it grows with how you work** | **Light theme — accent + glow are yours** |
+| ![pet](docs/screenshots/pet.png) | ![theming](docs/screenshots/theming.png) |
 
 ## ✨ What's inside
 
-AIOS is built around a **resizable pane grid** — open as many tools as you want,
+OSAI is built around a **resizable pane grid** — open as many tools as you want,
 drag the dividers, maximize, minimize to the sidebar, or fan them all out in a
 Mission-Control-style overview. When nothing's open you land on an **idle
 dashboard**: a bento grid of your usage pulse, recent repos, a memory focus
@@ -188,7 +193,7 @@ into a terminal or chat to insert its shell-quoted path.
 
 <br />
 
-Cast **one native app window** live into an AIOS pane — `ScreenCaptureKit` on
+Cast **one native app window** live into an OSAI pane — `ScreenCaptureKit` on
 macOS, `Windows.Graphics.Capture` on Windows — so you can keep a design tool,
 a simulator, or another app on the deck beside your agents. Pick a window from
 the dropdown; the frame mirrors and tracks as you resize. (Display is shipped;
@@ -242,9 +247,9 @@ locally from your usage data, degrading to quiet zeros when absent.
 
 <br />
 
-- **Bridges** — connection status for every channel AIOS can speak through
+- **Bridges** — connection status for every channel OSAI can speak through
   (WhatsApp and more), detected via process, scheduler, and activity logs.
-- **Plugins / skills** — a catalog of your AIOS skills (parsed from the skill
+- **Plugins / skills** — a catalog of your OSAI skills (parsed from the skill
   index) plus the MCP servers wired into your `~/.claude.json`.
 - **Notifications** — a center for agent + system events, with a **task
   monitor** that can watch an oracle's session and ping you when a task goes idle
@@ -318,7 +323,7 @@ projects), **view**, **actions**, and **app**.
 
 <br />
 
-AIOS updates itself. The in-app updater checks **GitHub Releases** for a newer
+OSAI updates itself. The in-app updater checks **GitHub Releases** for a newer
 **minisign-signed** build, verifies the signature against a pinned public key,
 downloads, installs, and relaunches — surfaced both at boot (quietly) and in
 Settings › software update. See [`RELEASING.md`](./RELEASING.md) for how signed
@@ -338,7 +343,7 @@ release manifests are produced.
   (see [`WINDOWS.md`](./WINDOWS.md) for why).
 - **WebView2** — preinstalled on Windows 11; renders the UI.
 
-**Nice to have** — every one is optional, and AIOS degrades gracefully without it:
+**Nice to have** — every one is optional, and OSAI degrades gracefully without it:
 
 | Add this | To unlock |
 | --- | --- |
@@ -355,7 +360,7 @@ release manifests are produced.
 
 ```bash
 npm install           # install frontend deps
-npx tauri dev         # run AIOS in dev (hot-reload frontend + backend)
+npx tauri dev         # run OSAI in dev (hot-reload frontend + backend)
 npx tauri build       # produce a release bundle (.app / .msi / binary)
 ```
 
@@ -371,17 +376,17 @@ On **Windows**, a helper script wraps the above:
 
 ## ⚙️ Configuration
 
-Everything below is **optional** — AIOS picks sensible defaults and runs with
+Everything below is **optional** — OSAI picks sensible defaults and runs with
 none of it set. Use these env vars only to point it at a non-default layout:
 
 | Variable | What it does | Default / fallback |
 | --- | --- | --- |
-| `AIOS_CLAUDE_BIN` | Override the `claude` CLI path. | resolved from `PATH` |
-| `AIOS_CODEX_BIN` | Override the `codex` CLI path. | resolved from `PATH` |
-| `AIOS_OPENCODE_BIN` | Override the `opencode` CLI path. | resolved from `PATH` |
-| `AIOS_SKILL_INDEX` | Skill index (`_INDEX.md`) for the plugins pane. | `$HOME/.claude/skills/_INDEX.md`, then the first `$HOME/.claude/projects/*/skills/_INDEX.md`. None → empty list. |
-| `AIOS_MEMORY_VAULT` | Markdown memory vault feeding the home-screen memory focus. | `$HOME/.claude/projects/<encoded-$HOME>/memory`, then the first `$HOME/.claude/projects/*/memory`, then `$HOME/.claude/memory`. |
-| `VITE_AIOS_MIRROR_URL` | Cloudflare worker URL for the optional desktop-mirror feature (build-time). | none (mirror dormant) |
+| `OSAI_CLAUDE_BIN` | Override the `claude` CLI path. | resolved from `PATH` |
+| `OSAI_CODEX_BIN` | Override the `codex` CLI path. | resolved from `PATH` |
+| `OSAI_OPENCODE_BIN` | Override the `opencode` CLI path. | resolved from `PATH` |
+| `OSAI_SKILL_INDEX` | Skill index (`_INDEX.md`) for the plugins pane. | `$HOME/.claude/skills/_INDEX.md`, then the first `$HOME/.claude/projects/*/skills/_INDEX.md`. None → empty list. |
+| `OSAI_MEMORY_VAULT` | Markdown memory vault feeding the home-screen memory focus. | `$HOME/.claude/projects/<encoded-$HOME>/memory`, then the first `$HOME/.claude/projects/*/memory`, then `$HOME/.claude/memory`. |
+| `VITE_OSAI_MIRROR_URL` | Cloudflare worker URL for the optional desktop-mirror feature (build-time). | none (mirror dormant) |
 
 > Terminal + oracle sessions share one multiplexer socket, configurable in
 > **Settings → terminal socket** (default `aios`) — `tmux` on macOS/Linux, `psmux`
@@ -408,7 +413,7 @@ src-tauri/      Rust (Tauri v2) backend — #[tauri::command]s across:
   src/            pty · chat · browser · files · memory · oracles · lsp
                   appcast · wincast · monitor · bridges · plugins · device
                   stats · usage · telemetry · diag · proc (no-window spawns)
-  tauri.conf.json app config (name "AIOS", id com.julnazz.aios, window, bundle,
+  tauri.conf.json app config (name "OSAI", id com.julnazz.aios, window, bundle,
                   signed GitHub-Releases updater)
 ```
 
@@ -466,5 +471,5 @@ Shipped and stable today: everything in **What's inside** above. On deck:
 <br />
 <sub>built with <a href="https://tauri.app">Tauri</a> · <a href="https://react.dev">React</a> · <a href="https://rustup.rs">Rust</a> · <a href="https://xtermjs.org">xterm.js</a> · <a href="https://microsoft.github.io/monaco-editor/">Monaco</a> · <a href="https://motion.dev">motion</a></sub>
 <br /><br />
-<sub><b>AIOS</b> — your AI co-founder's command deck.</sub>
+<sub><b>OSAI</b> — your AI co-founder's command deck.</sub>
 </div>

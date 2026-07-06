@@ -100,13 +100,30 @@ pub fn run_mux_quiet(bin: &str, args: &[&str]) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// Applies AIOS's shared session styling on a socket (global, idempotent): mouse
-/// on, plus a `status-left` that shows the session's WINDOW NAME — which we set
-/// to a friendly per-session label (datetime by default, renameable) via
-/// `new-session -n`. The default `[#S]` truncated every `aios-term-*` key to the
-/// same `aios-term`, so panes looked identical; `#W` is the human label instead.
+/// Applies AIOS's shared session styling on a socket (global, idempotent):
+/// mouse ON — copy-mode IS tmux/psmux's scrollback, so `mouse off` killed
+/// wheel scrolling outright (owner-verified live). Right-click paste is
+/// blocked FRONTEND-side instead (TerminalRuntime shields right-button
+/// events from xterm). Plus a `status-left` that shows the WINDOW NAME —
+/// which we set to a friendly per-session label (datetime by default,
+/// renameable) via `new-session -n`. The default `[#S]` truncated every
+/// `aios-term-*` key to the same `aios-term`; `#W` is the human label instead.
 #[cfg(windows)]
 fn apply_mux_style(bin: &str, sock: &str) {
+    apply_mux_style_once(bin, sock);
+    // The first pane after app boot can race the mux SERVER's warm-up: the
+    // `set -g` commands fail quietly and the pane shows the default
+    // olive/yellow status bar (owner-reported "sometimes a yellow strip").
+    // Re-apply once after the server has settled — idempotent + quiet.
+    let (b, s) = (bin.to_string(), sock.to_string());
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(900));
+        apply_mux_style_once(&b, &s);
+    });
+}
+
+#[cfg(windows)]
+fn apply_mux_style_once(bin: &str, sock: &str) {
     run_mux_quiet(bin, &["-L", sock, "set", "-g", "mouse", "on"]);
     run_mux_quiet(bin, &["-L", sock, "set", "-g", "status-left-length", "24"]);
     // Neon Glass status bar — replace tmux's default olive/green with the app's
@@ -378,8 +395,8 @@ pub fn pty_spawn_oracle(
         let tmux = tmux_bin();
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.arg("-c");
-        // enable mouse so the wheel scrolls inside tmux (it owns the alt-screen, so
-        // xterm's own scrollback is bypassed), then attach.
+        // mouse ON: copy-mode is tmux's scrollback — off, the wheel is dead
+        // (owner-verified). Right-click is shielded frontend-side. Then attach.
         cmd.arg(format!(
             "{tmux} -L {sock} set -g mouse on 2>/dev/null; \
              {tmux} -L {sock} set -g status-left-length 24 2>/dev/null; \
@@ -475,7 +492,7 @@ pub fn pty_spawn_terminal(
             }
             let create_refs: Vec<&str> = create.iter().map(String::as_str).collect();
             run_mux_quiet(&psmux, &create_refs);
-            // mouse on so the wheel scrolls inside psmux (it owns the alt-screen).
+            // shared styling (mouse OFF + Neon Glass status bar — see apply_mux_style).
             apply_mux_style(&psmux, &sock);
             // Attach in the PTY via `new-session -A -s <name>`, NOT `attach -t`:
             // psmux's `attach -t` ignores its target and joins the most-recently-
@@ -623,7 +640,11 @@ pub fn pty_spawn_terminal(
         "{create} 2>/dev/null; \
          {tmux} -L {sock} set -g mouse on 2>/dev/null; \
          {tmux} -L {sock} set -g status-left-length 24 2>/dev/null; \
-         {tmux} -L {sock} set -g status-left '[#W] ' 2>/dev/null; \
+         {tmux} -L {sock} set -g status-style 'bg=#0A0713,fg=#8A83A3' 2>/dev/null; \
+         {tmux} -L {sock} set -g status-left '#[fg=#A86BFF,bold][#W] #[default]' 2>/dev/null; \
+         {tmux} -L {sock} set -g status-right-length 40 2>/dev/null; \
+         {tmux} -L {sock} set -g status-right '#[fg=#5C5673]#H  %H:%M#[default]' 2>/dev/null; \
+         {tmux} -L {sock} set -g window-status-current-style 'fg=#3DE8FF,bold' 2>/dev/null; \
          exec {tmux} -L {sock} attach -t {session}"
     ));
     cmdb.env("TERM", "xterm-256color");
@@ -694,7 +715,11 @@ pub fn pty_spawn_tmux(
         cmd.arg(format!(
             "{tmux} -L {socket} set -g mouse on 2>/dev/null; \
              {tmux} -L {socket} set -g status-left-length 24 2>/dev/null; \
-             {tmux} -L {socket} set -g status-left '[#W] ' 2>/dev/null; \
+             {tmux} -L {socket} set -g status-style 'bg=#0A0713,fg=#8A83A3' 2>/dev/null; \
+             {tmux} -L {socket} set -g status-left '#[fg=#A86BFF,bold][#W] #[default]' 2>/dev/null; \
+             {tmux} -L {socket} set -g status-right-length 40 2>/dev/null; \
+             {tmux} -L {socket} set -g status-right '#[fg=#5C5673]#H  %H:%M#[default]' 2>/dev/null; \
+             {tmux} -L {socket} set -g window-status-current-style 'fg=#3DE8FF,bold' 2>/dev/null; \
              exec {tmux} -L {socket} attach -t {session}"
         ));
         cmd.env("TERM", "xterm-256color");

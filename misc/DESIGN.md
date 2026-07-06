@@ -1,6 +1,6 @@
-# AIOS Design System — **Neon Glass**
+# OSAI Design System — **Neon Glass**
 
-The reference every AIOS surface follows. This is the owner's house style (it
+The reference every OSAI surface follows. This is the owner's house style (it
 replaces the earlier "calm/restrained" spec). Tokens live in `src/App.css`; this
 doc is the *why* and *when*.
 
@@ -11,7 +11,7 @@ like it belongs next to the chat — frosted, lit, deliberate.
 
 ## 1. Philosophy — frosted glass, lit by a restrained glow
 
-AIOS is a **dark, futuristic glass console.** Depth comes from *translucency and
+OSAI is a **dark, futuristic glass console.** Depth comes from *translucency and
 light*, not heavy slabs or hard borders.
 
 - **A deep near-black ground.** Everything floats above it.

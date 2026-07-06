@@ -19,6 +19,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChevronDown } from "lucide-react";
 
 export interface PaneMenuAction {
   key: string;
@@ -29,7 +30,10 @@ export interface PaneMenuAction {
   /** render in the danger color (close / destructive). */
   danger?: boolean;
   disabled?: boolean;
-  onSelect: () => void;
+  /** inline submenu: clicking the row expands these beneath it instead of
+   *  selecting (e.g. "Open in chat ▸" → one row per open conversation). */
+  children?: PaneMenuAction[];
+  onSelect?: () => void;
 }
 
 export type PaneMenuEntry = PaneMenuAction | { key: string; separator: true };
@@ -67,6 +71,8 @@ export function PaneMenu({
     .map((e, i) => (isAction(e) && !e.disabled ? i : -1))
     .filter((i) => i >= 0);
   const [hi, setHi] = useState<number>(-1);
+  // key of the item whose inline submenu is expanded (one at a time).
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -83,7 +89,7 @@ export function PaneMenu({
     top = Math.max(top, pad);
     setPos({ left, top });
     setReady(true);
-  }, [x, y, align]);
+  }, [x, y, align, expanded]);
 
   useEffect(() => {
     const onPointer = (e: PointerEvent) => {
@@ -111,8 +117,12 @@ export function PaneMenu({
         const it = items[hi];
         if (it && isAction(it) && !it.disabled) {
           e.preventDefault();
-          it.onSelect();
-          onClose();
+          if (it.children?.length) {
+            setExpanded((cur) => (cur === it.key ? null : it.key));
+          } else {
+            it.onSelect?.();
+            onClose();
+          }
         }
       }
     };
@@ -138,22 +148,28 @@ export function PaneMenu({
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top, visibility: ready ? "visible" : "hidden" }}
-      className="scale-in fixed z-[300] min-w-[188px] max-w-[280px] overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-1 shadow-[var(--aios-shadow-pop)] backdrop-blur-2xl"
+      className="scale-in fixed z-[300] max-h-[70vh] min-w-[188px] max-w-[280px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-1 shadow-[var(--aios-shadow-pop)] backdrop-blur-2xl [scrollbar-width:thin]"
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((e, i) =>
         !isAction(e) ? (
           <div key={e.key} className="mx-1 my-1 h-px bg-[var(--color-border)]" />
         ) : (
+          <div key={e.key}>
           <button
-            key={e.key}
             type="button"
             role="menuitem"
+            aria-haspopup={e.children?.length ? "menu" : undefined}
+            aria-expanded={e.children?.length ? expanded === e.key : undefined}
             disabled={e.disabled}
             onMouseEnter={() => setHi(i)}
             onClick={() => {
               if (e.disabled) return;
-              e.onSelect();
+              if (e.children?.length) {
+                setExpanded((cur) => (cur === e.key ? null : e.key));
+                return;
+              }
+              e.onSelect?.();
               onClose();
             }}
             className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors disabled:pointer-events-none disabled:opacity-40 ${
@@ -175,7 +191,39 @@ export function PaneMenu({
             )}
             <span className="flex-1 truncate">{e.label}</span>
             {e.hint && <span className="font-mono text-[10px] text-[var(--color-faint)]">{e.hint}</span>}
+            {e.children != null && e.children.length > 0 && (
+              <ChevronDown
+                size={12}
+                className={`shrink-0 text-[var(--color-faint)] transition-transform ${
+                  expanded === e.key ? "" : "-rotate-90"
+                }`}
+              />
+            )}
           </button>
+          {/* inline submenu — indented children under their parent */}
+          {e.children != null && e.children.length > 0 && expanded === e.key && (
+            <div className="my-0.5 ml-4 flex flex-col border-l border-[var(--color-border)] pl-1">
+              {e.children.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  role="menuitem"
+                  disabled={c.disabled}
+                  onClick={() => {
+                    if (c.disabled) return;
+                    c.onSelect?.();
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
+                >
+                  {c.icon != null && <span className="text-[var(--color-muted)]">{c.icon}</span>}
+                  <span className="flex-1 truncate">{c.label}</span>
+                  {c.hint && <span className="font-mono text-[10px] text-[var(--color-faint)]">{c.hint}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          </div>
         ),
       )}
     </div>,

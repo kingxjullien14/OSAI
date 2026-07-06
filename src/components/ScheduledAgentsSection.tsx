@@ -150,14 +150,16 @@ export function ScheduledAgentsSection({
 
   if (iconsOnly) {
     return (
-      <div className="flex flex-col items-center gap-1 border-t border-[var(--color-border)] pt-2">
+      <div className="flex flex-col items-center gap-1 pt-1">
+        {/* soft hairline — matches the icon-rail space dividers (W1.6) */}
+        <div className="mb-1 h-px w-8 bg-[var(--color-border)]" />
         <button
           type="button"
           onClick={onOpenOverview}
           className="grid h-8 w-8 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
           title="open agents"
         >
-          <MessageSquare size={14} />
+          <MessageSquare size={18} />
         </button>
         {!collapsed &&
           rows.map((row) => (
@@ -183,9 +185,9 @@ export function ScheduledAgentsSection({
             event.preventDefault();
             create();
           }}
-          className="mb-1 flex flex-col gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-pane)] p-2"
+          className="mb-1 flex flex-col gap-1.5 rounded-xl border border-[var(--color-accent)]/35 bg-[color-mix(in_srgb,var(--color-panel-2)_60%,transparent)] p-2.5 backdrop-blur-md"
         >
-          <div className="text-[9.5px] uppercase tracking-wider text-[var(--color-faint)]">start from a template</div>
+          <div className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">start from a template</div>
           {templateChips}
           <div className="my-0.5 h-px bg-[var(--color-border)]" />
           <input
@@ -193,14 +195,14 @@ export function ScheduledAgentsSection({
             value={draftName}
             onChange={(event) => setDraftName(event.target.value)}
             placeholder="agent name"
-            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            className="rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 text-[11.5px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
           />
           <textarea
             value={draftPrompt}
             onChange={(event) => setDraftPrompt(event.target.value)}
             placeholder="what should it do each run? (the prompt) — e.g. summarize today's git activity"
             rows={3}
-            className="resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            className="resize-y rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 text-[11.5px] leading-relaxed text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
           />
           <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-muted)]">
             <span className="shrink-0">runs</span>
@@ -208,7 +210,7 @@ export function ScheduledAgentsSection({
               value={cadenceMode}
               onChange={(event) => setCadenceMode(event.target.value as CadenceMode)}
               title="a cadence makes the agent pulse on its own in a background chat (with a clickable notification); 'manual' = run on demand"
-              className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-1.5 py-1 text-[11px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
             >
               <option value="manual">manual (run on demand)</option>
               <option value="hourly">hourly</option>
@@ -222,7 +224,7 @@ export function ScheduledAgentsSection({
               value={draftCustomCadence}
               onChange={(event) => setDraftCustomCadence(event.target.value)}
               placeholder="every 30 min · every 2 hours · every 3 days"
-              className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+              className="rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 text-[11px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
             />
           )}
           <input
@@ -230,19 +232,19 @@ export function ScheduledAgentsSection({
             onChange={(event) => setDraftCwd(event.target.value)}
             placeholder="working directory (optional — defaults to home)"
             spellCheck={false}
-            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono text-[10.5px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            className="rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 font-mono text-[10.5px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]/60"
           />
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="rounded px-2 py-1 text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+              className="rounded-md px-2 py-1 text-[10px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
             >
               cancel
             </button>
             <button
               type="submit"
-              className="rounded bg-[var(--color-accent)] px-2 py-1 text-[10px] font-medium text-[var(--color-bg)] disabled:opacity-50"
+              className="press rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
               disabled={!draftName.trim()}
             >
               create
@@ -251,7 +253,7 @@ export function ScheduledAgentsSection({
         </form>
       )}
       {rows.length === 0 && !creating ? (
-        <div className="flex flex-col gap-1.5 rounded-md border border-dashed border-[var(--color-border)] px-2 py-2">
+        <div className="flex flex-col gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-2">
           <div className="text-[10.5px] text-[var(--color-faint)]">
             recurring AI tasks — start from a template:
           </div>
@@ -368,25 +370,28 @@ function AgentRow({
     return () => clearTimeout(t);
   }, [confirmRemove]);
   return (
-    <div className="group relative flex min-w-0 items-center rounded-md transition-colors hover:bg-[var(--color-panel-2)]">
+    <div className="group relative flex min-w-0 items-center rounded-lg border border-transparent transition-all duration-150 hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)]">
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+        className="flex min-w-0 flex-1 items-center gap-2 py-1 pl-1.5 pr-1 text-left"
         title={`${controlLabel} ${row.label} chatpane · ${cadenceLine}`}
       >
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: healthColor(row.health) }} />
+        {/* icon chip — same family as tool/oracle rows (W1.6); the health dot
+            sits inside the chip, cadence moved into the subtitle. */}
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+          <span className="h-2 w-2 rounded-full" style={{ background: healthColor(row.health) }} />
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] text-[var(--color-text-2)] group-hover:text-[var(--color-text)]">
+          <span className="block truncate text-[12.5px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
             {row.label}
           </span>
-          <span className="block truncate font-mono text-[9.5px] text-[var(--color-faint)]">
-            {row.currentJob}
+          <span className="block truncate font-mono text-[10px] text-[var(--color-faint)]">
+            {row.primaryMetric} · {row.currentJob}
           </span>
         </span>
-        <span className="shrink-0 font-mono text-[9.5px] text-[var(--color-muted)]">{row.primaryMetric}</span>
         <span
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-pane)] px-1.5 font-mono text-[9.5px]"
+          className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2 font-mono text-[9.5px]"
           style={{ color: controlColor }}
         >
           <MessageSquare size={10} />

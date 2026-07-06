@@ -133,6 +133,15 @@ function appendAssistantDelta(
     turns[idx] = { ...turn, text: turn.text + text, streaming: true };
     return { ...state, turns };
   }
+  // self-heal: the id ref can desync from the turn list under very fast local
+  // streams (owner-reported mid-sentence splits on LM Studio) — if the tail is
+  // still a LIVE assistant turn, it IS this stream; keep appending there
+  // instead of splitting the sentence into a second bubble.
+  const last = turns[turns.length - 1];
+  if (last?.kind === "assistant" && last.streaming) {
+    turns[turns.length - 1] = { ...last, text: last.text + text, streaming: true };
+    return { ...state, turns, streamingTurnId: last.id };
+  }
   const nextId = options.uid();
   turns.push({ kind: "assistant", id: nextId, text, streaming: true });
   return { ...state, turns, streamingTurnId: nextId };
@@ -166,6 +175,11 @@ function reduceAssistantEvent(
   const parentId =
     typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
   for (const block of ev.message?.content ?? []) {
+    // Sub-agent PROSE/THINKING stays inside the sub-agent: its final report
+    // arrives as the Task's tool_result, and the fleet strip narrates progress.
+    // Without this guard every sub-agent sentence rendered as a main-transcript
+    // bubble (owner-reported: fan-outs looked like the agent talking to itself).
+    if (parentId && (block.type === "text" || block.type === "thinking")) continue;
     if (block.type === "text") {
       const full = (block.text ?? "").trim();
       if (full && next.streamingTurnId == null) {
@@ -173,15 +187,32 @@ function reduceAssistantEvent(
         // assistant message as a SECOND `assistant` event after the first one
         // already cleared streamingTurnId — without this guard that repeat
         // renders a duplicate identical bubble. Drop it if the last assistant
-        // turn already holds this exact text.
-        const lastAssistant = [...turns]
-          .reverse()
-          .find((t) => t.kind === "assistant");
-        const isDuplicate =
-          lastAssistant?.kind === "assistant" &&
-          lastAssistant.text.trim() === full;
-        if (!isDuplicate) {
-          turns.push({ kind: "assistant", id: options.uid(), text: full, streaming: false });
+        // turn already holds this exact text. GENERALIZED for streamed
+        // fragments (API tier): if the TRAILING assistant turns concatenate to
+        // exactly this text, they are the streamed halves of THIS message —
+        // coalesce them into one settled turn instead of appending a dupe.
+        let firstTrailing = turns.length;
+        while (firstTrailing > 0 && turns[firstTrailing - 1].kind === "assistant") {
+          firstTrailing--;
+        }
+        const trailing = turns.slice(firstTrailing) as Extract<
+          ChatTurn,
+          { kind: "assistant" }
+        >[];
+        const concat = trailing.map((t) => t.text).join("").trim();
+        if (trailing.length > 1 && concat === full) {
+          turns.splice(firstTrailing, trailing.length, {
+            kind: "assistant",
+            id: trailing[0].id,
+            text: full,
+            streaming: false,
+          });
+        } else {
+          const lastAssistant = trailing[trailing.length - 1];
+          const isDuplicate = lastAssistant != null && lastAssistant.text.trim() === full;
+          if (!isDuplicate) {
+            turns.push({ kind: "assistant", id: options.uid(), text: full, streaming: false });
+          }
         }
       }
     }
@@ -329,6 +360,13 @@ export function reduceChatStreamEvent(
     const blocks = Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
     if (blocks.some((b) => b?.type === "tool_result")) {
       return { handled: true, state: reduceToolResultEvent(state, ev) };
+    }
+    // Sub-agent user events (the Task prompt injected into the CHILD's
+    // transcript, tagged parent_tool_use_id) are not the user speaking — the
+    // prompt is already visible in the Task tool card. Rendering them made
+    // fan-outs read as giant phantom "YOU" messages (owner-reported).
+    if (typeof ev.parent_tool_use_id === "string" && ev.parent_tool_use_id) {
+      return { handled: true, state };
     }
     // A text-bearing user event: claude never echoes typed turns live, so this
     // only arrives on a reattach replay (the backend buffers the user's own
@@ -498,6 +536,15 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
       const content = ev.message?.content as unknown;
       const blocks = Array.isArray(content) ? content : [];
       const hasToolResult = blocks.some((b) => b.type === "tool_result");
+      // sub-agent prompt echoes (parent_tool_use_id) are not the user — skip
+      // on replay exactly like live (the Task card carries the prompt).
+      if (
+        !hasToolResult &&
+        typeof (ev as { parent_tool_use_id?: unknown }).parent_tool_use_id === "string" &&
+        (ev as { parent_tool_use_id?: string }).parent_tool_use_id
+      ) {
+        continue;
+      }
       if (!hasToolResult) {
         const text = Array.isArray(content)
           ? blocks

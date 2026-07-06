@@ -1,3 +1,5 @@
+import { loadSettings } from "./settings";
+
 const STORAGE_KEY = "aios.notifications";
 const MAX_NOTIFICATIONS = 200;
 
@@ -219,7 +221,36 @@ export function pushNotification(
     );
   }
   persist([item, ...prior].sort((a, b) => b.ts - a.ts));
+  maybeNativeAlert(item);
   return item;
+}
+
+/** OS-level toast for a fresh notification — the CONSUMER of the settings →
+ *  notifications → "native alerts" mode + quiet toggle (S3: both existed as
+ *  UI but nothing read them). Fires only when the app window is NOT focused
+ *  (in-app, the bell + pane strips already carry it), via the WebView's
+ *  standard Notification API. Best-effort: permission denied / unsupported
+ *  runtimes silently fall back to in-app only. */
+function maybeNativeAlert(item: AiosNotification): void {
+  try {
+    if (typeof Notification === "undefined" || typeof document === "undefined") return;
+    const s = loadSettings();
+    if (s.notificationQuietMode) return;
+    if (s.notificationNativeMode === "off") return;
+    const important =
+      item.level === "error" || item.level === "warning" || item.priority === "high";
+    if (s.notificationNativeMode === "important" && !important) return;
+    if (document.hasFocus()) return;
+    if (Notification.permission === "default") {
+      // ask once, deliver from the NEXT notification on
+      void Notification.requestPermission();
+      return;
+    }
+    if (Notification.permission !== "granted") return;
+    new Notification(item.title, { body: item.body, silent: !important });
+  } catch {
+    /* native alerts are a best-effort nicety */
+  }
 }
 
 /** Pane-scoped notification helper. Maps a pane id + label into a `pane` target

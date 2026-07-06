@@ -246,10 +246,14 @@ export function useUsageRates() {
 
 /** Skeleton shimmer shown during the first usage poll (reduce-motion-safe via
  *  the master guard in App.css). */
-function UsageSkeleton() {
+function UsageSkeleton({ bare = false }: { bare?: boolean }) {
   return (
-    <div className="flex animate-pulse flex-col gap-3 border-t border-[var(--color-border)] pt-3">
-      <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+    <div
+      className={`flex animate-pulse flex-col gap-3 ${bare ? "" : "border-t border-[var(--color-border)] pt-3"}`}
+    >
+      {!bare && (
+        <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+      )}
       {[0, 1].map((i) => (
         <div key={i} className="flex flex-col gap-1.5">
           <div className="h-2 w-12 rounded bg-[var(--color-panel-2)]" />
@@ -261,20 +265,24 @@ function UsageSkeleton() {
   );
 }
 
-/** Sidebar usage section — the narrow stacked claude+codex blocks. */
-export function UsageGlance() {
+/** Sidebar usage section — the narrow stacked claude+codex blocks.
+ *  `bare`: no inner "usage" heading / top border — for hosts that already
+ *  provide a header (the sidebar's usage popover). */
+export function UsageGlance({ bare = false }: { bare?: boolean } = {}) {
   const { claude, codex, hasClaude, hasCodex, loaded } = useUsageRates();
-  if (!loaded) return <UsageSkeleton />; // first poll in flight → shimmer, not blank
+  if (!loaded) return <UsageSkeleton bare={bare} />; // first poll in flight → shimmer, not blank
   if (!hasClaude && !hasCodex)
     // never silently hide — say WHY there's nothing (user-reported: "I can't
     // see my usage limits"). claude's 5h/7d only exist once its statusline
     // hook writes ~/.aios/state/usage.json; codex once its CLI reports.
     return (
       <div
-        className="flex flex-col gap-1 border-t border-[var(--color-border)] pt-3"
+        className={`flex flex-col gap-1 ${bare ? "" : "border-t border-[var(--color-border)] pt-3"}`}
         title={"the 5h/7d windows appear after the engine's first usage report:\nclaude — the aios statusline hook writes ~/.aios/state/usage.json on each tick\ncodex — the CLI pushes its ChatGPT-sub windows"}
       >
-        <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+        {!bare && (
+          <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+        )}
         <span className="text-[10.5px] leading-snug text-[var(--color-faint)]">
           waiting for the first usage report from claude / codex
         </span>
@@ -282,8 +290,10 @@ export function UsageGlance() {
     );
 
   return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-3">
-      <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+    <div className={`flex flex-col gap-3 ${bare ? "" : "border-t border-[var(--color-border)] pt-3"}`}>
+      {!bare && (
+        <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
+      )}
       {hasClaude ? (
         <ProviderBlock
           name="claude"

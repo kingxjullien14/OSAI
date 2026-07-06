@@ -331,6 +331,93 @@ export function subscribeAccent(fn: (a: Accent) => void): () => void {
   return () => accentListeners.delete(fn);
 }
 
+/* ── accent 2 (the "glow") ───────────────────────────────────────────────
+ * The cold companion color — the composer lip, the send CTA, the pet's core,
+ * signature edges (--aios-accent-2 in App.css). Historically a FIXED neon
+ * cyan; now user-settable because some primary accents clash with cyan.
+ * Single-var family (consumers mix their own shades via color-mix), so apply
+ * = one override. Custom hexes share the primary accent's recents row. */
+
+export type Accent2Preset = "cyan" | "teal" | "lime" | "pink" | "gold" | "ice";
+
+export type Accent2 = Accent2Preset | string;
+
+/** preset id → base hex. cyan = the brand default (App.css --aios-accent-2). */
+export const ACCENT2_PRESETS: Record<Accent2Preset, string> = {
+  cyan: "#3de8ff",
+  teal: "#2dd4bf",
+  lime: "#a3e635",
+  pink: "#ff7ad9",
+  gold: "#ffd43b",
+  ice: "#c7d2fe",
+};
+
+/** ordered list for rendering the preset swatch row (cyan = default, first). */
+export const ACCENT2_ORDER: Accent2Preset[] = ["cyan", "teal", "lime", "pink", "gold", "ice"];
+
+const ACCENT2_KEY = "aios.accent2";
+
+const accent2Listeners = new Set<(a: Accent2) => void>();
+
+/** Resolve a stored accent-2 (preset id OR hex) to its base "#rrggbb". */
+export function accent2ToHex(a: Accent2): string {
+  if (a in ACCENT2_PRESETS) return ACCENT2_PRESETS[a as Accent2Preset];
+  return normalizeHex(a) ?? ACCENT2_PRESETS.cyan;
+}
+
+/** True when the stored accent-2 is a custom hex (not one of the presets). */
+export function isCustomAccent2(a: Accent2): boolean {
+  return !(a in ACCENT2_PRESETS);
+}
+
+/** Read the stored accent-2. Defaults to "cyan" (the App.css default). */
+export function getAccent2(): Accent2 {
+  try {
+    const v = localStorage.getItem(ACCENT2_KEY);
+    if (v) {
+      if (v in ACCENT2_PRESETS) return v as Accent2Preset;
+      const hex = normalizeHex(v);
+      if (hex) return hex;
+    }
+  } catch {
+    // ignore — fall through to default.
+  }
+  return "cyan";
+}
+
+/** Override --aios-accent-2 on :root. Cyan (the stylesheet default) clears
+ *  the inline override so a fresh install stays exactly on the App.css value. */
+export function applyAccent2(a: Accent2 = getAccent2()): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement.style;
+  if (a === "cyan") root.removeProperty("--aios-accent-2");
+  else root.setProperty("--aios-accent-2", accent2ToHex(a));
+}
+
+/** Persist + apply an accent-2 (preset id or hex), then notify subscribers. */
+export function setAccent2(a: Accent2): void {
+  let stored: Accent2 = a;
+  if (!(a in ACCENT2_PRESETS)) {
+    const hex = normalizeHex(a);
+    if (!hex) return; // garbage input — ignore.
+    stored = hex;
+    pushRecent(hex);
+  }
+  try {
+    localStorage.setItem(ACCENT2_KEY, stored);
+  } catch {
+    // ignore persistence failures — still apply for this session.
+  }
+  applyAccent2(stored);
+  for (const fn of accent2Listeners) fn(stored);
+}
+
+/** Subscribe to accent-2 changes. Returns an unsubscribe fn. */
+export function subscribeAccent2(fn: (a: Accent2) => void): () => void {
+  accent2Listeners.add(fn);
+  return () => accent2Listeners.delete(fn);
+}
+
 /**
  * Apply on load + keep "system" mode reactive to OS changes.
  * Call once on app startup. Returns a teardown fn.
@@ -338,6 +425,7 @@ export function subscribeAccent(fn: (a: Accent) => void): () => void {
 export function initTheme(): () => void {
   applyTheme();
   applyAccent();
+  applyAccent2();
 
   if (typeof window !== "undefined" && window.matchMedia) {
     systemMql = window.matchMedia("(prefers-color-scheme: dark)");

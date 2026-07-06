@@ -1447,6 +1447,9 @@ pub fn write_text_file(
         }
     }
     let dir = p.parent().ok_or_else(|| "invalid path".to_string())?;
+    // First write into a fresh location (e.g. the notes outbox under
+    // ~/.aios/cache/snc/) shouldn't fail on a missing parent.
+    std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
     let tmp = dir.join(format!(
         ".{}.aios-tmp",
         p.file_name().and_then(|s| s.to_str()).unwrap_or("file")
@@ -1472,6 +1475,56 @@ pub fn delete_path(path: String) -> Result<(), String> {
     }
     std::fs::remove_file(p).map_err(|e| format!("{e}"))?;
     Ok(())
+}
+
+/// Files-pane ops (W7.3). Creation REFUSES to overwrite — the pane's inline
+/// editor is for NEW entries; clobbering an existing file via a name typo
+/// would be silent data loss.
+#[tauri::command]
+pub fn fs_create_file(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if p.exists() {
+        return Err("already exists".into());
+    }
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
+    }
+    std::fs::write(p, b"").map_err(|e| format!("{e}"))
+}
+
+#[tauri::command]
+pub fn fs_create_dir(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if p.exists() {
+        return Err("already exists".into());
+    }
+    std::fs::create_dir_all(p).map_err(|e| format!("{e}"))
+}
+
+/// Rename/move within a volume. Refuses to overwrite an existing target for
+/// the same reason creation does.
+#[tauri::command]
+pub fn fs_rename(from: String, to: String) -> Result<(), String> {
+    let src = std::path::Path::new(&from);
+    let dst = std::path::Path::new(&to);
+    if !src.exists() {
+        return Err("source does not exist".into());
+    }
+    if dst.exists() {
+        return Err("target already exists".into());
+    }
+    std::fs::rename(src, dst).map_err(|e| format!("{e}"))
+}
+
+/// Move a file OR folder to the OS trash (Recycle Bin / macOS Trash) — the
+/// files pane's delete. Recoverable by design; a missing path is a no-op.
+#[tauri::command]
+pub fn fs_trash(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Ok(());
+    }
+    trash::delete(p).map_err(|e| format!("{e}"))
 }
 
 /// Cap on inline text payloads: ~256 KB.

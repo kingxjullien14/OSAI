@@ -2,8 +2,6 @@
  *  AIOS cockpit. Left nav rail + scrollable right panel. Esc / backdrop close.
  *  Every control persists through src/lib/settings.ts. lowercase, terse. */
 import {
-  lazy,
-  Suspense,
   type ComponentType,
   type ReactNode,
   useEffect,
@@ -106,22 +104,29 @@ import {
   subscribe as subscribeSidebar,
 } from "../lib/sidebar";
 import { SPAWN_BY_ID } from "../lib/apps";
+import { spawnPane } from "../lib/paneBus";
+import { listPlugins, type Plugins } from "../lib/plugins";
+import { listBridges, type Channel, type ChannelStatus } from "../lib/bridges";
 
 import {
   type Accent,
+  type Accent2,
   type Theme,
   ACCENT_PRESETS,
   ACCENT_ORDER,
-  accentToHex,
+  ACCENT2_PRESETS,
+  ACCENT2_ORDER,
   getAccent,
+  getAccent2,
   getAccentRecents,
   getTheme,
-  isCustomAccent,
   normalizeHex,
   setAccent,
+  setAccent2,
   setTheme,
   subscribe as subscribeTheme,
   subscribeAccent,
+  subscribeAccent2,
 } from "../lib/theme";
 import {
   reportDiag,
@@ -132,13 +137,13 @@ import {
   type DiagInfo,
 } from "../lib/diag";
 import { invoke, isTauriRuntime } from "../lib/tauri";
+import { refreshModelCatalog } from "../lib/modelCatalog";
+import { applyDynamicCatalog } from "../lib/providers";
 import { API_PROVIDERS, type ApiProviderId } from "../lib/providers";
 import { setApiKey, deleteApiKey, listConfiguredProviders } from "../lib/apiKeys";
 import { checkForUpdate, installUpdate, type UpdatePhase } from "../lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
 
-const BridgesPane = lazy(() => import("./BridgesPane").then((m) => ({ default: m.BridgesPane })));
-const PluginsPane = lazy(() => import("./PluginsPane").then((m) => ({ default: m.PluginsPane })));
 
 /* ── control primitives ─────────────────────────────────────────────── */
 
@@ -146,10 +151,14 @@ const PluginsPane = lazy(() => import("./PluginsPane").then((m) => ({ default: m
 function Row({
   label,
   sub,
+  subClassName,
   children,
 }: {
-  label: string;
+  /** usually a string; nodes allowed for status-dot labels (channels S1). */
+  label: ReactNode;
   sub?: string;
+  /** override the sub line's color (e.g. a live status readout). */
+  subClassName?: string;
   children: ReactNode;
 }) {
   return (
@@ -157,7 +166,7 @@ function Row({
       <div className="min-w-0">
         <div className="text-[13px] text-[var(--color-text)]">{label}</div>
         {sub && (
-          <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-muted)]">
+          <div className={`mt-0.5 text-[11px] leading-snug ${subClassName ?? "text-[var(--color-muted)]"}`}>
             {sub}
           </div>
         )}
@@ -428,14 +437,20 @@ function AccentDot({
 function AccentSwatches({
   value,
   onChange,
+  presets = ACCENT_PRESETS,
+  order = ACCENT_ORDER,
 }: {
-  value: Accent;
-  onChange: (a: Accent) => void;
+  value: string;
+  onChange: (a: string) => void;
+  /** preset table + row order — defaults to the primary accent's; the glow
+   *  row (accent-2) passes its own. Custom hexes share one recents list. */
+  presets?: Record<string, string>;
+  order?: readonly string[];
 }) {
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const custom = isCustomAccent(value);
+  const custom = !(value in presets);
   // current base hex (preset or custom) — drives the picker + hex field.
-  const currentHex = accentToHex(value);
+  const currentHex = presets[value] ?? normalizeHex(value) ?? Object.values(presets)[0]!;
   const [hexDraft, setHexDraft] = useState(currentHex);
   const [recents, setRecents] = useState<string[]>(getAccentRecents);
 
@@ -453,10 +468,10 @@ function AccentSwatches({
   return (
     <div className="flex flex-col items-end gap-2.5">
       <div className="flex items-center gap-2.5">
-        {ACCENT_ORDER.map((a) => (
+        {order.map((a) => (
           <AccentDot
             key={a}
-            hex={ACCENT_PRESETS[a]}
+            hex={presets[a]!}
             active={value === a}
             label={a}
             onClick={() => onChange(a)}
@@ -530,7 +545,7 @@ function AccentSwatches({
           }}
           spellCheck={false}
           maxLength={6}
-          placeholder="f26522"
+          placeholder={Object.values(presets)[0]?.replace(/^#/, "")}
           className="w-[72px] rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2 py-1 font-mono text-[12px] uppercase tracking-wide text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
         />
       </div>
@@ -538,76 +553,102 @@ function AccentSwatches({
   );
 }
 
-/** A live preview card — shows current theme + accent + font scale at a glance.
- *  Instant feedback on every change. */
+/** A live preview card — shows theme + accent + font scale against the app's
+ *  CURRENT anatomy (S2, living-cockpit): a floating window on the ambient
+ *  canvas with a chat line + the composer deck (filament, chips, send orb) —
+ *  not the retired sidebar-grid look. Every color is a live token, so each
+ *  appearance change repaints it instantly. */
 function AppearancePreview({ fontPx }: { fontPx: number }) {
   return (
     <div
-      className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--color-border)" }}
+      className="relative overflow-hidden rounded-xl border"
+      style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}
     >
-      {/* faux titlebar */}
+      {/* ambient canvas */}
       <div
-        className="flex items-center gap-1.5 border-b px-3 py-2"
-        style={{
-          borderColor: "var(--color-border)",
-          background: "var(--color-bg)",
-        }}
+        aria-hidden
+        className="pointer-events-none absolute -left-8 -top-10 h-28 w-28 rounded-full opacity-25 blur-2xl"
+        style={{ background: "var(--color-accent)" }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-12 -right-6 h-28 w-28 rounded-full opacity-[0.18] blur-2xl"
+        style={{ background: "var(--aios-accent-2)" }}
+      />
+      {/* a second window peeking behind — the workspace has depth now */}
+      <div
+        aria-hidden
+        className="absolute right-5 top-6 h-16 w-40 rounded-lg border opacity-50"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-panel)" }}
+      />
+
+      {/* the floating window */}
+      <div
+        className="relative m-4 mr-16 rounded-lg border shadow-[var(--aios-shadow-pop)]"
+        style={{ borderColor: "var(--color-border-strong)", background: "var(--color-pane)" }}
       >
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#ff5f57" }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#febc2e" }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#28c840" }} />
-        <span className="ml-2 text-[10px] text-[var(--color-muted)]">preview</span>
-      </div>
-      {/* faux content */}
-      <div className="flex gap-3 p-3" style={{ background: "var(--color-panel)" }}>
-        <div className="flex flex-col gap-1.5">
-          <span
-            className="rounded-md px-2 py-1 text-[11px]"
-            style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
-          >
-            oracle
-          </span>
-          <span className="px-2 text-[11px] text-[var(--color-muted)]">files</span>
-          <span className="px-2 text-[11px] text-[var(--color-muted)]">memory</span>
-        </div>
         <div
-          className="flex-1 rounded-lg border p-2.5"
-          style={{
-            borderColor: "var(--color-border)",
-            background: "var(--color-bg)",
-          }}
+          className="flex items-center gap-1.5 border-b px-2.5 py-1.5"
+          style={{ borderColor: "var(--color-border)" }}
         >
-          <p
-            className="font-mono leading-relaxed text-[var(--color-text)]"
-            style={{ fontSize: fontPx }}
-          >
-            <span style={{ color: "var(--color-accent)" }}>prompt</span>
-            <span className="text-[var(--color-muted)]"> ❯ </span>
-            ship it.
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-success)" }} />
+          <span className="font-mono text-[9.5px] text-[var(--color-muted)]">chat</span>
+          <span className="ml-auto font-mono text-[9px] tracking-widest text-[var(--color-faint)]">
+            – ⤢ ✕
+          </span>
+        </div>
+
+        <p className="px-3 pt-2.5 leading-relaxed text-[var(--color-text-2)]" style={{ fontSize: fontPx }}>
+          <span style={{ color: "var(--color-accent)" }}>◆ </span>
+          windows glide, menus stay solid.{" "}
+          <span style={{ background: "var(--color-selection)" }}>selected text</span> looks like
+          this.
+        </p>
+
+        {/* mini composer deck — filament + chips + orb */}
+        <div
+          className="relative m-2.5 rounded-xl border px-2.5 py-2"
+          style={{ borderColor: "var(--color-border-strong)", background: "var(--color-panel)" }}
+        >
+          <span
+            aria-hidden
+            className="absolute inset-x-3 top-0 h-[2px] rounded-full opacity-80"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, var(--color-accent), var(--aios-accent-2), transparent)",
+            }}
+          />
+          <p className="font-mono leading-none text-[var(--color-text)]" style={{ fontSize: fontPx }}>
+            <span style={{ color: "var(--color-accent)" }}>❯</span> ship it
             <span
               className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px]"
               style={{ background: "var(--color-cursor)" }}
             />
           </p>
-          <p
-            className="mt-1.5 leading-relaxed text-[var(--color-text-2)]"
-            style={{ fontSize: fontPx }}
-          >
-            <span style={{ background: "var(--color-selection)" }}>
-              selected text
-            </span>{" "}
-            looks like this.
-          </p>
-          <button
-            className="mt-2.5 rounded-md px-2.5 py-1 text-[11px] font-medium"
-            style={{
-              background: "var(--color-accent)",
-              color: "var(--color-accent-fg)",
-            }}
-          >
-            primary action
-          </button>
+          <div className="mt-2 flex items-center gap-1.5">
+            <span
+              className="rounded-full border px-1.5 py-0.5 font-mono text-[8.5px]"
+              style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+            >
+              model
+            </span>
+            <span
+              className="rounded-full border px-1.5 py-0.5 font-mono text-[8.5px]"
+              style={{
+                borderColor: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
+                color: "var(--color-accent)",
+                background: "var(--color-accent-soft)",
+              }}
+            >
+              plan
+            </span>
+            <span
+              className="ml-auto grid h-5 w-5 place-items-center rounded-full text-[10px] leading-none"
+              style={{ background: "var(--color-accent)", color: "var(--color-accent-fg)" }}
+            >
+              ↑
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -704,8 +745,8 @@ const SECTION_BLURB: Record<SectionId, string> = {
   sidebar: "what shows in the rail, and how it's laid out.",
   notifications: "how panes and background runs are allowed to interrupt you.",
   projects: "the repos the homescreen offers — add, hide, or rename them.",
-  oracles: "defaults for the agents AIOS spawns into terminals.",
-  channels: "bridges to the services AIOS speaks to.",
+  oracles: "defaults for the agents OSAI spawns into terminals.",
+  channels: "bridges to the services OSAI speaks to.",
   plugins: "extensions that add panes and capabilities.",
   diagnostics: "local-first event log — nothing leaves this machine.",
   shortcuts: "every keyboard chord, straight from the live catalog.",
@@ -1417,7 +1458,7 @@ export function ProjectsSection({
       <Card label="scan roots">
         <div className="py-1.5">
           <p className="pb-2 text-[11px] leading-snug text-[var(--color-muted)]">
-            folders AIOS scans for projects — each sub-folder becomes a workspace, its shape
+            folders OSAI scans for projects — each sub-folder becomes a workspace, its shape
             (fullstack · front/back · environments) detected automatically.
           </p>
           {roots.length === 0 && (
@@ -1564,6 +1605,150 @@ export function ProjectsSection({
   );
 }
 
+/* ── plugins + channels summaries (S1, living-cockpit) ──────────────────
+   These sections used to embed their FULL panes inside the modal — foreign
+   chrome, own scrollbars, mismatched layout. Native sections now: a live
+   summary in the house Card/Row system, with the rich pane one click away. */
+
+function PluginsSummarySection({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<Plugins | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    listPlugins()
+      .then(setData)
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, []);
+  const groups = data ? new Set(data.skills.map((sk) => sk.group)).size : 0;
+  const openPane = () => {
+    spawnPane("plugins");
+    onClose();
+  };
+  return (
+    <>
+      <Card label="skills">
+        <Row
+          label={
+            data
+              ? `${data.skills.length} skills · ${groups} group${groups === 1 ? "" : "s"}`
+              : err
+                ? "couldn't read the catalog"
+                : "reading the catalog…"
+          }
+          sub={err ?? "the canonical aios skill catalog — browse + search it in the plugins pane"}
+          subClassName={err ? "text-[var(--color-danger)]" : undefined}
+        >
+          <button onClick={openPane} className={GHOST_BTN}>
+            <Blocks size={13} /> open plugins pane
+          </button>
+        </Row>
+      </Card>
+      <Card label="mcp servers">
+        {data && data.mcps.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 py-2">
+            {data.mcps.map((m) => (
+              <span
+                key={m}
+                className="rounded-md border border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)]"
+              >
+                {m}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="py-2 text-[11px] leading-snug text-[var(--color-faint)]">
+            no mcp servers connected — agents gain tools when a server is configured for the CLI.
+          </p>
+        )}
+      </Card>
+    </>
+  );
+}
+
+const CHANNEL_DOT: Record<ChannelStatus, string> = {
+  connected: "var(--color-success)",
+  disconnected: "var(--color-warning)",
+  soon: "var(--color-faint)",
+};
+
+function ChannelsSummarySection({ onClose }: { onClose: () => void }) {
+  const [channels, setChannels] = useState<Channel[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    listBridges()
+      .then((c) => setChannels(c.bridges))
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, []);
+  const openPane = () => {
+    spawnPane("bridges");
+    onClose();
+  };
+  const live = channels?.filter((c) => c.status !== "soon") ?? [];
+  const soon = channels?.filter((c) => c.status === "soon") ?? [];
+  return (
+    <>
+      <Card label="channels">
+        <Row
+          label={
+            channels
+              ? `${live.length} connector${live.length === 1 ? "" : "s"} · ${
+                  live.filter((c) => c.status === "connected").length
+                } live`
+              : err
+                ? "couldn't read channel status"
+                : "checking channels…"
+          }
+          sub={err ?? "pairing, activity feeds, and per-channel health live in the channels pane"}
+          subClassName={err ? "text-[var(--color-danger)]" : undefined}
+        >
+          <button onClick={openPane} className={GHOST_BTN}>
+            <Radio size={13} /> open channels pane
+          </button>
+        </Row>
+        {live.map((c) => (
+          <Row
+            key={c.id}
+            label={
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: CHANNEL_DOT[c.status] }}
+                />
+                {c.name}
+              </span>
+            }
+            sub={
+              c.status === "connected"
+                ? `connected${c.uptime ? ` · up ${c.uptime}` : ""}${
+                    c.lastActivityAgo ? ` · active ${c.lastActivityAgo} ago` : ""
+                  }`
+                : "known connector — nothing alive right now"
+            }
+          >
+            <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
+              {c.kind}
+            </span>
+          </Row>
+        ))}
+      </Card>
+      {soon.length > 0 && (
+        <Card label="on the way">
+          <div className="flex flex-wrap gap-1.5 py-2">
+            {soon.map((c) => (
+              <span
+                key={c.id}
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-faint)]"
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+        </Card>
+      )}
+    </>
+  );
+}
+
 /* ── main component ─────────────────────────────────────────────────── */
 
 /** Control-plane state mirrored from Rust (control.rs ControlStatus). */
@@ -1629,6 +1814,65 @@ function AgentControlCard() {
  *  (never plaintext), and that provider's models then appear in the composer's
  *  picker. Keys are write-only from here — never read back into the UI. Hidden on
  *  the web shell / builds without the commands. */
+/** The "local" provider's base URL (LM Studio / llama.cpp / vLLM — any
+ *  OpenAI-compatible server). Saving pushes the endpoint to the Rust runtime
+ *  and re-sweeps the model catalog so the server's models appear immediately. */
+function LocalEndpointRow() {
+  const [draft, setDraft] = useState(() => loadSettings().localApiEndpoint);
+  const [busy, setBusy] = useState(false);
+  // sweep readout — the connection stops being a black box (owner ask):
+  // "12 models found" / "no response — is the server running?".
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const commit = () => {
+    const endpoint = draft.trim().replace(/\/+$/, "") || DEFAULT_SETTINGS.localApiEndpoint;
+    setDraft(endpoint);
+    setBusy(true);
+    setNote(null);
+    saveSettings({ localApiEndpoint: endpoint });
+    void invoke("set_local_api_endpoint", { endpoint })
+      .catch(() => {})
+      .then(() => refreshModelCatalog(null, endpoint))
+      .then((cat) => {
+        applyDynamicCatalog(cat?.providers);
+        const n = cat?.providers?.local?.length ?? 0;
+        setNote(
+          n > 0
+            ? { ok: true, text: `${n} model${n === 1 ? "" : "s"} found` }
+            : { ok: false, text: "no response — is the server running?" },
+        );
+      })
+      .catch(() => setNote({ ok: false, text: "sweep failed — restart the app?" }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Row
+      label="local endpoint"
+      sub={
+        note
+          ? note.text
+          : "any OpenAI-compatible server — LM Studio :1234 · llama.cpp :8080 · vLLM. models appear in the picker when the server answers /models"
+      }
+      subClassName={note ? (note.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]") : undefined}
+    >
+      <div className="flex items-center gap-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+          }}
+          placeholder="http://localhost:1234/v1"
+          spellCheck={false}
+          className={`w-[210px] ${FIELD_MONO}`}
+        />
+        <button type="button" disabled={busy} onClick={commit} className={GHOST_BTN}>
+          save
+        </button>
+      </div>
+    </Row>
+  );
+}
+
 function ApiKeysCard() {
   const [configured, setConfigured] = useState<Set<string> | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -1669,6 +1913,7 @@ function ApiKeysCard() {
         A provider's models appear in the composer's model picker once its key is set. Ollama is
         local and needs no key.
       </div>
+      <LocalEndpointRow />
       {keyed.map((p) => {
         const isSet = configured.has(p.id);
         return (
@@ -1747,6 +1992,7 @@ export function Settings({
   useEffect(() => subscribeSidebar(setSidebar), []);
   const [theme, setLocalTheme] = useState<Theme>(getTheme);
   const [accent, setLocalAccent] = useState<Accent>(getAccent);
+  const [accent2, setLocalAccent2] = useState<Accent2>(getAccent2);
   const [density, setLocalDensity] = useState<Density>(getDensity);
 
   // re-sync from store each time the window opens; honor a deep-linked section.
@@ -1757,6 +2003,7 @@ export function Settings({
       setS(loadSettings());
       setLocalTheme(getTheme());
       setLocalAccent(getAccent());
+      setLocalAccent2(getAccent2());
       setLocalDensity(getDensity());
       if (initialSection && NAV.some((n) => n.id === initialSection)) {
         setSection(initialSection as SectionId);
@@ -1768,9 +2015,11 @@ export function Settings({
   useEffect(() => {
     const offT = subscribeTheme(setLocalTheme);
     const offA = subscribeAccent(setLocalAccent);
+    const offA2 = subscribeAccent2(setLocalAccent2);
     return () => {
       offT();
       offA();
+      offA2();
     };
   }, []);
 
@@ -1977,7 +2226,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            AIOS · v1.0.0 · Jul.Nazz
+            OSAI · v2.0.0 · Jul.Nazz
           </div>
         </nav>
 
@@ -1991,18 +2240,10 @@ export function Settings({
             <X size={15} />
           </button>
 
-          {section === "channels" || section === "plugins" ? (
-            // Channels + plugins are full panes (own header + scroll) — render
-            // them full-bleed instead of inside the padded settings rows. Their
-            // header action buttons (refresh / pair) sit top-right where the
-            // settings close-X floats — pad the embedded header so both stay
-            // clickable (the X must never occlude a control).
-            <div className="min-h-0 flex-1 [&_.pane-header]:pr-12">
-              <Suspense fallback={<div className="grid h-full place-items-center font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--color-faint)]">loading pane</div>}>
-                {section === "channels" ? <BridgesPane /> : <PluginsPane />}
-              </Suspense>
-            </div>
-          ) : (
+          {/* S1 (living-cockpit): channels + plugins used to render their FULL
+              panes here — different chrome, mismatched with every other
+              section. They're native Card/Row sections now (live summary, the
+              pane one click away via spawnPane). */}
           <div className="flex-1 overflow-y-auto px-6 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <header className="mb-5">
               <h2 className="text-[18px] font-semibold lowercase tracking-tight text-[var(--color-text)]">
@@ -2051,7 +2292,7 @@ export function Settings({
                     </Row>
                     <Row
                       label="minimize to tray"
-                      sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
+                      sub="closing the window keeps OSAI running in the system tray (a tray icon gives show / quit) instead of quitting"
                     >
                       <Toggle
                         checked={s.minimizeToTray}
@@ -2086,7 +2327,7 @@ export function Settings({
                   <Card label="integrations">
                     <Row
                       label="terminal socket"
-                      sub="private tmux/psmux namespace for AIOS's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
+                      sub="private tmux/psmux namespace for OSAI's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
                     >
                       <input
                         value={s.terminalSocket}
@@ -2166,6 +2407,20 @@ export function Settings({
                         }}
                       />
                     </Row>
+                    <Row
+                      label="glow"
+                      sub="the second neon — composer lip, send orb, the pet's core. pick one that pairs with your accent"
+                    >
+                      <AccentSwatches
+                        value={accent2}
+                        onChange={(a) => {
+                          setAccent2(a);
+                          setLocalAccent2(a);
+                        }}
+                        presets={ACCENT2_PRESETS}
+                        order={ACCENT2_ORDER}
+                      />
+                    </Row>
                   </Card>
 
                   <Card label="preview">
@@ -2202,7 +2457,7 @@ export function Settings({
                         />
                       </div>
                     </Row>
-                    <Row label="density" sub="how tight the cockpit packs">
+                    <Row label="density" sub="how tight the cockpit packs — terminal goes compact + all-mono">
                       <Segmented<Density>
                         value={density}
                         onChange={(d) => {
@@ -2212,6 +2467,7 @@ export function Settings({
                         options={[
                           { value: "comfortable", label: "comfortable" },
                           { value: "compact", label: "compact" },
+                          { value: "terminal", label: "terminal" },
                         ]}
                       />
                     </Row>
@@ -2226,7 +2482,7 @@ export function Settings({
                     </Row>
                     <Row
                       label="composer flash"
-                      sub="ambient motion on the prompt box — calm is minimal, max adds a rotating rim + aurora"
+                      sub="ambient light on the prompt box — calm is minimal, lush lights it from within, max adds drift + a border tide"
                     >
                       <Segmented<FlashLevel>
                         value={s.flashLevel}
@@ -2260,6 +2516,25 @@ export function Settings({
                           applyReduceMotion(v);
                         }}
                       />
+                    </Row>
+                    {/* (the "windowed workspace" toggle retired — windowed IS
+                        the desktop workspace now; compact/mobile web keeps
+                        the stacked grid automatically.) */}
+                  </Card>
+
+                  {/* the pet's switches live here (S4). */}
+                  <Card label="pet">
+                    <Row
+                      label="pet roams the workspace"
+                      sub="the glass spirit wanders the floor, naps at night, celebrates finished runs — grab it, toss it, right-click to care"
+                    >
+                      <Toggle checked={s.petRoam} onChange={(v) => patch({ petRoam: v })} />
+                    </Row>
+                    <Row
+                      label="pet speaks up"
+                      sub="rare useful one-liners — a finished run, an error, usage pace; click the bubble to jump there. quiet mode and sleep silence it"
+                    >
+                      <Toggle checked={s.petVoice} onChange={(v) => patch({ petVoice: v })} />
                     </Row>
                   </Card>
                 </>
@@ -2384,6 +2659,10 @@ export function Settings({
 
               {section === "diagnostics" && <DiagnosticsSection />}
 
+              {section === "plugins" && <PluginsSummarySection onClose={onClose} />}
+
+              {section === "channels" && <ChannelsSummarySection onClose={onClose} />}
+
               {section === "oracles" && (
                 <Card label="agents">
                   <Row
@@ -2452,17 +2731,16 @@ export function Settings({
 
               {section === "about" && (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <img
-                    src="/mascot.png"
-                    alt="aios"
-                    className="h-20 w-20 rounded-2xl object-cover shadow-[var(--aios-glow-soft)]"
-                  />
+                  {/* the OSAI diamond — same mark as the app icon + sidebar */}
+                  <span className="grid h-20 w-20 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)]">
+                    <span className="block h-9 w-9 rotate-45 rounded-[9px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_18px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                  </span>
                   <div>
                     <div className="text-[16px] font-medium text-[var(--color-text)]">
-                      AIOS cockpit
+                      OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v1.0.0 · Jul.Nazz
+                      v2.0.0 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">
@@ -2507,7 +2785,6 @@ export function Settings({
               )}
             </div>
           </div>
-          )}
         </div>
       </m.div>
     </m.div>

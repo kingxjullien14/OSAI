@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AIOS",
+  "productName": "OSAI",
   "version": "../package.json",
-  "identifier": "com.julnazz.aios",
+  "identifier": "com.julnazz.osai",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AIOS",
+        "title": "OSAI",
         "width": 1200,
         "height": 780,
         "minWidth": 900,
@@ -39,8 +39,8 @@
     "publisher": "Jul.Nazz",
     "copyright": "© 2026 Jul.Nazz",
     "category": "DeveloperTool",
-    "shortDescription": "AIOS — your AI co-founder's command deck",
-    "longDescription": "AIOS is a calm, agent-first desktop cockpit: chat, terminal, browser, files, and a code editor working together, driven by your installed AI CLIs (claude / codex / opencode).",
+    "shortDescription": "OSAI — your AI co-founder's command deck",
+    "longDescription": "OSAI is a calm, agent-first desktop cockpit: chat, terminal, browser, files, and a code editor working together, driven by your installed AI CLIs (claude / codex / opencode).",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -64,7 +64,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/kingxjullien14/AIOS-Superapp/releases/latest/download/latest.json"
+        "https://github.com/kingxjullien14/OSAI/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVFMTRGMzE3OTZCREI5QTcKUldTbnViMldGL01VN3BDMGtYY3JNMzYyRWlrWTBZdmNackJiemZUckMzbk9YWnI3Q3BPZXlPS2IK"
     }

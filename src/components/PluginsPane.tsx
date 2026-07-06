@@ -68,7 +68,7 @@ export function PluginsPane() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <p className="mb-3 text-center text-[15px] font-semibold text-[var(--color-text)]">
-          make aios work your way
+          make osai work your way
         </p>
         <div className="mx-auto mb-4 flex max-w-md items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/40 px-3 py-2">
           <Search size={13} className="text-[var(--color-faint)]" />

@@ -266,6 +266,40 @@ fn ollama_models(endpoint: &str) -> Vec<DynamicModel> {
         .collect()
 }
 
+/// Any OpenAI-compatible server (LM Studio, llama.cpp --server, vLLM, LiteLLM)
+/// on the user's `local` endpoint — GET {endpoint}/models, keyless, fail-fast.
+fn local_models(endpoint: &str) -> Vec<DynamicModel> {
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+    let Ok(resp) = reqwest::blocking::Client::builder()
+        // local server: fail fast so a machine without one doesn't stall the sweep
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+        .get(url)
+        .send()
+    else {
+        return Vec::new();
+    };
+    if !resp.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(v) = resp.json::<Value>() else { return Vec::new() };
+    let Some(models) = v.get("data").and_then(|m| m.as_array()) else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id")?.as_str()?.to_string();
+            Some(DynamicModel {
+                id: id.clone(),
+                label: id,
+                context_window: None,
+            })
+        })
+        .collect()
+}
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -273,7 +307,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-fn refresh_sync(ollama_endpoint: Option<String>) -> DynamicCatalog {
+fn refresh_sync(ollama_endpoint: Option<String>, local_endpoint: Option<String>) -> DynamicCatalog {
     let mut providers = HashMap::new();
     let anthropic = anthropic_models();
     if !anthropic.is_empty() {
@@ -296,6 +330,15 @@ fn refresh_sync(ollama_endpoint: Option<String>) -> DynamicCatalog {
     if !ollama.is_empty() {
         providers.insert("ollama".to_string(), ollama);
     }
+    let local = local_models(
+        local_endpoint
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("http://localhost:1234/v1"),
+    );
+    if !local.is_empty() {
+        providers.insert("local".to_string(), local);
+    }
     let mut cat = DynamicCatalog {
         fetched_at: now_secs(),
         providers,
@@ -317,8 +360,11 @@ fn refresh_sync(ollama_endpoint: Option<String>) -> DynamicCatalog {
 /// Best-effort model-catalog sweep (see module docs). Async so the blocking
 /// HTTP rides the worker pool, never a UI-adjacent thread.
 #[tauri::command]
-pub async fn refresh_model_catalog(ollama_endpoint: Option<String>) -> DynamicCatalog {
-    tauri::async_runtime::spawn_blocking(move || refresh_sync(ollama_endpoint))
+pub async fn refresh_model_catalog(
+    ollama_endpoint: Option<String>,
+    local_endpoint: Option<String>,
+) -> DynamicCatalog {
+    tauri::async_runtime::spawn_blocking(move || refresh_sync(ollama_endpoint, local_endpoint))
         .await
         .unwrap_or_default()
 }

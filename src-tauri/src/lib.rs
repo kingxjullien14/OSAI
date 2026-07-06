@@ -24,6 +24,7 @@ mod oracles;
 mod plugins;
 mod proc;
 mod pty;
+mod snc;
 mod stats;
 mod telemetry;
 mod usage;
@@ -70,8 +71,8 @@ fn set_close_to_tray(state: tauri::State<CloseToTray>, enabled: bool) {
 /// SAME handlers the in-React keydown fallback already calls.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
-    // App submenu (the "AIOS" menu) — keep the standard about/quit so ⌘Q works.
-    let app_menu = SubmenuBuilder::new(app, "AIOS")
+    // App submenu (the "OSAI" menu) — keep the standard about/quit so ⌘Q works.
+    let app_menu = SubmenuBuilder::new(app, "OSAI")
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
@@ -316,12 +317,12 @@ pub fn run() {
             // platform; harmless when unused. Soft-fail — a tray that won't
             // build must never block startup.
             let tray_menu = MenuBuilder::new(app.handle())
-                .item(&MenuItemBuilder::with_id("tray_show", "Show AIOS").build(app.handle())?)
+                .item(&MenuItemBuilder::with_id("tray_show", "Show OSAI").build(app.handle())?)
                 .item(&PredefinedMenuItem::separator(app.handle())?)
-                .item(&MenuItemBuilder::with_id("tray_quit", "Quit AIOS").build(app.handle())?)
+                .item(&MenuItemBuilder::with_id("tray_quit", "Quit OSAI").build(app.handle())?)
                 .build()?;
             let mut tray = TrayIconBuilder::with_id("aios-tray")
-                .tooltip("AIOS")
+                .tooltip("OSAI")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -382,6 +383,10 @@ pub fn run() {
             apikeys::aios_delete_api_key,
             apikeys::aios_has_api_key,
             apikeys::aios_list_api_keys,
+            snc::snc_status,
+            snc::snc_configure,
+            snc::snc_disconnect,
+            snc::snc_fetch,
             model_catalog::refresh_model_catalog,
             oracles::list_oracles,
             oracles::list_tmux_sessions,
@@ -408,6 +413,10 @@ pub fn run() {
             files::write_text_file,
             files::file_mtime,
             files::delete_path,
+            files::fs_create_file,
+            files::fs_create_dir,
+            files::fs_rename,
+            files::fs_trash,
             files::convert_office_to_pdf,
             files::save_image_temp,
             files::find_files,
@@ -444,6 +453,7 @@ pub fn run() {
             monitor::monitor_stop,
             monitor::list_monitors,
             chat::chat_start,
+            chat::set_local_api_endpoint,
             chat::chat_send,
             chat::chat_steer,
             chat::chat_interrupt,

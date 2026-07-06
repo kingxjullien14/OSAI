@@ -17,7 +17,10 @@ test("registry is well-formed: unique ids, non-empty endpoints + models", () => 
     assert.ok(!ids.has(p.id), `duplicate provider id ${p.id}`);
     ids.add(p.id);
     assert.ok(p.endpoint.startsWith("http"), `${p.id} endpoint`);
-    assert.ok(p.models.length > 0, `${p.id} has models`);
+    // "local" is the one fully-dynamic provider: its lineup only exists once
+    // the launch sweep hears back from the user's server ({endpoint}/models),
+    // so an empty static floor is CORRECT there — everywhere else it's a bug.
+    if (p.id !== "local") assert.ok(p.models.length > 0, `${p.id} has models`);
     const modelIds = new Set();
     for (const m of p.models) {
       assert.ok(!modelIds.has(m.id), `${p.id} duplicate model ${m.id}`);
@@ -25,10 +28,10 @@ test("registry is well-formed: unique ids, non-empty endpoints + models", () => 
       assert.ok(m.contextWindow > 0, `${p.id}/${m.id} ctx`);
     }
   }
-  // exactly one keyless provider (ollama) in the v1 set.
+  // keyless providers: ollama + the user-endpoint local server (BYOK P1).
   assert.deepEqual(
     API_PROVIDERS.filter((p) => p.keyless).map((p) => p.id),
-    ["ollama"],
+    ["local", "ollama"],
   );
 });
 

@@ -16,11 +16,14 @@ import {
   ArrowLeft,
   ArrowRight,
   Bell,
+  BellRing,
   Bot,
   Camera,
   CheckCheck,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   Code2,
   Database,
@@ -28,13 +31,15 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  Gauge,
   Globe,
-  GripVertical,
   Layers,
+  LayoutGrid,
   Link2,
   Mic,
   Maximize2,
   Minimize2,
+  Minus,
   RotateCw,
   MessageSquare,
   MessageCircle,
@@ -68,6 +73,8 @@ import {
   setWindowFullscreen,
 } from "./lib/browser";
 import { PaneMenu, type PaneMenuEntry } from "./components/PaneMenu";
+import { PetOverlay } from "./components/pet/PetOverlay";
+import type { PetSurface } from "./lib/pet/engine";
 import { AccountMenu } from "./components/AccountMenu";
 import { ShortcutHud } from "./components/ShortcutHud";
 import { Onboarding } from "./components/Onboarding";
@@ -80,6 +87,8 @@ import { ScheduledAgentsSection, type ScheduledAgentChatState } from "./componen
 import { OracleRoster } from "./components/OracleRoster";
 import { PaneErrorBoundary } from "./components/PaneErrorBoundary";
 import { ResizableGrid } from "./components/ResizableGrid";
+import { WindowLayer } from "./components/WindowLayer";
+import { ChatTabStrip } from "./components/ChatTabStrip";
 import { VoiceButton } from "./components/VoiceButton";
 import type { PaneKind } from "./components/TerminalPane";
 import { listen, emit } from "@tauri-apps/api/event";
@@ -139,6 +148,7 @@ import {
   registerSpawnPane,
   onChatBusy,
   setPaneOverlay,
+  paneMenuExtras,
   type SpawnPaneKind,
   type SpawnCtx,
   type PayloadKind,
@@ -161,6 +171,7 @@ import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, fmtChord, isApple } from "./lib/platform";
 import { homeDir, startupOpenPane } from "./lib/fs";
 import { detectProject, scanWorkspaces, type ProjectInfo } from "./lib/run";
+import { touchProjectAccess } from "./lib/projectRecents";
 import {
   type ProjectWorkspace,
   loadProjectWorkspacesStore,
@@ -218,6 +229,12 @@ import {
 } from "./lib/workSessions";
 import { routeControl, type ControlEnvelope, type ControlResult } from "./lib/control";
 import {
+  appendDoc as sncAppendDoc,
+  getDoc as sncGetDoc,
+  listDocs as sncListDocs,
+  saveToNotes as sncSaveToNotes,
+} from "./lib/snc";
+import {
   clearAllNotifications,
   clearNotification,
   listNotifications,
@@ -240,7 +257,6 @@ import {
   toggleHidden,
   setGroup,
   addSpace,
-  renameSpace,
   removeSpace,
   toggleSpaceCollapsed,
   subscribe as subscribeSidebar,
@@ -320,6 +336,27 @@ const INTERACTIVE_SELECTOR = [
   "[data-no-window-drag]",
 ].join(",");
 
+/** Which pet-affinity surface a pane type counts as (living-cockpit P2) —
+ *  the creature's evolution flavor grows from where the owner actually lives. */
+function petSurfaceOf(kind: string | undefined): PetSurface | null {
+  switch (kind) {
+    case "shell":
+    case "oracle":
+    case "tmux":
+      return "terminal";
+    case "chat":
+      return "chat";
+    case "browser":
+      return "browser";
+    case "files":
+      return "files";
+    case "notes":
+      return "notes";
+    default:
+      return null;
+  }
+}
+
 /** Pick the pane kind for opening a file: viewer for media/binaries, else the
  *  code editor. */
 function paneForFile(path: string, name: string): PaneContent {
@@ -363,6 +400,11 @@ function termSessionSuffix(paneKey: string): string {
 // doesn't re-fire its launcher prompt or try to reattach a dead backend id.
 const LAYOUT_KEY = "aios.layout";
 const GRID_TRACK_KEY = "aios.grid.tracks";
+// windowed-workspace geometry (PLAN-odysseus-feel.md W1) — one global layout
+// keyed by pane key; named-workspace snapshots still only carry grid tracks.
+const WINDOW_LAYOUT_KEY = "aios.windows.layout";
+// rail items hidden in windowed mode — the chat tab strip owns "new chat".
+const WINDOWED_HIDDEN_APPS: ReadonlySet<string> = new Set(["chat"]);
 const AGENT_AUDIT_KEY = "aios.agent.audit.v1";
 const AGENT_AUDIT_LIMIT = 200;
 
@@ -586,6 +628,10 @@ function App() {
     [nativeRuntime, mirrorPairing],
   );
   const compactWebLayout = !nativeRuntime && webViewportCompact;
+  // The windowed workspace IS the desktop workspace (PLAN-odysseus-feel.md —
+  // W5 flipped the default, this removed the toggle). Compact/mobile web is
+  // the only surface that still runs the stacked-grid path.
+  const windowedWorkspace = !compactWebLayout;
   // mission-control-style pane overview: fan out every open pane to switch.
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -617,6 +663,71 @@ function App() {
   // terminal/webview state survives — restored from the dock bar.
   const [maximizedKey, setMaximizedKey] = useState<string | null>(null);
   const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
+  // ── windowed-mode chat canvas (PLAN-odysseus-feel.md W1.5) ─────────────────
+  // Chat panes render as ONE rearmost canvas (tools float above); this is the
+  // conversation currently showing there. Panes stay mounted when toggled away
+  // — same state-preserving display:none contract as hiddenKeys.
+  const [canvasChatKey, setCanvasChatKey] = useState<string | null>(null);
+  // The idle dashboard as a lock-screen-style overlay: auto-shown when nothing
+  // is open (not dismissible then), summonable via the chat strip's home button.
+  const [homeOverlay, setHomeOverlay] = useState(false);
+  // bump → WindowLayer tiles all visible windows into an even grid (W2).
+  const [arrangeNonce, setArrangeNonce] = useState(0);
+  // docked side panels reserve canvas room (W2) — px insets per side, fed by
+  // WindowLayer's dock reservations; the chat canvas + its chrome shift over.
+  const [dockInsets, setDockInsets] = useState({ left: 0, right: 0 });
+  // usage moved out of the sidebar footer into a POPOVER anchored to its
+  // trigger (W1.6) — flies out beside the sidebar instead of stealing focus.
+  const [usageOpen, setUsageOpen] = useState<{ left: number; bottom: number } | null>(null);
+  const usageBtnRef = useRef<HTMLButtonElement>(null);
+  const usagePopRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!usageOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setUsageOpen(null);
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (usagePopRef.current?.contains(t) || usageBtnRef.current?.contains(t)) return;
+      setUsageOpen(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [usageOpen]);
+  // A freshly opened conversation takes the canvas (and any pane spawned from
+  // the home overlay dismisses it).
+  const prevChatKeysRef = useRef<string[]>([]);
+  useEffect(() => {
+    const chatKeys = panes.filter((p) => p.kind.type === "chat").map((p) => p.key);
+    const added = chatKeys.filter((k) => !prevChatKeysRef.current.includes(k));
+    prevChatKeysRef.current = chatKeys;
+    if (added.length > 0) setCanvasChatKey(added[added.length - 1]);
+  }, [panes]);
+  const prevPaneCountRef = useRef(0);
+  useEffect(() => {
+    if (panes.length > prevPaneCountRef.current) setHomeOverlay(false);
+    prevPaneCountRef.current = panes.length;
+  }, [panes.length]);
+  // Esc dismisses the summoned home overlay before any other Esc behavior
+  // (capture phase) — lock-screen semantics.
+  useEffect(() => {
+    if (!homeOverlay) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setHomeOverlay(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [homeOverlay]);
   // the pane the user last interacted with — drives the "OPEN" rail highlight +
   // is where dictation / drops route. A ref alone wouldn't re-render the rail.
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -959,7 +1070,11 @@ function App() {
   // offline launch keeps the static catalog + last good sweep.
   useEffect(() => {
     if (!isTauriRuntime()) return;
-    refreshModelCatalogAtLaunch(null); // default local ollama endpoint
+    // push the local-endpoint setting to the backend (chat.rs Local provider)
+    // and sweep with BOTH local endpoints so their live model lists overlay.
+    const localEp = loadSettings().localApiEndpoint;
+    void invoke("set_local_api_endpoint", { endpoint: localEp }).catch(() => {});
+    refreshModelCatalogAtLaunch(null, localEp);
   }, []);
 
   // Provider self-heal: if the configured chat engine's CLI isn't installed but
@@ -1108,6 +1223,11 @@ function App() {
     // Light usage event (kind:"usage") — seeds the "what I use" prioritization.
     // Carries only the pane-type enum, never any argument/label content.
     reportUsage("pane.spawn", kind.type);
+    // Access recency for the lock screen's "continue" shelf: any pane opened
+    // WITH a cwd is a real project touch (terminal-here, chat-here, files).
+    if ("cwd" in kind && typeof kind.cwd === "string" && kind.cwd) {
+      touchProjectAccess(kind.cwd);
+    }
     // EXIT FULLSCREEN ON ANY NEW-PANE SPAWN (R2a FIX 3): if a pane currently owns
     // OS fullscreen / maximize, a freshly-spawned pane would be invisible behind
     // it (the maximized pane fills the window + every other pane deactivates). Drop
@@ -1376,6 +1496,12 @@ function App() {
         case "chat":
           spawn({ type: "chat", cwd: ctx?.cwd }, ctx?.label ?? "chat");
           break;
+        case "plugins":
+          spawn({ type: "plugins" }, ctx?.label ?? "plugins");
+          break;
+        case "bridges":
+          spawn({ type: "bridges" }, ctx?.label ?? "channels");
+          break;
       }
     },
     [spawn],
@@ -1441,9 +1567,15 @@ function App() {
     const active = k ? panes.find((p) => p.key === k) : null;
     if (active?.kind.type === "browser") {
       spawn({ type: "browser" }, "browser");
-    } else {
-      addShell();
+      return;
     }
+    // no context override → the configured default (settings → general →
+    // "default pane type"; S3: the picker existed but ⌘T always spawned a
+    // terminal regardless).
+    const def = loadSettings().defaultPaneType;
+    if (def === "browser") spawn({ type: "browser" }, "browser");
+    else if (def === "files") spawn({ type: "files" }, "files");
+    else addShell();
   }, [activeKey, panes, addShell, spawn]);
   const addOracle = useCallback(
     (identity: string) => spawn({ type: "oracle", identity }, identity),
@@ -1485,9 +1617,23 @@ function App() {
         setClosePrompt(key);
         return;
       }
+      // settings → general → "confirm closing oracle panes" (S3: the toggle
+      // existed but nothing read it). Detach-only in truth — the tmux session
+      // survives — so the confirm is native (window.confirm keeps it
+      // dependency-free and can't be occluded by native webviews).
+      const pane = panes.find((p) => p.key === key);
+      if (
+        pane?.kind.type === "oracle" &&
+        loadSettings().confirmCloseOraclePane &&
+        !window.confirm(
+          `close the "${pane.label}" pane?\n\nthe oracle session keeps running — reattach any time from the roster.`,
+        )
+      ) {
+        return;
+      }
       closePane(key);
     },
-    [closePane],
+    [closePane, panes],
   );
   const resumeChat = useCallback(
     // `findText` (a History-pane search query) makes the resumed pane open its
@@ -1607,6 +1753,9 @@ function App() {
   // workspace (rare) falls back to a plain terminal.
   const openProject = useCallback(
     (p: ProjectInfo) => {
+      // recency touch here too — the workspace-picker path bypasses spawn's
+      // cwd hook until a component actually launches.
+      touchProjectAccess(p.root);
       const ws = projectWorkspaces.find((w) => normRoot(w.root) === normRoot(p.root));
       if (ws) {
         setLaunchWs(ws);
@@ -1676,6 +1825,24 @@ function App() {
       }
     },
     [panes, flash, spawn],
+  );
+
+  // Targeted variant: route into a SPECIFIC chat pane (the files context menu
+  // offers a picker when several conversations are open) and surface it.
+  const routeToChatTarget = useCallback(
+    (paneKey: string, text: string) => {
+      const w = paneWriters.get(paneKey);
+      if (!w) {
+        routeToChat(text);
+        return;
+      }
+      w(text);
+      setCanvasChatKey(paneKey);
+      focusedPane.current = paneKey;
+      setActiveKey(paneKey);
+      flash("→ chat");
+    },
+    [routeToChat, flash],
   );
 
   // Route an image FILE (absolute path) to the active chat as a vision attachment
@@ -2304,7 +2471,7 @@ function App() {
   // The command vocabulary + pure routing live in lib/control.ts; here we supply
   // the handlers. The listener below is INERT until the Rust transport emits.
   const dispatchControl = useCallback(
-    (env: ControlEnvelope): ControlResult =>
+    (env: ControlEnvelope): ControlResult | Promise<ControlResult> =>
       routeControl(env, {
         paneOpen: (content, label) => {
           const kind = content as PaneContent;
@@ -2388,6 +2555,31 @@ function App() {
           );
           return true;
         },
+        // Notes — the owner's Stone & Chisel notebook (Notes × S&C epic, N3).
+        // The agent writes to the SAME cloud library the pane and his phone
+        // read; list returns trimmed metas so replies stay small.
+        notesList: async (opts) => {
+          const rows = await sncListDocs({ q: opts.q, tag: opts.tag });
+          return rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            tags: r.tags,
+            pinned: r.pinned,
+            updatedAt: r.updatedAt,
+          }));
+        },
+        notesRead: async (id) => {
+          const d = await sncGetDoc(id);
+          return { id: d.id, title: d.title, content: d.content, tags: d.tags, updatedAt: d.updatedAt };
+        },
+        notesCreate: async (seed) => {
+          const d = await sncSaveToNotes(seed.content, {
+            title: seed.title,
+            tags: seed.tags ?? ["from-aios", "agent"],
+          });
+          return { id: d.id, title: d.title, updatedAt: d.updatedAt };
+        },
+        notesAppend: (id, text) => sncAppendDoc(id, text),
         paneList: () =>
           panes.map((p) => ({
             key: p.key,
@@ -2415,8 +2607,11 @@ function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<ControlEnvelope>("aios://control", ({ payload }) => {
-      const res = dispatchControlRef.current(payload);
-      void emit("aios://control-reply", { id: payload?.id, ...res }).catch(() => {});
+      // notes verbs resolve async (network) — await before replying so the
+      // agent gets data, not a race. routeControl promises never reject.
+      void Promise.resolve(dispatchControlRef.current(payload)).then((res) =>
+        emit("aios://control-reply", { id: payload?.id, ...res }).catch(() => {}),
+      );
     })
       .then((stop) => {
         if (disposed) stop();
@@ -3049,7 +3244,7 @@ function App() {
         <PanelLeft size={15} />
       </IconBtn>
       <IconBtn title={`Command palette (${chord("K")})`} onClick={() => setPaletteOpen(true)}>
-        <Search size={15} />
+        <Search size={iconsOnly ? 18 : 15} />
       </IconBtn>
       <IconBtn
         title={"Mission Control — show all panes (" + chord("`") + ")"}
@@ -3057,7 +3252,7 @@ function App() {
         active={overviewOpen}
         disabled={panes.length === 0}
       >
-        <Layers size={15} />
+        <Layers size={iconsOnly ? 18 : 15} />
       </IconBtn>
     </div>
   );
@@ -3078,7 +3273,7 @@ function App() {
       <VoiceButton onTranscript={handleTranscript} />
       {isApple && (
         <IconBtn title={`Appshot — screenshot to oracle (${MOD} double-tap)`} onClick={fireAppshot}>
-          <Camera size={15} />
+          <Camera size={iconsOnly ? 18 : 15} />
         </IconBtn>
       )}
       <div className="relative" data-no-window-drag>
@@ -3108,12 +3303,14 @@ function App() {
   // rarely-used desktop-mirror link moved into Settings → general.
   const sidebarActions = (
     <div
-      className={`flex items-center gap-0.5 rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,white_3.5%,transparent)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md ${
-        iconsOnly ? "flex-col" : ""
+      className={`flex items-center gap-0.5 ${
+        iconsOnly
+          ? "flex-col"
+          : "rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,white_3.5%,transparent)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md"
       }`}
     >
       <IconBtn title={`Command palette (${chord("K")})`} onClick={() => setPaletteOpen(true)}>
-        <Search size={15} />
+        <Search size={iconsOnly ? 18 : 15} />
       </IconBtn>
       <IconBtn
         title={"Mission Control — show all panes (" + chord("`") + ")"}
@@ -3121,12 +3318,12 @@ function App() {
         active={overviewOpen}
         disabled={panes.length === 0}
       >
-        <Layers size={15} />
+        <Layers size={iconsOnly ? 18 : 15} />
       </IconBtn>
       <VoiceButton onTranscript={handleTranscript} />
       {isApple && (
         <IconBtn title={`Appshot — screenshot to oracle (${MOD} double-tap)`} onClick={fireAppshot}>
-          <Camera size={15} />
+          <Camera size={iconsOnly ? 18 : 15} />
         </IconBtn>
       )}
       <div className="relative" data-no-window-drag>
@@ -3140,7 +3337,7 @@ function App() {
               : "text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
           }`}
         >
-          <Bell size={15} />
+          <Bell size={iconsOnly ? 18 : 15} />
           {unreadNotifications > 0 && (
             <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--color-danger)] px-1 text-[8px] font-bold leading-none text-[var(--color-bg)]">
               {unreadNotifications > 9 ? "9+" : unreadNotifications}
@@ -3149,6 +3346,43 @@ function App() {
         </button>
       </div>
     </div>
+  );
+
+  // The idle home — grid mode mounts it as the empty state, windowed mode as
+  // the slide-down lock screen. One element, both surfaces.
+  const idleDash = (
+    <IdleDashboard
+      apps={SPAWN}
+      oracles={oracles}
+      projects={projects}
+      sidebar={sidebar}
+      onApplyWorkspace={applyWorkspace}
+      onSpawn={spawn}
+      onAttachOracle={addOracle}
+      onOpenProject={openProject}
+      shapeByRoot={shapeByRoot}
+      onOpenSidebarItem={spawnSidebarItem}
+      onRevealSidebar={() => setSidebarOpen(true)}
+      onOpenScheduledAgents={() => spawn({ type: "scheduled-agents" }, "agents")}
+      onOpenPet={() => spawn({ type: "pet" }, "pet")}
+      onOpenScheduledAgentChat={openScheduledAgentChat}
+      onOpenPalette={() => setPaletteOpen(true)}
+      onResumeLast={chats.length ? () => resumeChat(chats[0]) : undefined}
+      resumeLabel={chats[0]?.title}
+      resumeLayout={resumeLayoutInfo}
+      onResumeLayout={onResumeLayout}
+      // "continue working" removed from the home surface (owner: it dragged the
+      // open animation; the section itself was the suspected culprit). Work
+      // sessions stay resumable via the command palette.
+      workSessions={[]}
+      onResumeSession={resumeWorkSession}
+      onRemoveSession={removeWorkSession}
+      onDoneSession={(id) => setWorkSessionStatus(id, "done")}
+      notifications={notifications}
+      onTalkToJarvis={talkToJarvis}
+      onOpenNotificationTarget={openNotificationTarget}
+      onClearNotification={clearNotification}
+    />
   );
 
   return (
@@ -3181,54 +3415,101 @@ function App() {
       )}
 
       {/* body: sidebar + pane grid */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
+        {/* hidden-sidebar opener — only when the sidebar is fully hidden (⌘B);
+            while the sidebar is visible its OWN edge handle rides the width
+            animation (owner: the lip must move WITH the sidebar). */}
+        {!compactWebLayout && !webMirrorMode && !sidebarOpen && (
+          <button
+            type="button"
+            data-no-window-drag
+            onClick={() => setSidebarOpen(true)}
+            title="Open sidebar"
+            className="group/lip absolute top-1/2 left-0 z-50 grid h-20 w-4 -translate-y-1/2 cursor-pointer place-items-center"
+          >
+            <span className="h-10 w-[3px] rounded-full bg-[var(--color-border)] opacity-50 transition-all duration-200 group-hover/lip:h-16 group-hover/lip:bg-[var(--color-accent)] group-hover/lip:opacity-90" />
+            <span className="absolute grid place-items-center text-[var(--color-text)] opacity-0 transition-opacity duration-200 group-hover/lip:opacity-100">
+              <ChevronRight size={12} />
+            </span>
+          </button>
+        )}
+        {/* inset-shell sidebar (W1.6): no border, no panel — it sits directly
+            on the app canvas while the workspace floats as an inset card to
+            its right (the shadcn "inset" recipe, Neon-Glass flavored). */}
         {sidebarOpen && !compactWebLayout && (
           <aside
-            className={`relative flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_80%,transparent)] backdrop-blur-xl transition-[width] ${
+            className={`relative flex shrink-0 flex-col transition-[width] duration-200 ${
               iconsOnly ? "w-16" : "w-60"
             }`}
           >
-            {/* lit gradient seam — the sidebar's signature accent edge (Neon Glass) */}
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-px bg-gradient-to-b from-transparent via-[color-mix(in_srgb,var(--color-accent)_50%,transparent)] to-transparent" />
+            {/* fold handle — a quiet gutter PIP on the sidebar's own edge
+                (same visual language as the grid gutters): a slim bar that
+                warms + grows on hover, chevron fading in over it. Rides the
+                width transition since it lives inside the aside. */}
+            <button
+              type="button"
+              data-no-window-drag
+              onClick={() => saveSettings({ sidebarMode: iconsOnly ? "full" : "icons" })}
+              title={iconsOnly ? "Expand sidebar" : `Collapse sidebar (hide fully: ${chord("B")})`}
+              className="group/lip absolute top-1/2 -right-2 z-50 grid h-20 w-4 -translate-y-1/2 cursor-pointer place-items-center"
+            >
+              <span className="h-10 w-[3px] rounded-full bg-[var(--color-border)] opacity-50 transition-all duration-200 group-hover/lip:h-16 group-hover/lip:bg-[var(--color-accent)] group-hover/lip:opacity-90" />
+              <span className="absolute grid place-items-center text-[var(--color-text)] opacity-0 transition-opacity duration-200 group-hover/lip:opacity-100">
+                {iconsOnly ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+              </span>
+            </button>
+            {/* ── header: brand (home) + fold toggle — FIXED above the scroll
+                column, always present. The brand diamond is the way home: lock
+                screen in windowed mode, rest-all-panes in grid mode. */}
             <div
-              className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2 ${
-                topBarHidden ? "pt-8" : ""
-              }`}
+              className={`flex shrink-0 items-center ${
+                iconsOnly ? "flex-col gap-1 px-1 py-2" : "justify-between py-2 pr-1.5 pl-2.5"
+              } ${topBarHidden ? "pt-7" : ""}`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  // windowed mode: the home lock screen slides down OVER the
+                  // workspace — nothing needs hiding, nothing to restore.
+                  if (windowedWorkspace) {
+                    setHomeOverlay(true);
+                    return;
+                  }
+                  setMaximizedKey((m) => {
+                    if (m) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
+                    return null;
+                  });
+                  setHiddenKeys(panes.map((p) => p.key));
+                }}
+                title={
+                  windowedWorkspace
+                    ? "home"
+                    : "back to the idle home (panes stay restorable)"
+                }
+                className={`group flex shrink-0 items-center rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--color-panel-2)] ${
+                  iconsOnly ? "justify-center" : "gap-2"
+                }`}
+              >
+                {/* glowing brand diamond — also the way home */}
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
+                  <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                </span>
+                {!iconsOnly && (
+                  <span className="font-mono text-[11px] tracking-[0.16em] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
+                    osai
+                  </span>
+                )}
+              </button>
+            </div>
+            <div
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               {...(iconsOnly
                 ? { onPointerMove: dockMagnifyMove, onPointerLeave: dockMagnifyReset }
                 : {})}
             >
-              {/* home anchor — the brand mark is also the way BACK: one click
-                  rests every pane to the idle home (they stay in the OPEN list
-                  to restore). Previously the only route was hiding panes one
-                  by one. */}
-              {panes.length > 0 && panes.some((p) => !hiddenKeys.includes(p.key)) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMaximizedKey((m) => {
-                      if (m) setWindowFullscreen(false).catch((e) => reportDiag("app.window", e, { action: "exitFullscreen" }));
-                      return null;
-                    });
-                    setHiddenKeys(panes.map((p) => p.key));
-                  }}
-                  title="back to the idle home (panes stay restorable in OPEN)"
-                  className={`group flex shrink-0 items-center rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--color-panel-2)] ${
-                    iconsOnly ? "aios-dock-icon justify-center" : "gap-2"
-                  }`}
-                >
-                  {/* glowing brand diamond — also the way home (rest all panes) */}
-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
-                    <span className="h-2 w-2 rotate-45 rounded-[2px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
-                  </span>
-                  {!iconsOnly && (
-                    <span className="font-mono text-[11px] tracking-[0.16em] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
-                      aios
-                    </span>
-                  )}
-                </button>
-              )}
-              {panes.length > 0 && (
+              {/* OPEN list retired in windowed mode — the chat strip covers
+                  conversations and the canvas tray covers minimized windows. */}
+              {panes.length > 0 && !(windowedWorkspace) && (
                 <OpenPanesList
                   panes={panes}
                   hiddenKeys={hiddenKeys}
@@ -3245,6 +3526,7 @@ function App() {
               <SidebarRail
                 state={sidebar}
                 iconsOnly={iconsOnly}
+                hideAppIds={windowedWorkspace ? WINDOWED_HIDDEN_APPS : undefined}
                 onSpawn={spawnSidebarItem}
                 onPinSite={(spaceId) => setPinSiteSpace(spaceId)}
               />
@@ -3264,14 +3546,41 @@ function App() {
                 }
               />
             </div>
-            <div className="flex flex-col gap-0.5 border-t border-[var(--color-border)] p-2">
-              {/* live 5h/7d usage — pinned to the footer so it's ALWAYS visible
-                  (it used to hide inside the collapsible agents section). */}
-              {!iconsOnly && (
-                <div className="px-1.5 pb-2">
-                  <SidebarUsage />
-                </div>
-              )}
+            <div className="flex flex-col gap-1 p-2">
+              {/* soft hairline instead of a hard border — inset-shell language */}
+              <div className="pointer-events-none mx-1 mb-1 h-px bg-gradient-to-r from-transparent via-[var(--color-border)] to-transparent" />
+              {/* usage lives in a dialog now (W1.6) — one calm trigger instead
+                  of a permanently pinned block. */}
+              <button
+                ref={usageBtnRef}
+                type="button"
+                onClick={(e) => {
+                  if (usageOpen) {
+                    setUsageOpen(null);
+                    return;
+                  }
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setUsageOpen({ left: r.right + 12, bottom: Math.max(8, window.innerHeight - r.bottom) });
+                }}
+                title="usage — 5h/7d windows"
+                className={`press group flex items-center rounded-lg py-1.5 text-[13px] text-[var(--color-text-2)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)] hover:text-[var(--color-text)] ${
+                  iconsOnly ? "justify-center px-0" : "gap-2 px-1.5 text-left"
+                }`}
+              >
+                <span
+                  className={`grid shrink-0 place-items-center transition-colors ${
+                    iconsOnly
+                      ? ""
+                      : "h-8 w-8 rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] group-hover:bg-[var(--color-accent-soft)]"
+                  }`}
+                >
+                  <Gauge
+                    size={18}
+                    className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
+                  />
+                </span>
+                {!iconsOnly && <span className="truncate">usage</span>}
+              </button>
               <div className={`flex pb-1 ${iconsOnly ? "justify-center" : "justify-center px-1.5"}`}>
                 {sidebarActions}
               </div>
@@ -3312,7 +3621,17 @@ function App() {
 
         {/* (resume-layout pill data is computed just above the idle mount — see
             resumeLayoutInfo/onResumeLayout, threaded through IdleDashboard) */}
-        <main className="relative min-h-0 flex-1">
+        {/* the workspace floats as an INSET CARD on the app canvas (W1.6) —
+            rounded, bordered, elevated; the sidebar sits flush beside it. */}
+        <main
+          className={`relative min-h-0 flex-1 ${
+            compactWebLayout
+              ? ""
+              : `my-2 mr-2 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-pane)_92%,transparent)] shadow-[0_18px_50px_-24px_rgba(0,0,0,0.55)] ${
+                  sidebarOpen ? "" : "ml-2"
+                }`
+          }`}
+        >
           {(() => {
             if (webMirrorMode) {
               return (
@@ -3324,59 +3643,39 @@ function App() {
                 />
               );
             }
-            const idleDash = (
-              <IdleDashboard
-                apps={SPAWN}
-                oracles={oracles}
-                projects={projects}
-                sidebar={sidebar}
-                onApplyWorkspace={applyWorkspace}
-                onSpawn={spawn}
-                onAttachOracle={addOracle}
-                onOpenProject={openProject}
-                shapeByRoot={shapeByRoot}
-                onOpenSidebarItem={spawnSidebarItem}
-                onRevealSidebar={() => setSidebarOpen(true)}
-                onOpenScheduledAgents={() => spawn({ type: "scheduled-agents" }, "agents")}
-                onOpenPet={() => spawn({ type: "pet" }, "pet")}
-                onOpenScheduledAgentChat={openScheduledAgentChat}
-                onOpenPalette={() => setPaletteOpen(true)}
-                onResumeLast={chats.length ? () => resumeChat(chats[0]) : undefined}
-                resumeLabel={chats[0]?.title}
-                resumeLayout={resumeLayoutInfo}
-                onResumeLayout={onResumeLayout}
-                workSessions={workSessions}
-                onResumeSession={resumeWorkSession}
-                onRemoveSession={removeWorkSession}
-                onDoneSession={(id) => setWorkSessionStatus(id, "done")}
-                notifications={notifications}
-                onTalkToJarvis={talkToJarvis}
-                onOpenNotificationTarget={openNotificationTarget}
-                onClearNotification={clearNotification}
-              />
-            );
             // No panes at all → idle. If panes exist but ALL are hidden, keep them
             // mounted (state-preserving) in the grid and overlay idle on top — else
             // the grid is all-`display:none` and the screen goes blank.
-            if (panes.length === 0) return idleDash;
-            return (
-              <>
-                {visibleCount === 0 && <div className="absolute inset-0 z-10">{idleDash}</div>}
-            <ResizableGrid cols={cols} rows={rows} gap={8} storageKey={gridTrackStorageKey(GRID_TRACK_KEY, cols, rows)}>
-              {/* popLayout: a closing pane pops OUT of the grid flow (absolute at
-                  its measured rect) and plays the fx exit while the survivors'
-                  track transition glides them into the gap. initial=false keeps
-                  entrances on the CSS fade-in-up (mount-time). */}
-              <AnimatePresence initial={false} mode="popLayout">
-              {panes.map((pane) => {
-                const visibleIndex = panes
-                  .filter((p) => !hiddenKeys.includes(p.key))
-                  .findIndex((p) => p.key === pane.key);
-                const paneStyle =
-                  visibleCount === 3 && visibleIndex === 2
-                    ? ({ gridColumn: "2", gridRow: "1 / span 2" } satisfies CSSProperties)
-                    : undefined;
-                return (
+            // Open conversations — the files menu's "open in chat" picker.
+            const chatPaneTargets = panes
+              .filter((p) => p.kind.type === "chat")
+              .map((p) => ({
+                key: p.key,
+                label:
+                  p.label && p.label !== "chat"
+                    ? p.label
+                    : chatMetaByPaneKey.current.get(p.key)?.title || p.label,
+              }));
+            // One PaneCard builder for BOTH workspace modes — the grid adds its
+            // reorder-drag extras, the window layer swaps the header drag for a
+            // window move and stretches the card to fill its FloatingWindow.
+            const renderPaneCard = (
+              pane: Pane,
+              over: {
+                style?: CSSProperties;
+                reorderable?: boolean;
+                isDragging?: boolean;
+                dropTarget?: boolean;
+                dropZone?: PaneDropZoneKind | null;
+                onPaneDragStart?: (key: string, e: React.PointerEvent<HTMLElement>) => void;
+                /** explicit undefined suppresses the hide/minimize menu item
+                 *  (canvas chats: the tab strip IS their toggle). */
+                onToggleHide?: (() => void) | undefined;
+                hideLabel?: string;
+                frameless?: boolean;
+                onMinimize?: () => void;
+              },
+            ) => (
                 <PaneCard
                   key={pane.key}
                   pane={pane}
@@ -3388,14 +3687,9 @@ function App() {
                   }
                   maximized={maximizedKey === pane.key}
                   hidden={hiddenKeys.includes(pane.key)}
-                  style={paneStyle}
-                  dropTarget={dropTargetKey === pane.key}
-                  dropZone={dropTargetKey === pane.key ? dropZone : null}
                   onClose={() => requestClose(pane.key)}
                   onToggleMax={() => toggleMax(pane.key)}
                   onToggleHide={() => toggleHide(pane.key)}
-                  reorderable={panes.length > 1}
-                  isDragging={dragActiveKey === pane.key}
                   busy={busyChatKeys.has(pane.key)}
                   dimmed={
                     focusSpotlight &&
@@ -3403,7 +3697,6 @@ function App() {
                     maximizedKey === null &&
                     (activeKey ?? focusedPane.current) !== pane.key
                   }
-                  onPaneDragStart={onPaneDragStart}
                   onFocus={() => {
                     focusedPane.current = pane.key;
                     setActiveKey(pane.key);
@@ -3452,8 +3745,200 @@ function App() {
                     )
                   }
                   onVideoFullscreen={(on) => onVideoFullscreen(pane.key, on)}
+                  chatTargets={chatPaneTargets}
+                  onAnnotateTo={routeToChatTarget}
+                  {...over}
                 />
-                );
+            );
+            // ── windowed workspace (beta, PLAN-odysseus-feel.md W1 + W1.5):
+            // chat panes form ONE rearmost canvas (flipped via the tab strip),
+            // every other pane floats above as a draggable/resizable window,
+            // and the idle dashboard is a lock-screen-style overlay. Compact/
+            // mobile keeps the grid.
+            if (windowedWorkspace) {
+              const chatPanes = panes.filter((p) => p.kind.type === "chat");
+              const floatPanes = panes.filter((p) => p.kind.type !== "chat");
+              const usableChats = chatPanes.filter((p) => !hiddenKeys.includes(p.key));
+              const canvasKey = usableChats.some((p) => p.key === canvasChatKey)
+                ? canvasChatKey
+                : (usableChats[usableChats.length - 1]?.key ?? null);
+              return (
+                <>
+                  {/* chat canvas — every conversation stays mounted; toggled-away
+                      ones are display:none (state preserved, same contract as
+                      hiddenKeys). */}
+                  <div
+                    className="absolute inset-y-0 transition-[left,right] duration-200"
+                    style={{ left: dockInsets.left, right: dockInsets.right }}
+                  >
+                    {chatPanes.map((pane) => (
+                      <div
+                        key={pane.key}
+                        className="absolute inset-0"
+                        style={pane.key === canvasKey ? undefined : { display: "none" }}
+                      >
+                        {renderPaneCard(pane, {
+                          style: { width: "100%", height: "100%" },
+                          // full-bleed, shell-less: the strip carries identity
+                          // and controls. Chats also can't hide — the strip is
+                          // their only toggle (hiding orphaned them from it).
+                          frameless: true,
+                          onToggleHide: undefined,
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                  <WindowLayer
+                    paneKeys={floatPanes.map((p) => p.key)}
+                    hiddenKeys={hiddenKeys}
+                    activeKey={activeKey}
+                    storageKey={WINDOW_LAYOUT_KEY}
+                    arrangeNonce={arrangeNonce}
+                    onActivate={(key) => {
+                      focusedPane.current = key;
+                      setActiveKey(key);
+                    }}
+                    onDockChange={(res) =>
+                      setDockInsets((cur) =>
+                        cur.left === res.left && cur.right === res.right ? cur : res,
+                      )
+                    }
+                    renderPane={(key, startMove) => {
+                      const pane = panes.find((p) => p.key === key);
+                      if (!pane) return null;
+                      return renderPaneCard(pane, {
+                        style: { width: "100%", height: "100%" },
+                        reorderable: true,
+                        onPaneDragStart: (_key, e) => startMove(e),
+                        hideLabel: "Minimize window",
+                        onMinimize: () => toggleHide(pane.key),
+                      });
+                    }}
+                  />
+                  {/* the glass-spirit desk creature (living-cockpit P2+P4).
+                      Hidden while the home overlay covers the workspace — its
+                      fixed z sits above the overlay, and the lock screen has
+                      its own resident (HorizonPet); two pets is one too many. */}
+                  {!homeOverlay && panes.length > 0 && (
+                    <PetOverlay
+                      activeSurface={petSurfaceOf(
+                        panes.find((p) => p.key === activeKey)?.kind.type,
+                      )}
+                      onOpenRoom={() => spawn({ type: "pet" }, "pet")}
+                      onOpenTarget={openNotificationTarget}
+                    />
+                  )}
+                  {/* minimized-windows tray — minimized tools collect on the
+                      right edge of the canvas; click restores + raises. */}
+                  {maximizedKey === null && floatPanes.some((p) => hiddenKeys.includes(p.key)) && (
+                    <div
+                      className="absolute bottom-2 z-30 flex max-h-[60%] flex-col items-end gap-1 overflow-y-auto transition-[right] duration-200"
+                      style={{ right: 8 + dockInsets.right }}
+                    >
+                      {floatPanes
+                        .filter((p) => hiddenKeys.includes(p.key))
+                        .map((pane) => (
+                          <button
+                            key={pane.key}
+                            type="button"
+                            onClick={() => {
+                              toggleHide(pane.key);
+                              focusedPane.current = pane.key;
+                              setActiveKey(pane.key);
+                            }}
+                            title={`Restore ${pane.label}`}
+                            className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2.5 py-1 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
+                          >
+                            <span className={`status-dot ${DOT[pane.kind.type] ?? "status-dot--cold"}`} />
+                            <span className="max-w-36 truncate">{pane.label}</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  {/* one-click ARRANGE — untangle the pile: tiles every visible
+                      window into an even grid (they glide into place). */}
+                  {maximizedKey === null &&
+                    floatPanes.filter((p) => !hiddenKeys.includes(p.key)).length >= 2 && (
+                      <button
+                        type="button"
+                        data-no-window-drag
+                        onClick={() => setArrangeNonce((n) => n + 1)}
+                        title="Arrange windows into a grid"
+                        style={{ right: 8 + dockInsets.right }}
+                        className="press absolute top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-[color,right] duration-200 hover:text-[var(--color-accent)]"
+                      >
+                        <LayoutGrid size={16} />
+                      </button>
+                    )}
+                  {maximizedKey === null && (
+                  <ChatTabStrip
+                    // archived (hiddenKeys) conversations leave the strip into
+                    // the dropdown; selecting one there un-archives it.
+                    tabs={usableChats.map((p) => ({
+                      key: p.key,
+                      // a user-renamed pane label wins; the generic default
+                      // defers to the recorded session title.
+                      label:
+                        p.label && p.label !== "chat"
+                          ? p.label
+                          : chatMetaByPaneKey.current.get(p.key)?.title || p.label,
+                      busy: busyChatKeys.has(p.key),
+                    }))}
+                    archived={chatPanes
+                      .filter((p) => hiddenKeys.includes(p.key))
+                      .map((p) => ({
+                        key: p.key,
+                        label:
+                          p.label && p.label !== "chat"
+                            ? p.label
+                            : chatMetaByPaneKey.current.get(p.key)?.title || p.label,
+                        busy: busyChatKeys.has(p.key),
+                      }))}
+                    activeKey={canvasKey}
+                    onSelect={(key) => {
+                      setCanvasChatKey(key);
+                      setHiddenKeys((cur) => cur.filter((k) => k !== key));
+                      focusedPane.current = key;
+                      setActiveKey(key);
+                    }}
+                    onClose={requestClose}
+                    onRename={renamePane}
+                    onArchive={(key) =>
+                      setHiddenKeys((cur) => (cur.includes(key) ? cur : [...cur, key]))
+                    }
+                    onNew={() => spawn({ type: "chat" }, "chat")}
+                    onHome={() => setHomeOverlay(true)}
+                  />
+                  )}
+                </>
+              );
+            }
+            if (panes.length === 0) return idleDash;
+            return (
+              <>
+                {visibleCount === 0 && <div className="absolute inset-0 z-10">{idleDash}</div>}
+            <ResizableGrid cols={cols} rows={rows} gap={8} storageKey={gridTrackStorageKey(GRID_TRACK_KEY, cols, rows)}>
+              {/* popLayout: a closing pane pops OUT of the grid flow (absolute at
+                  its measured rect) and plays the fx exit while the survivors'
+                  track transition glides them into the gap. initial=false keeps
+                  entrances on the CSS fade-in-up (mount-time). */}
+              <AnimatePresence initial={false} mode="popLayout">
+              {panes.map((pane) => {
+                const visibleIndex = panes
+                  .filter((p) => !hiddenKeys.includes(p.key))
+                  .findIndex((p) => p.key === pane.key);
+                const paneStyle =
+                  visibleCount === 3 && visibleIndex === 2
+                    ? ({ gridColumn: "2", gridRow: "1 / span 2" } satisfies CSSProperties)
+                    : undefined;
+                return renderPaneCard(pane, {
+                  style: paneStyle,
+                  dropTarget: dropTargetKey === pane.key,
+                  dropZone: dropTargetKey === pane.key ? dropZone : null,
+                  reorderable: panes.length > 1,
+                  isDragging: dragActiveKey === pane.key,
+                  onPaneDragStart,
+                });
               })}
               </AnimatePresence>
             </ResizableGrid>
@@ -3462,6 +3947,118 @@ function App() {
           })()}
         </main>
       </div>
+
+      {/* windowed-mode home LOCK SCREEN — the idle dashboard slides down over
+          the whole app (sidebar included) and slides back up when you enter
+          the workspace (Esc, the pill, or opening anything). Auto-shown when
+          no panes are open; summoned via the chat strip's house button.
+          ALWAYS MOUNTED: opening must be a pure GPU transform — a fresh mount
+          of the dashboard mid-slide is exactly the jank the owner reported. */}
+      {windowedWorkspace && !webMirrorMode && (
+        <div
+          inert={!(homeOverlay || panes.length === 0)}
+          aria-hidden={!(homeOverlay || panes.length === 0)}
+          // lock-screen DRAG: grab any empty spot and fling the home upward to
+          // enter the workspace (complements scroll-up / Esc / the pill). The
+          // sheet follows the pointer live via inline transform; on release it
+          // either commits (state flips, inline cleared next frame so the CSS
+          // transition finishes the slide) or springs back.
+          onPointerDown={(e) => {
+            if (panes.length === 0 || e.button !== 0) return;
+            if ((e.target as HTMLElement).closest("button, a, input, textarea, select, [role='button']")) return;
+            const wrap = e.currentTarget as HTMLDivElement;
+            const startY = e.clientY;
+            let armed = false;
+            const onMove = (ev: PointerEvent) => {
+              const dy = Math.min(0, ev.clientY - startY);
+              if (!armed && dy < -8) {
+                armed = true;
+                document.body.style.userSelect = "none";
+              }
+              if (armed) {
+                wrap.style.transition = "none";
+                wrap.style.transform = `translateY(${dy}px)`;
+              }
+            };
+            const finish = (commit: boolean) => (ev: PointerEvent) => {
+              window.removeEventListener("pointermove", onMove);
+              window.removeEventListener("pointerup", onUp);
+              window.removeEventListener("pointercancel", onCancel);
+              document.body.style.userSelect = "";
+              wrap.style.transition = "";
+              if (commit && armed && ev.clientY - startY < -110) {
+                setHomeOverlay(false);
+                // keep the inline offset for one frame so the transition runs
+                // from the dragged position instead of snapping back first.
+                requestAnimationFrame(() => {
+                  wrap.style.transform = "";
+                });
+              } else {
+                wrap.style.transform = "";
+              }
+            };
+            const onUp = finish(true);
+            const onCancel = finish(false);
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp);
+            window.addEventListener("pointercancel", onCancel);
+          }}
+          className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--color-bg)] transition-transform duration-[440ms] ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform ${
+            homeOverlay || panes.length === 0
+              ? "translate-y-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]"
+              : "pointer-events-none -translate-y-full"
+          }`}
+        >
+          <div
+            className="min-h-0 flex-1 overflow-y-auto"
+            // lock-screen gesture: a firm scroll-UP while already at the top
+            // slides the home away into the workspace (mirrors the entrance).
+            onWheel={(e) => {
+              if (panes.length === 0) return;
+              if (e.currentTarget.scrollTop <= 0 && e.deltaY < -24) setHomeOverlay(false);
+            }}
+          >
+            {idleDash}
+          </div>
+          {panes.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHomeOverlay(false)}
+              title="Enter workspace (Esc)"
+              className="press absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-3 py-1.5 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
+            >
+              <ChevronUp size={13} />
+              enter workspace
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* usage popover (W1.6) — flies out beside the sidebar, anchored to its
+          trigger; Esc / click-away / ✕ dismiss. No backdrop, no focus theft. */}
+      {usageOpen && (
+        <div
+          ref={usagePopRef}
+          style={{ left: usageOpen.left, bottom: usageOpen.bottom }}
+          className="fade-in-up fixed z-[70] w-[360px] max-w-[85vw] rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-4 shadow-[var(--aios-shadow-pop)] backdrop-blur-xl"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] text-[var(--color-muted)] uppercase">
+              <Gauge size={13} />
+              usage
+            </span>
+            <button
+              type="button"
+              onClick={() => setUsageOpen(null)}
+              title="Close (Esc)"
+              className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <SidebarUsage bare />
+        </div>
+      )}
 
       {compactWebLayout && (
         <MobileBottomNav
@@ -3858,8 +4455,20 @@ function NotificationCenter({
           slide out. Replaces the capped CSS .stagger. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {notifications.length === 0 ? (
-          <div className="grid h-28 place-items-center rounded-md border border-dashed border-[var(--color-border)] text-[11px] text-[var(--color-faint)]">
-            no notifications yet
+          <div className="flex h-full min-h-[10rem] flex-col items-center justify-center gap-2 text-center">
+            <span className="relative grid h-12 w-12 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-2)]/50">
+              <BellRing size={20} className="text-[var(--color-faint)]" />
+              <span
+                aria-hidden
+                className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg)]"
+                style={{ background: "var(--aios-accent-2)" }}
+              />
+            </span>
+            <span className="text-[12.5px] text-[var(--color-muted)]">all quiet</span>
+            <span className="max-w-[240px] text-[11px] leading-relaxed text-[var(--color-faint)]">
+              finished agent runs, questions waiting on you, and long-task
+              alerts land here — click one to jump to its pane
+            </span>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -3951,8 +4560,6 @@ function SpaceHeader({
   iconsOnly?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(space.name);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3964,31 +4571,26 @@ function SpaceHeader({
     return () => window.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
 
-  const commit = () => {
-    const v = draft.trim();
-    if (v && v !== space.name) renameSpace(space.id, v);
-    setRenaming(false);
-  };
+  // (space rename removed — owner never used it; headers are fold toggles.)
 
-  if (renaming) {
+  // icon rail: a section header shrinks to a slim hairline — still clickable
+  // to fold/unfold, but no floating chevron cluttering the rail (W1.6).
+  if (iconsOnly) {
     return (
-      <div className="px-2.5 py-1">
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            else if (e.key === "Escape") {
-              setDraft(space.name);
-              setRenaming(false);
-            }
-          }}
-          spellCheck={false}
-          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+      <button
+        type="button"
+        onClick={() => toggleSpaceCollapsed(space.id)}
+        title={`${space.name} · ${space.collapsed ? "expand" : "collapse"}`}
+        className="group/sh mx-2 my-1 h-1 rounded-full"
+      >
+        <span
+          className={`block h-px w-full transition-colors ${
+            space.collapsed
+              ? "bg-[var(--color-accent)]/50"
+              : "bg-[var(--color-border)] group-hover/sh:bg-[var(--color-border-strong)]"
+          }`}
         />
-      </div>
+      </button>
     );
   }
 
@@ -4007,26 +4609,18 @@ function SpaceHeader({
           <span className="text-[var(--color-faint)]">({count})</span>
         )}
       </button>
-      {!iconsOnly && <div ref={menuRef} className="relative shrink-0">
-        <button
-          onClick={() => setMenuOpen((o) => !o)}
-          className="grid h-5 w-5 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] group-hover/sh:opacity-100"
-          title="space options"
-        >
-          <EllipsisVertical size={12} />
-        </button>
-        {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md">
-            <RowMenuItem
-              icon={<Pencil size={13} />}
-              label="rename"
-              onClick={() => {
-                setDraft(space.name);
-                setRenaming(true);
-                setMenuOpen(false);
-              }}
-            />
-            {!space.system && (
+      {/* space menu: delete only, custom spaces only — rename retired. */}
+      {!iconsOnly && !space.system && (
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="grid h-5 w-5 place-items-center rounded text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] group-hover/sh:opacity-100"
+            title="space options"
+          >
+            <EllipsisVertical size={12} />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
               <RowMenuItem
                 icon={<Trash2 size={13} />}
                 label="delete space"
@@ -4035,10 +4629,10 @@ function SpaceHeader({
                   setMenuOpen(false);
                 }}
               />
-            )}
-          </div>
-        )}
-      </div>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -4050,11 +4644,14 @@ function SpaceHeader({
 function SidebarRail({
   state,
   iconsOnly = false,
+  hideAppIds,
   onSpawn,
   onPinSite,
 }: {
   state: SidebarState;
   iconsOnly?: boolean;
+  /** built-in app ids to omit (windowed mode drops "chat" — the strip owns it). */
+  hideAppIds?: ReadonlySet<string>;
   onSpawn: (item: SidebarItem) => void;
   onPinSite: (spaceId: string) => void;
 }) {
@@ -4105,7 +4702,12 @@ function SidebarRail({
   return (
     <>
       {spaces.map((space, si) => {
-        const rows = items.filter((it) => it.group === space.id && !it.hidden);
+        const rows = items.filter(
+          (it) =>
+            it.group === space.id &&
+            !it.hidden &&
+            !(it.kind.type === "app" && hideAppIds?.has(it.kind.appId)),
+        );
         const isPinned = space.id === "pinned";
         return (
           <div
@@ -4142,12 +4744,18 @@ function SidebarRail({
                 {isPinned && (
                   <button
                     onClick={() => onPinSite(space.id)}
-                    className={`group flex w-full items-center rounded-md py-1.5 text-[12px] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] ${
-                      iconsOnly ? "justify-center px-0" : "gap-2.5 px-2.5 text-left"
+                    className={`group flex w-full items-center rounded-lg py-1 text-[13px] text-[var(--color-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)] hover:text-[var(--color-text)] ${
+                      iconsOnly ? "justify-center px-0 py-1.5" : "gap-2 pl-1.5 text-left"
                     }`}
                     title="pin a website to the sidebar"
                   >
-                    <Plus size={14} className="shrink-0" />
+                    {iconsOnly ? (
+                      <Plus size={18} className="shrink-0" />
+                    ) : (
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+                        <Plus size={18} className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]" />
+                      </span>
+                    )}
                     {!iconsOnly && "pin a site"}
                   </button>
                 )}
@@ -4163,12 +4771,18 @@ function SidebarRail({
       })}
       <button
         onClick={() => addSpace("new space")}
-        className={`group mt-1.5 flex w-full items-center rounded-md border-t border-[var(--color-border)] pt-2.5 pb-1.5 text-[12px] text-[var(--color-faint)] transition-colors hover:text-[var(--color-text)] ${
-          iconsOnly ? "justify-center px-0" : "gap-2.5 px-2.5 text-left"
+        className={`group mt-1 flex w-full items-center rounded-lg py-1 text-[13px] text-[var(--color-faint)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)] hover:text-[var(--color-text)] ${
+          iconsOnly ? "justify-center px-0 py-1.5" : "gap-2 pl-1.5 text-left"
         }`}
         title="create a new space"
       >
-        <FolderPlus size={14} className="shrink-0" />
+        {iconsOnly ? (
+          <FolderPlus size={18} className="shrink-0" />
+        ) : (
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
+            <FolderPlus size={18} className="text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]" />
+          </span>
+        )}
         {!iconsOnly && "new space"}
       </button>
     </>
@@ -4281,7 +4895,9 @@ function SidebarRow({
 
   return (
     <div
-      draggable
+      // tools are fixed rows now (owner never reordered them); only pinned
+      // links stay draggable (into spaces / to reorder).
+      draggable={isLink}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
         // a transparent payload keeps Firefox/Safari happy with HTML5 DnD.
@@ -4296,35 +4912,50 @@ function SidebarRow({
       }}
       onDragEnd={onDragEnd}
       title={item.label}
-      className={`group relative flex items-center rounded-md border transition-all ${
+      className={`group relative flex items-center rounded-lg border border-transparent transition-all duration-150 ${
         dragging ? "opacity-40" : ""
-      } ${over ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]" : "border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]"}`}
+      } ${
+        over
+          ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+          : "hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)]"
+      }`}
     >
-      <span className={`grid shrink-0 cursor-grab place-items-center text-[var(--color-faint)] opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing ${iconsOnly ? "w-0" : "w-4"}`}>
-        <GripVertical size={12} />
-      </span>
+      {/* the grip handle is gone (tools are fixed; links drag by the row) so
+          every row shares the same left inset. */}
       <button
         onClick={onSpawn}
         className={`flex min-w-0 flex-1 items-center text-[13px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)] ${
-          iconsOnly ? "aios-dock-icon min-h-11 justify-center px-0 py-2" : "gap-2.5 py-1.5 pr-1 text-left"
+          iconsOnly ? "aios-dock-icon min-h-11 justify-center px-0 py-2" : "gap-2 py-1 pr-1 pl-1.5 text-left"
         }`}
       >
-        {isLink && item.iconName === "favicon" && item.faviconUrl && !favBroken ? (
-          <img
-            src={item.faviconUrl}
-            alt=""
-            onError={() => setFavBroken(true)}
-            className={`${iconsOnly ? "h-[22px] w-[22px]" : "h-[15px] w-[15px]"} shrink-0 rounded-sm`}
-          />
-        ) : (
-          <Icon
-            size={iconsOnly ? 23 : 15}
-            className="shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-text)]"
-          />
-        )}
-        {!iconsOnly && <span className="truncate">{item.label}</span>}
+        {/* icon chip — the row's anchor; warms to the accent on hover */}
+        <span
+          className={`grid shrink-0 place-items-center transition-colors ${
+            iconsOnly
+              ? ""
+              : "h-8 w-8 rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] group-hover:bg-[var(--color-accent-soft)]"
+          }`}
+        >
+          {isLink && item.iconName === "favicon" && item.faviconUrl && !favBroken ? (
+            <img
+              src={item.faviconUrl}
+              alt=""
+              onError={() => setFavBroken(true)}
+              className={`${iconsOnly ? "h-[22px] w-[22px]" : "h-[18px] w-[18px]"} shrink-0 rounded-sm`}
+            />
+          ) : (
+            <Icon
+              size={iconsOnly ? 23 : 18}
+              className="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-accent)]"
+            />
+          )}
+        </span>
+        {!iconsOnly && <span className="truncate text-[13px]">{item.label}</span>}
       </button>
-      <div ref={menuRef} className={`relative shrink-0 ${iconsOnly ? "absolute right-0 top-0" : ""}`}>
+      {/* ⋯ menu: pinned links only (unpin/rename/icon/move) — tool rows carry
+          no controls at all (owner never used them). */}
+      {!iconsOnly && isLink && (
+      <div ref={menuRef} className="relative shrink-0">
         <button
           onClick={() => setMenuOpen((o) => !o)}
           className={`grid place-items-center rounded text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-panel)] hover:text-[var(--color-text)] group-hover:opacity-100 ${
@@ -4335,7 +4966,7 @@ function SidebarRow({
           <EllipsisVertical size={13} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md">
+          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
             <RowMenuItem
               icon={<Pencil size={13} />}
               label="rename"
@@ -4454,6 +5085,7 @@ function SidebarRow({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -4763,6 +5395,29 @@ function SaveWorkspaceModal({
   );
 }
 
+/** One scannable meta line per overview card — WHAT the pane is on (model,
+ *  folder, url, file), not just its kind. Discriminated on PaneContent.type;
+ *  unknown kinds return null and the card just shows its glyph. */
+function paneCardMeta(kind: PaneContent): string | null {
+  switch (kind.type) {
+    case "browser":
+      return kind.url?.replace(/^https?:\/\//, "").replace(/\/$/, "") || null;
+    case "files":
+      return kind.root ?? null;
+    case "editor":
+    case "file":
+      return kind.path?.split(/[\\/]/).pop() ?? null;
+    case "chat":
+      return kind.modelId ?? kind.resume?.title ?? null;
+    case "tmux":
+      return kind.session;
+    case "oracle":
+      return kind.identity;
+    default:
+      return "cwd" in kind && typeof kind.cwd === "string" ? kind.cwd : null;
+  }
+}
+
 /** Type → glyph for the overview cards (Mission-Control-style window thumbnails). */
 const PANE_GLYPH: Record<string, typeof Folder> = {
   shell: TerminalSquare,
@@ -4936,13 +5591,18 @@ function PaneOverview({
                   </div>
                   {/* body — big type glyph on a faint gradient "screen" */}
                   <div className="relative flex min-h-0 flex-1 items-center justify-center bg-gradient-to-br from-[var(--color-pane)] to-[var(--color-bg)]">
-                    <div className="flex flex-col items-center gap-2.5">
+                    <div className="flex max-w-[88%] flex-col items-center gap-2.5">
                       <span className="grid h-14 w-14 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
                         <Glyph size={26} />
                       </span>
                       <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
                         {p.kind.type}
                       </span>
+                      {paneCardMeta(p.kind) && (
+                        <span className="max-w-full truncate font-mono text-[10.5px] text-[var(--color-muted)]">
+                          {paneCardMeta(p.kind)}
+                        </span>
+                      )}
                     </div>
                     {hidden && (
                       <span className="absolute bottom-2 right-2 rounded bg-[var(--color-panel)]/80 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--color-faint)]">minimized</span>
@@ -5155,6 +5815,9 @@ function PaneCard({
   onClose,
   onToggleMax,
   onToggleHide,
+  hideLabel,
+  frameless,
+  onMinimize,
   reorderable,
   isDragging,
   dimmed,
@@ -5184,6 +5847,8 @@ function PaneCard({
   onProfileChange,
   onChangeCwd,
   onVideoFullscreen,
+  chatTargets,
+  onAnnotateTo,
 }: {
   /** Forwarded by AnimatePresence popLayout (React 19 ref-as-prop): the exit
    *  pop measures the root element through it. Merged with wrapRef below. */
@@ -5200,6 +5865,15 @@ function PaneCard({
   onClose: () => void;
   onToggleMax?: () => void;
   onToggleHide?: () => void;
+  /** menu wording for the hide action ("Minimize window" in windowed mode). */
+  hideLabel?: string;
+  /** canvas mode: no chrome at all — no header strip, border, or rounding.
+   *  The windowed workspace's rearmost chat renders this way; identity and
+   *  controls live in the ChatTabStrip instead. Right-click menu still works. */
+  frameless?: boolean;
+  /** windowed mode: a dedicated header minimize button (— to the tray),
+   *  one click instead of digging through the ⋯ menu. */
+  onMinimize?: () => void;
   reorderable?: boolean;
   isDragging?: boolean;
   /** focus-spotlight: this pane is NOT the focused one — recede. */
@@ -5238,6 +5912,9 @@ function PaneCard({
   onProfileChange: (profile: string) => void;
   onChangeCwd: (dir: string) => void;
   onVideoFullscreen?: (on: boolean) => void;
+  /** open conversations (key+label) — files "open in chat" picker targets. */
+  chatTargets?: { key: string; label: string }[];
+  onAnnotateTo?: (paneKey: string, text: string) => void;
 }) {
   const t = pane.kind.type;
   // Register this pane in the canonical rect registry so the OS-drop hit-test can
@@ -5379,20 +6056,17 @@ function PaneCard({
         { key: "sep-file", separator: true },
       );
     }
+    // content-contributed entries (paneMenuExtras) — e.g. the terminal's
+    // copy/paste/clear, whose in-pane right-click is PASTE now (W7 pane 1).
+    const extras = paneMenuExtras.get(pane.key)?.() ?? [];
+    if (extras.length) {
+      items.push(...(extras as PaneMenuEntry[]), { key: "sep-extras", separator: true });
+    }
     items.push({ key: "dup", icon: <Layers size={14} />, label: "Duplicate pane", onSelect: onDuplicate });
-    if (onToggleHide) items.push({ key: "hide", icon: <EyeOff size={14} />, label: "Hide pane", hint: "keeps running", onSelect: onToggleHide });
-    if (onToggleMax)
-      items.push({
-        key: "max",
-        icon: maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />,
-        label: maximized ? "Restore pane" : "Maximize pane",
-        hint: maximized ? "Esc" : undefined,
-        onSelect: onToggleMax,
-      });
-    items.push(
-      { key: "sep-close", separator: true },
-      { key: "close", icon: <X size={14} />, label: "Close pane", danger: true, onSelect: onClose },
-    );
+    // header chrome already carries minimize/maximize/close — the menu only
+    // repeats hide when there is NO header minimize button (grid mode).
+    if (onToggleHide && !onMinimize)
+      items.push({ key: "hide", icon: <EyeOff size={14} />, label: hideLabel ?? "Hide pane", hint: "keeps running", onSelect: onToggleHide });
     return items;
   };
   const toggleMon = () => {
@@ -5421,7 +6095,10 @@ function PaneCard({
         maximized
           ? // truly fullscreen — edge-to-edge over the top bar + sidebar, no chrome
             "fixed inset-0 z-40"
-          : // fade-in-up: panes ARRIVE instead of popping in (one-shot on mount)
+          : frameless
+            ? // canvas mode — the pane IS the surface; no card chrome at all
+              "fade-in-up relative"
+            : // fade-in-up: panes ARRIVE instead of popping in (one-shot on mount)
             `fade-in-up relative rounded-lg border ${
               dropTarget
                 ? // the drop destination during a reorder
@@ -5455,7 +6132,8 @@ function PaneCard({
           seam. z-30 so it reads above the chrome edge; reduce-motion → a static
           accent ring (handled inside BorderBeam). Skipped while maximized (no
           rounded border to ride). */}
-      {busy && !maximized && <BorderBeam className="z-30" duration={7} />}
+      {busy && !maximized && !frameless && <BorderBeam className="z-30" duration={7} />}
+      {!frameless && (
       <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-2.5 backdrop-blur-md">
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
@@ -5500,6 +6178,16 @@ function PaneCard({
           >
             <EllipsisVertical size={13} />
           </button>
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={(e) => (e.stopPropagation(), onMinimize())}
+              className="press grid h-6 w-6 place-items-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+              title="Minimize to tray"
+            >
+              <Minus size={13} />
+            </button>
+          )}
           {onToggleMax && (
             <button
               type="button"
@@ -5520,6 +6208,7 @@ function PaneCard({
           </button>
         </div>
       </div>
+      )}
       {menu && (
         <PaneMenu
           x={menu.x}
@@ -5544,7 +6233,13 @@ function PaneCard({
             {isTerminal(pane.kind) ? (
             <TerminalPane kind={pane.kind} paneKey={pane.key} />
           ) : pane.kind.type === "files" ? (
-            <FilesPane initialRoot={pane.kind.root} onOpenFile={onOpenFile} />
+            <FilesPane
+              initialRoot={pane.kind.root}
+              onOpenFile={onOpenFile}
+              onAnnotate={onAnnotate}
+              chatTargets={chatTargets}
+              onAnnotateTo={onAnnotateTo}
+            />
           ) : pane.kind.type === "browser" ? (
             <BrowserPane
               label={pane.key}
@@ -5566,7 +6261,7 @@ function PaneCard({
           ) : pane.kind.type === "pet" ? (
             <PetPane />
           ) : pane.kind.type === "notes" ? (
-            <NotesPane onSend={onSendToAi} />
+            <NotesPane paneKey={pane.key} onSend={onSendToAi} />
           ) : pane.kind.type === "bridges" ? (
             <BridgesPane />
           ) : pane.kind.type === "plugins" ? (
@@ -5668,9 +6363,20 @@ function Splash({ fading = false }: { fading?: boolean }) {
         transition: "opacity var(--aios-dur-slow) var(--aios-ease-out)",
       }}
     >
-      <span className="brand-logo--splash font-mono text-5xl font-bold tracking-tighter text-[var(--color-accent)] [text-shadow:0_0_32px_color-mix(in_srgb,var(--color-accent)_50%,transparent)]">
-        aios
-      </span>
+      {/* the brand DIAMOND is the mascot now (OSAI rebrand) — the same mark
+          as the sidebar tile + the app icon, breathing its glow. */}
+      <div className="brand-logo--splash flex flex-col items-center gap-5">
+        <span
+          className="block h-14 w-14 rotate-45 rounded-[14px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]"
+          style={{
+            boxShadow:
+              "0 0 34px color-mix(in srgb, var(--color-accent) 65%, transparent), 0 0 90px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+          }}
+        />
+        <span className="font-mono text-[15px] font-semibold tracking-[0.5em] text-[var(--color-text-2)] [text-shadow:0_0_24px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]">
+          OSAI
+        </span>
+      </div>
     </div>
   );
 }

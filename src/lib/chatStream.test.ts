@@ -349,3 +349,91 @@ test("replayHistoryToTurns restores image refs on user turns", () => {
   assert.equal(turns[0].kind, "user");
   assert.deepEqual(turns[0].images, ["/tmp/a.png"]);
 });
+
+test("sub-agent (parent_tool_use_id) text/thinking/user events stay OUT of the main transcript", () => {
+  n = 0;
+  // assistant text + thinking from a Task child → no top-level bubbles
+  let s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    {
+      type: "assistant",
+      parent_tool_use_id: "task-1",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "child prose" },
+          { type: "thinking", thinking: "child thought" },
+          { type: "tool_use", id: "child-tu", name: "WebSearch", input: {} },
+        ],
+      },
+    },
+    { now: 1, uid },
+  );
+  assert.equal(s.state.turns.length, 1, "only the nested tool turn survives");
+  assert.equal(s.state.turns[0].kind, "tool");
+  assert.equal(s.state.turns[0].parentId, "task-1");
+
+  // the Task prompt echoed as the child's user message → no YOU bubble
+  s = reduceChatStreamEvent(
+    s.state,
+    {
+      type: "user",
+      parent_tool_use_id: "task-1",
+      message: { role: "user", content: [{ type: "text", text: "research brief…" }] },
+    },
+    { now: 2, uid },
+  );
+  assert.equal(s.state.turns.length, 1, "no phantom user bubble");
+
+  // replay path: same guard
+  const turns = replayHistoryToTurns(
+    [
+      `{"type":"user","parent_tool_use_id":"task-1","message":{"role":"user","content":[{"type":"text","text":"brief"}]},"_ts":10}`,
+      `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"real user"}]},"_ts":11}`,
+    ],
+    uid,
+  );
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].kind, "user");
+  assert.equal(turns[0].text, "real user");
+});
+
+test("fast local streams: desynced delta ref self-heals; full-text settle coalesces fragments", () => {
+  n = 0;
+  // delta 1 opens the streaming turn
+  let s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello! How can I" } } },
+    { now: 1, uid },
+  );
+  // delta 2 arrives with a DESYNCED ref (null) — must append, not split
+  s = reduceChatStreamEvent(
+    { ...s.state, streamingTurnId: null },
+    { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " help you today?" } } },
+    { now: 2, uid },
+  );
+  assert.equal(s.state.turns.length, 1, "no mid-sentence split");
+  assert.equal(s.state.turns[0].text, "Hello! How can I help you today?");
+
+  // simulate a REAL split (two fragments) + the authoritative full-text event:
+  // the fragments must coalesce into ONE settled turn, no duplicate.
+  const split = {
+    turns: [
+      { kind: "assistant", id: "a1", text: "Hello! How can I", streaming: true },
+      { kind: "assistant", id: "a2", text: " help you today?", streaming: true },
+    ],
+    streamingTurnId: null,
+    thinkingTurnId: null,
+  };
+  const settled = reduceChatStreamEvent(
+    split,
+    {
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "text", text: "Hello! How can I help you today?" }] },
+    },
+    { now: 3, uid },
+  );
+  assert.equal(settled.state.turns.length, 1, "fragments coalesced");
+  assert.equal(settled.state.turns[0].text, "Hello! How can I help you today?");
+  assert.equal(settled.state.turns[0].streaming, false);
+});

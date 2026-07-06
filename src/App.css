@@ -133,10 +133,12 @@
   --aios-surface-edge: color-mix(in srgb, var(--color-accent) 26%, transparent);
   --aios-surface-edge-strong: color-mix(in srgb, var(--color-accent) 42%, transparent);
   --aios-glass-edge: color-mix(in srgb, white 9%, transparent);  /* the glass lip */
-  /* the cyan companion to the runtime accent — the cold end of the Neon Glass
-     dual gradient (composer lip, send CTA, signature edges). Intentionally a
-     fixed neon cyan (not derived from --color-accent), so violet→cyan reads as
-     the brand's two-tone regardless of the chosen accent. */
+  /* the cold companion to the runtime accent — the second end of the Neon
+     Glass dual gradient (composer lip, send CTA, the pet's core, signature
+     edges). Neon cyan is the brand DEFAULT; it's user-settable in Settings →
+     appearance ("glow") because some accents clash with cyan — applyAccent2()
+     (lib/theme.ts) overrides this var at runtime, and clears the override
+     when the choice is cyan so fresh installs sit exactly here. */
   --aios-accent-2: #3DE8FF;
   --aios-glow-accent:
     0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent),
@@ -298,6 +300,20 @@ html[data-density="compact"] {
   --aios-h-header: 31px;
 }
 
+/* "terminal" — compact's spacing + the WHOLE UI set in the mono stack: the
+   W5 Terminal-density variant of Neon Glass. Everything that reads
+   --font-sans (which is everything) goes mono; code surfaces are unchanged. */
+html[data-density="terminal"] {
+  --aios-space-2: 6px;
+  --aios-space-3: 10px;
+  --aios-space-4: 12px;
+  --aios-space-5: 16px;
+  --aios-space-6: 18px;
+  --aios-h-chrome: 24px;
+  --aios-h-header: 31px;
+  --font-sans: var(--font-mono);
+}
+
 ::selection { background: var(--color-selection); }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -387,11 +403,10 @@ select:focus-visible,
    not the window's, so a half-width pane keeps its reading measure. */
 [data-chat-pane] { container-type: inline-size; }
 .chat-col {
-  max-width: 42rem;
+  /* owner: the conversation should breathe — 80% of the pane, not a fixed rem
+     column. (Bubbles carry their own inner max-widths.) */
+  max-width: 80%;
   transition: max-width var(--aios-dur-slow) var(--aios-ease-out);
-}
-@container (min-width: 1100px) {
-  .chat-col { max-width: 52rem; }
 }
 
 /* .disclose — animate auto-height disclosure (tool cards, diff expands)
@@ -436,6 +451,10 @@ select:focus-visible,
 /* .aios-wave-bar — the voice equalizer bar, hoisted from per-mount inline
    <style> strings so every mic shares one keyframe. */
 @keyframes aios-wave { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+/* composer deck (W4 redesign): the context filament's streaming light-sweep +
+   the send orb's breathing stop ring. */
+@keyframes aios-fil-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes aios-orb-breathe { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.12); } }
 .aios-wave-bar {
   width: 3px;
   background: var(--color-accent);
@@ -522,9 +541,9 @@ select:focus-visible,
   }
 }
 
-/* glassy scrollbar — a slim inset thumb (padding-box trick) that lights up to
-   the accent on hover, tying it into the Neon Glass theme. */
-::-webkit-scrollbar { width: 10px; height: 10px; }
+/* glassy scrollbar — a THIN inset thumb (padding-box trick) that lights up to
+   the accent on hover, tying it into the Neon Glass theme. (W5: 10px → 8px.) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--color-text) 15%, transparent);
   border-radius: 9999px;
@@ -538,7 +557,13 @@ select:focus-visible,
 ::-webkit-scrollbar-track { background: transparent; }
 
 .xterm-viewport { background: transparent !important; }
-.xterm .xterm-screen { padding: 8px 12px; }
+/* Terminal padding (W7 pane 1). Padding lives on .xterm — the ONE place
+   FitAddon actually subtracts it, so the grid fits INSIDE the inset (the old
+   .xterm-screen padding was invisible to fit → clipped rows). The frost is
+   painted by the HOST div in TerminalRuntime: .xterm only spans the fitted
+   grid, so a background here left a lighter band under the last row (the
+   owner's "gap at the bottom that changes when I resize"). */
+.xterm { padding: 8px 12px 6px; }
 /* let xterm own wheel scrolling inside its viewport */
 .xterm-viewport { overflow-y: auto !important; }
 
@@ -709,37 +734,8 @@ select:focus-visible,
 }
 .aios-ripple { animation: aios-ripple 3.4s var(--aios-ease-out) infinite; }
 
-/* idle-home corner pet — the one playful touch, compact + low-key. Reuses the
-   full PetDashboardCompanion but strips its head text + action row and shrinks
-   the world to a small glass tile in the corner so it never clutters the calm
-   home. Hover gives a faint accent lift, signalling it's clickable (→ pet pane). */
-.aios-pet-mini {
-  width: 132px;
-  opacity: 0.92;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-.aios-pet-mini:hover { opacity: 1; transform: translateY(-2px); }
-.aios-pet-mini .pet-dashboard { gap: 0; }
-.aios-pet-mini .pet-dashboard-head,
-.aios-pet-mini .pet-dashboard-actions { display: none; }
-.aios-pet-mini .pet-dashboard-canvas,
-.aios-pet-mini .pet-dashboard-canvas .pet-world {
-  min-height: 96px;
-  max-height: 96px;
-  border-radius: var(--aios-radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--color-panel) 70%, transparent),
-    color-mix(in srgb, var(--color-panel) 40%, transparent)
-  );
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, var(--color-text) 6%, transparent),
-    0 8px 22px -12px rgba(0, 0, 0, 0.4);
-}
-[data-reduce-motion="true"] .aios-pet-mini { transition: none; }
-[data-reduce-motion="true"] .aios-pet-mini:hover { transform: none; }
+/* (the idle-home corner pet tile retired with the Horizon lock screen —
+   the spirit now lives ON the horizon line itself; see IdleControlCenter.) */
 
 /* ultracode — the flashy top effort tier (mirrors Anthropic's terminal gradient).
    An animated purple band that pans across the chip + a soft glow. */
@@ -923,10 +919,29 @@ select:focus-visible,
    type moment in the app; use once per empty/landing surface. */
 .hero-title {
   font-family: var(--font-sans);
-  font-size: var(--aios-text-hero);           /* 30px (text-3xl) */
-  font-weight: 500;
-  letter-spacing: -0.02em;                    /* tracking-tight */
+  /* scales with the pane — 30px floor (the old fixed size), 42px in a wide
+     canvas. The single biggest type moment in the app deserves the room. */
+  font-size: clamp(var(--aios-text-hero), 3.6vw, 42px);
+  font-weight: 550;
+  letter-spacing: -0.025em;
   color: var(--color-text);
+  text-wrap: balance;
+}
+
+/* --- .hero-kicker -------------------------------------------------
+   The whispered line above the hero title ("GOOD EVENING, JULLIEN") —
+   wide-tracked mono caps, the name a shade warmer. Sets the title up
+   like a stage direction. */
+.hero-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.hero-kicker b {
+  font-weight: 500;
+  color: var(--color-text-2);
 }
 
 /* --- .helper-line ------------------------------------------------
@@ -1002,72 +1017,36 @@ select:focus-visible,
 }
 
 /* --- composer flash levels ---------------------------------------
-   Ambient "wow" on the prompt box, gated by <html data-flash>. The
-   composer (.flash-composer) has backdrop-filter → it's its own
-   stacking context, so a z-index:-1 ::before paints ABOVE the box's
-   own gradient bg but BELOW the in-flow content (textarea/toolbar) —
-   exactly where an aurora belongs, with zero markup risk. All effects
-   are additive; "calm" leaves the baseline composer untouched. */
+   Ambient "wow" on the prompt box, gated by <html data-flash>. REDESIGNED
+   (owner: the rotating conic rim kept reading as a broken, boxy border):
+   every effect is now a real border, a shadow, or a blurred interior wash —
+   geometry that follows the rounded corners by construction. No masks, no
+   rims, no streaks that can disagree with the radius.
 
-@property --flash-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
+     calm — the baseline glass; focus ring only. Untouched.
+     lush — LIT FROM WITHIN: an interior aurora rests low inside the glass
+            and lifts when you focus; while idle + unfocused the box breathes
+            a slow, soft halo.
+     max  — ALIVE: lush, plus the aurora drifts, and while you write the
+            actual border runs a slow accent→cyan tide with a breathing halo. */
 
-/* lush + max: a slow conic-gradient rim rotating around the border.
-   The padding + mask-composite trick paints only the 1px ring; it sits
-   above content (z 2) but is pointer-events:none, so it's just a glow. */
-[data-flash="lush"] .flash-composer::after,
-[data-flash="max"] .flash-composer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 1px;
-  pointer-events: none;
-  opacity: 0.6;
-  background: conic-gradient(
-    from var(--flash-angle),
-    transparent 0deg,
-    var(--color-accent) 70deg,
-    color-mix(in srgb, var(--color-accent) 30%, transparent) 150deg,
-    transparent 230deg,
-    var(--color-accent) 360deg
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: flash-rim-spin 7s linear infinite;
+/* The DECK wears ONE edge. glass-strong's 1px top lip + glow-focus's
+   hairline ring are extra straight-lit lines hugging the border — on a
+   16px-radius box they kept reading as a "boxy border" (owner-reported
+   three times; survived every rim fix because they're level-independent).
+   The composer gets a single real border + soft outer halo, nothing else. */
+.flash-composer.glass-strong {
+  box-shadow: none;
 }
-@keyframes flash-rim-spin {
-  to {
-    --flash-angle: 360deg;
-  }
+.flash-composer.glow-focus:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  box-shadow: 0 10px 34px -12px color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 
-/* lush + max: idle breathing glow when the box is empty + unfocused. */
-[data-flash="lush"] .flash-composer:not(:focus-within),
-[data-flash="max"] .flash-composer:not(:focus-within) {
-  animation: flash-breathe 4.5s ease-in-out infinite;
-}
-@keyframes flash-breathe {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 22px -6px color-mix(in srgb, var(--color-accent) 40%, transparent);
-  }
-}
-
-/* max only: an aurora mesh-gradient drifting behind the content. */
+/* lush + max: interior aurora — accent light pooling inside the glass.
+   (::before at z -1 paints above the box bg but below content — the
+   composer's backdrop-filter makes it its own stacking context.) */
+[data-flash="lush"] .flash-composer::before,
 [data-flash="max"] .flash-composer::before {
   content: "";
   position: absolute;
@@ -1075,25 +1054,53 @@ select:focus-visible,
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  opacity: 0.55;
-  filter: blur(24px);
+  opacity: 0.5;
+  filter: blur(26px);
+  transition: opacity 0.5s ease;
   background:
     radial-gradient(
-      42% 55% at 18% 28%,
-      color-mix(in srgb, var(--color-accent) 45%, transparent),
+      60% 95% at 12% 0%,
+      color-mix(in srgb, var(--color-accent) 52%, transparent),
       transparent 70%
     ),
     radial-gradient(
-      38% 48% at 82% 62%,
-      color-mix(in srgb, var(--color-accent-hover) 35%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      46% 42% at 60% 18%,
-      color-mix(in srgb, var(--color-accent) 28%, transparent),
+      50% 80% at 88% 100%,
+      color-mix(in srgb, var(--aios-accent-2) 24%, transparent),
       transparent 72%
+    ),
+    radial-gradient(
+      44% 60% at 64% 12%,
+      color-mix(in srgb, var(--color-accent) 30%, transparent),
+      transparent 70%
     );
-  animation: flash-aurora 13s ease-in-out infinite alternate;
+}
+[data-flash="lush"] .flash-composer:focus-within::before,
+[data-flash="max"] .flash-composer:focus-within::before {
+  opacity: 0.85;
+}
+
+/* lush + max: a slow halo breathe while idle + unfocused — the box quietly
+   says "I'm here" without claiming attention. */
+[data-flash="lush"] .flash-composer:not(:focus-within),
+[data-flash="max"] .flash-composer:not(:focus-within) {
+  animation: flash-breathe 5.5s ease-in-out infinite;
+}
+@keyframes flash-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    border-color: var(--aios-surface-edge-strong);
+  }
+  50% {
+    box-shadow: 0 8px 36px -10px color-mix(in srgb, var(--color-accent) 50%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+}
+
+/* max only: the aurora DRIFTS… */
+[data-flash="max"] .flash-composer::before {
+  opacity: 0.65;
+  animation: flash-aurora 12s ease-in-out infinite alternate;
 }
 @keyframes flash-aurora {
   0% {
@@ -1106,1322 +1113,305 @@ select:focus-visible,
     transform: translate3d(-3%, 6%, 0) scale(1.1);
   }
 }
+/* …and while you write, the REAL border runs a slow accent→cyan tide — a
+   hue shift on the border itself, so it can never disagree with the corner
+   radius. (Streaming keeps .glow-live's breathe — the :not guard.) */
+[data-flash="max"] .flash-composer:focus-within:not(.glow-live) {
+  animation:
+    flash-border-tide 5s ease-in-out infinite,
+    flash-halo 5s ease-in-out infinite;
+}
+@keyframes flash-border-tide {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--aios-accent-2) 60%, transparent);
+  }
+}
+@keyframes flash-halo {
+  0%,
+  100% {
+    box-shadow: 0 10px 34px -12px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 12px 44px -10px color-mix(in srgb, var(--aios-accent-2) 45%, transparent);
+  }
+}
 
-/* respect reduce-motion: kill the moving parts, keep a static accent rim. */
-[data-reduce-motion="true"] .flash-composer::after,
+/* respect reduce-motion: static aurora + static glass; no breathe, no tide. */
+[data-reduce-motion="true"] .flash-composer,
 [data-reduce-motion="true"] .flash-composer::before,
-[data-reduce-motion="true"] .flash-composer:not(:focus-within) {
+[data-reduce-motion="true"] .flash-composer:not(:focus-within),
+[data-reduce-motion="true"] .flash-composer:focus-within:not(.glow-live) {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .flash-composer::after,
+  .flash-composer,
   .flash-composer::before,
-  .flash-composer:not(:focus-within) {
+  .flash-composer:not(:focus-within),
+  .flash-composer:focus-within:not(.glow-live) {
     animation: none;
   }
 }
 
-/* ─── pet pane (seeded code-drawn 8-bit game pet) ───────────────────── */
-.pet-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  padding: 12px;
-  color: var(--color-text);
-  background:
-    radial-gradient(circle at 48% 4%, rgba(255, 132, 30, 0.16), transparent 42%),
-    radial-gradient(circle at 10% 18%, rgba(250, 204, 21, 0.08), transparent 32%),
-    var(--color-bg);
-}
-
-.pet-hatch-onboarding {
-  display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 36%, var(--color-border));
-  border-radius: 10px;
-  padding: 10px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--color-accent-soft) 78%, transparent), transparent 48%),
-    color-mix(in srgb, var(--color-panel-2) 84%, transparent);
-}
-
-.pet-hatch-copy {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.pet-hatch-copy strong {
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.pet-hatch-kicker {
-  color: var(--color-accent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.pet-hatch-theme-row {
-  display: flex;
-  gap: 8px;
-}
-
-.pet-hatch-swatch {
-  width: 24px;
-  height: 24px;
-  border: 3px solid color-mix(in srgb, var(--color-bg) 70%, black);
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.22);
-}
-
-.pet-hatch-swatch--active {
-  outline: 2px solid var(--color-text);
-  outline-offset: 2px;
-}
-
-.pet-starter-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pet-starter-card {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-  border-radius: 8px;
-  padding: 7px;
-  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
-  color: var(--color-text);
-  text-align: left;
-  transition: border-color 160ms ease, transform 160ms ease;
-}
-
-.pet-starter-card:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
-  transform: translateY(-1px);
-}
-
-.pet-starter-card span:not(.pet-starter-preview) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.pet-starter-card small {
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pet-starter-preview {
-  --pet-room-glow: color-mix(in srgb, var(--pet-primary) 34%, transparent);
-  --pet-room-deep: color-mix(in srgb, var(--pet-shadow) 28%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-accent) 20%, var(--color-panel));
-  position: relative;
-  display: grid;
-  place-items: end center;
-  min-height: 92px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--pet-outline) 42%, transparent);
-  border-radius: 6px;
-  background:
-    radial-gradient(circle at 20% 20%, var(--pet-room-glow), transparent 34%),
-    linear-gradient(180deg, var(--pet-room-soft), var(--pet-room-deep));
-  image-rendering: pixelated;
-}
-
-.pet-starter-preview::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 26px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--pet-outline) 22%, transparent) 6px, transparent 6px),
-    color-mix(in srgb, var(--pet-primary) 18%, var(--pet-room-deep));
-  background-size: 24px 100%, 100% 100%;
-}
-
-.pet-hatch-onboarding-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pet-canvas {
-  min-height: 318px;
-  border-radius: 10px;
-  position: relative;
-  border: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
-  --pet-room-glow: color-mix(in srgb, var(--pet-primary) 34%, transparent);
-  --pet-room-deep: color-mix(in srgb, var(--pet-shadow) 28%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-accent) 20%, var(--color-panel));
-  background:
-    radial-gradient(circle at 22% 18%, var(--pet-room-glow), transparent 28%),
-    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--pet-accent) 24%, transparent), transparent 24%),
-    linear-gradient(180deg, var(--pet-room-soft), var(--pet-room-deep) 70%);
-  overflow: hidden;
-}
-
-.pet-canvas::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--color-border) 18%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-border) 14%, transparent) 1px, transparent 1px);
-  background-size: 54px 54px;
-  opacity: 0.22;
-  mask-image: radial-gradient(circle at 50% 45%, black, transparent 78%);
-}
-
-.pet-canvas::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.04) 2px, transparent 2px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 2px, transparent 2px);
-  background-size: 10px 10px;
-  opacity: 0.26;
-  mix-blend-mode: screen;
-}
-
-.pet-canvas--greenhouse {
-  --pet-room-deep: color-mix(in srgb, #0b3f36 68%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-primary) 16%, #133a2a);
-}
-
-.pet-canvas--orbital {
-  --pet-room-deep: color-mix(in srgb, #111d3d 72%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-accent) 14%, #1d2244);
-}
-
-.pet-canvas--archive {
-  --pet-room-deep: color-mix(in srgb, #352514 72%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-primary) 14%, #3a2d1d);
-}
-
-.pet-canvas--arcade {
-  --pet-room-deep: color-mix(in srgb, #25123d 70%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-accent) 18%, #22142f);
-}
-
-.pet-canvas--lagoon {
-  --pet-room-deep: color-mix(in srgb, #0f3f46 72%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-primary) 15%, #12363d);
-}
-
-.pet-canvas--forge {
-  --pet-room-deep: color-mix(in srgb, #421d14 74%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-accent) 16%, #332016);
-}
-
-.pet-canvas--studio {
-  --pet-room-deep: color-mix(in srgb, #1c2438 72%, var(--color-bg));
-  --pet-room-soft: color-mix(in srgb, var(--pet-primary) 14%, #242333);
-}
-
-.pet-world {
-  position: relative;
-  min-height: 318px;
-  height: min(42vh, 380px);
-  image-rendering: pixelated;
-  isolation: isolate;
-}
-
-.pet-world-sky,
-.pet-world-backdrop,
-.pet-world-floor,
-.pet-job,
-.pet-world-avatar {
-  position: absolute;
-  inset: 0;
-}
-
-.pet-world-sky {
-  z-index: 0;
-}
-
-.pet-world-star,
-.pet-world-orb {
-  position: absolute;
-  display: block;
-  background: color-mix(in srgb, var(--pet-accent) 84%, white);
-  box-shadow:
-    8px 0 0 color-mix(in srgb, var(--pet-accent) 72%, white),
-    0 8px 0 color-mix(in srgb, var(--pet-primary) 68%, white);
-  animation: pet-pixel-flicker 2.8s steps(2, end) infinite;
-}
-
-.pet-world-star-a {
-  left: 16%;
-  top: 16%;
-  width: 8px;
-  height: 8px;
-}
-
-.pet-world-star-b {
-  right: 20%;
-  top: 28%;
-  width: 6px;
-  height: 6px;
-  animation-delay: 900ms;
-}
-
-.pet-world-orb {
-  right: 10%;
-  top: 10%;
-  width: 24px;
-  height: 24px;
-  background: var(--pet-primary);
-  box-shadow:
-    10px 0 0 var(--pet-shadow),
-    -8px 8px 0 color-mix(in srgb, var(--pet-accent) 72%, white);
-}
-
-.pet-world-backdrop {
-  z-index: 1;
-}
-
-.pet-prop {
-  position: absolute;
-  display: block;
-  background: color-mix(in srgb, var(--pet-outline) 72%, var(--color-panel));
-  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-prop--shelf {
-  left: 7%;
-  bottom: 33%;
-  width: 76px;
-  height: 14px;
-  box-shadow:
-    0 22px 0 color-mix(in srgb, var(--pet-outline) 66%, var(--color-panel)),
-    18px -18px 0 var(--pet-accent),
-    46px -18px 0 var(--pet-primary),
-    6px 6px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-prop--plant {
-  left: 14%;
-  bottom: 14%;
-  width: 34px;
-  height: 34px;
-  background: var(--pet-shadow);
-  box-shadow:
-    -10px -18px 0 color-mix(in srgb, var(--pet-primary) 74%, #42f584),
-    10px -26px 0 color-mix(in srgb, var(--pet-accent) 70%, #42f584),
-    0 -36px 0 color-mix(in srgb, var(--pet-primary) 70%, #42f584),
-    6px 6px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-prop--console {
-  right: 9%;
-  bottom: 18%;
-  width: 82px;
-  height: 58px;
-  background: color-mix(in srgb, var(--pet-outline) 78%, var(--pet-room-soft));
-  box-shadow:
-    inset 8px 8px 0 color-mix(in srgb, var(--pet-accent) 60%, transparent),
-    inset -8px -8px 0 rgba(0, 0, 0, 0.22),
-    6px 6px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-prop--stack {
-  right: 20%;
-  bottom: 39%;
-  width: 38px;
-  height: 18px;
-  background: var(--pet-accent);
-  box-shadow:
-    0 -20px 0 var(--pet-primary),
-    0 -40px 0 color-mix(in srgb, var(--pet-shadow) 84%, var(--pet-primary)),
-    5px 5px 0 rgba(0, 0, 0, 0.16);
-}
-
-.pet-prop--beacon {
-  left: 45%;
-  top: 11%;
-  width: 10px;
-  height: 34px;
-  background: var(--pet-accent);
-  box-shadow:
-    -8px 0 0 var(--pet-primary),
-    8px 0 0 var(--pet-shadow),
-    0 -12px 0 color-mix(in srgb, var(--pet-accent) 78%, white);
-  animation: pet-pixel-flicker 1.8s steps(2, end) infinite;
-}
-
-.pet-world-floor {
-  z-index: 2;
-  top: auto;
-  height: 86px;
-  bottom: 0;
-  border-top: 8px solid color-mix(in srgb, var(--pet-outline) 46%, transparent);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--pet-outline) 24%, transparent) 8px, transparent 8px),
-    linear-gradient(180deg, color-mix(in srgb, var(--pet-primary) 18%, var(--pet-room-deep)), var(--pet-room-deep));
-  background-size: 38px 100%, 100% 100%;
-}
-
-.pet-world-floor span {
-  position: absolute;
-  bottom: 20px;
-  width: 22px;
-  height: 10px;
-  background: color-mix(in srgb, var(--pet-accent) 70%, transparent);
-}
-
-.pet-world-floor span:nth-child(1) { left: 8%; }
-.pet-world-floor span:nth-child(2) { left: 28%; bottom: 42px; background: var(--pet-primary); }
-.pet-world-floor span:nth-child(3) { left: 50%; }
-.pet-world-floor span:nth-child(4) { right: 26%; bottom: 34px; background: var(--pet-shadow); }
-.pet-world-floor span:nth-child(5) { right: 8%; }
-
-.pet-job {
-  z-index: 3;
-  pointer-events: none;
-}
-
-.pet-job-screen,
-.pet-job-block,
-.pet-job-pellet,
-.pet-job-z {
-  position: absolute;
-  display: block;
-  opacity: 0;
-}
-
-.pet-job-screen {
-  right: 28%;
-  bottom: 25%;
-  width: 70px;
-  height: 48px;
-  border: 6px solid var(--pet-outline);
-  background: color-mix(in srgb, var(--pet-accent) 54%, var(--color-bg));
-  box-shadow:
-    inset 8px 8px 0 color-mix(in srgb, var(--pet-primary) 42%, transparent),
-    6px 6px 0 rgba(0, 0, 0, 0.2);
-}
-
-.pet-job-screen::before,
-.pet-job-screen::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 18px;
-  height: 6px;
-  background: var(--pet-outline);
-}
-
-.pet-job-screen::before { top: 10px; }
-.pet-job-screen::after { top: 24px; right: 34px; }
-
-.pet-job-block {
-  width: 26px;
-  height: 26px;
-  background: var(--pet-accent);
-  box-shadow: 5px 5px 0 var(--pet-outline);
-}
-
-.pet-job-block-a {
-  left: 28%;
-  bottom: 27%;
-}
-
-.pet-job-block-b {
-  right: 36%;
-  bottom: 40%;
-  background: var(--pet-primary);
-}
-
-.pet-job-pellet {
-  left: 34%;
-  bottom: 31%;
-  width: 18px;
-  height: 18px;
-  background: color-mix(in srgb, var(--pet-accent) 88%, white);
-  box-shadow:
-    18px -8px 0 var(--pet-primary),
-    36px 4px 0 var(--pet-shadow);
-}
-
-.pet-job-z {
-  right: 36%;
-  bottom: 46%;
-  width: 18px;
-  height: 8px;
-  background: var(--pet-accent);
-  box-shadow:
-    8px -8px 0 var(--pet-primary),
-    16px -16px 0 var(--pet-shadow);
-}
-
-.pet-job--coding .pet-job-screen,
-.pet-job--repairing .pet-job-screen {
-  opacity: 1;
-  animation: pet-screen-code 1.1s steps(3, end) infinite;
-}
-
-.pet-job--celebrating .pet-job-block,
-.pet-job--compressing .pet-job-block,
-.pet-job--cooling .pet-job-block,
-.pet-job--repairing .pet-job-block {
-  opacity: 1;
-}
-
-.pet-job--celebrating .pet-job-block {
-  animation: pet-block-pop 1.4s steps(3, end) infinite;
-}
-
-.pet-job--compressing .pet-job-block-a {
-  animation: pet-block-compress-a 1.2s steps(3, end) infinite;
-}
-
-.pet-job--compressing .pet-job-block-b {
-  animation: pet-block-compress-b 1.2s steps(3, end) infinite;
-}
-
-.pet-job--foraging .pet-job-pellet {
-  opacity: 1;
-  animation: pet-pellet-hop 1.8s steps(4, end) infinite;
-}
-
-.pet-job--cooling .pet-job-block {
-  background: color-mix(in srgb, var(--pet-primary) 40%, #7dd3fc);
-  animation: pet-cool-pulse 1s steps(2, end) infinite;
-}
-
-.pet-job--napping .pet-job-z {
-  opacity: 1;
-  animation: pet-z-float 1.8s steps(3, end) infinite;
-}
-
-.pet-world-avatar {
-  z-index: 4;
-  inset: auto auto 36px 50%;
-  width: 190px;
-  height: 205px;
-  transform: translateX(-50%);
-  animation: pet-avatar-roam 4.2s steps(5, end) infinite;
-}
-
-.pet-world-avatar--coding {
-  left: 43%;
-  animation-name: pet-avatar-type;
-}
-
-.pet-world-avatar--foraging {
-  left: 39%;
-  animation-name: pet-avatar-forage;
-}
-
-.pet-world-avatar--compressing,
-.pet-world-avatar--cooling {
-  left: 47%;
-  animation-name: pet-avatar-work;
-}
-
-.pet-world-avatar--napping {
-  left: 54%;
-  animation-name: pet-avatar-nap;
-}
-
-.pet-world-avatar--repairing {
-  left: 42%;
-  animation-name: pet-avatar-repair;
-}
-
-.pet-pixel {
-  --pet-primary: #ff7a18;
-  --pet-shadow: #b83f07;
-  --pet-accent: #ffd35a;
-  --pet-outline: #13264a;
-  --pet-eye: #101f3e;
-  --pet-leg-count: 4;
-  --pet-breath: 3.6s;
-  position: relative;
-  width: 174px;
-  height: 188px;
-  animation: pet-breath var(--pet-breath) steps(2, end) infinite;
-  image-rendering: pixelated;
-  transform-origin: 50% 82%;
-}
-
-.pet-pixel--starter {
-  width: 78px;
-  height: 84px;
-  animation: pet-breath 3.4s steps(2, end) infinite;
-  transform-origin: 50% 86%;
-}
-
-.pet-pixel--starter .pet-pixel-body {
-  border-width: 4px;
-  box-shadow:
-    inset -9px -9px 0 var(--pet-shadow),
-    5px 5px 0 rgba(0, 0, 0, 0.18);
-}
-
-/* ── pet reactions — momentary expressions over the metabolic mood ────
-   Fired by live activity (send → attentive, run finished → celebrate,
-   error/failed turn → wince). A reaction briefly replaces the breath loop;
-   the master reduce-motion guard squashes these like everything else. */
-@keyframes pet-react-celebrate {
-  0%, 100% { transform: translateY(0); }
-  18% { transform: translateY(-10px) scale(1.05); }
-  38% { transform: translateY(0); }
-  58% { transform: translateY(-6px) scale(1.02); }
-  78% { transform: translateY(0); }
-}
-@keyframes pet-react-wince {
-  0%, 100% { transform: translateX(0); }
-  18% { transform: translateX(-5px) rotate(-2.5deg); }
-  38% { transform: translateX(5px) rotate(2.5deg); }
-  58% { transform: translateX(-4px) rotate(-1.5deg); }
-  78% { transform: translateX(4px) rotate(1.5deg); }
-}
-@keyframes pet-react-attentive {
-  0%, 100% { transform: scale(1); }
-  28% { transform: scale(1.07); }
-  60% { transform: scale(1.02); }
-}
-.pet-pixel--react-celebrate { animation: pet-react-celebrate 1.3s var(--aios-ease-spring) both; }
-.pet-pixel--react-wince { animation: pet-react-wince 0.9s var(--aios-ease-out) both; }
-.pet-pixel--react-attentive { animation: pet-react-attentive 0.8s var(--aios-ease-out) both; }
-
-.pet-pixel--starter .pet-pixel-tail {
-  border-width: 3px;
-  transform: scale(0.56);
-  transform-origin: 100% 50%;
-}
-
-.pet-pixel--starter .pet-pixel-topper {
-  transform: scale(0.62);
+/* FleetView live card — an indeterminate accent sweep along the top edge
+   (W4 swarm polish). Master reduce-motion guard squashes it like the rest. */
+.aios-fleet-sweep {
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: aios-fleet-sweep 1.6s ease-in-out infinite;
+  opacity: 0.85;
+}
+@keyframes aios-fleet-sweep {
+  0% { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
+
+/* ── the glass-spirit pet (P1, living-cockpit) ────────────────────────────
+   One SVG rig, steered by data-pose/data-mood from the soul. Squash &
+   stretch lives on .pet2-rig (origin = feet); leaf parts animate solo.
+   Master reduce-motion guard + the media query still every keyframe. */
+.aios-pet .pet2-rig {
+  animation: pet2-breathe 3.2s ease-in-out infinite;
+  transform-box: fill-box;
   transform-origin: 50% 100%;
 }
+.aios-pet[data-pose="sleep"] .pet2-rig { animation: pet2-breathe 5.6s ease-in-out infinite; }
+.aios-pet[data-pose="wander"] .pet2-rig { animation: pet2-hop 0.55s ease-in-out infinite; }
+.aios-pet[data-pose="celebrate"] .pet2-rig { animation: pet2-celebrate 0.7s ease-in-out infinite; }
+.aios-pet[data-pose="play"] .pet2-rig { animation: pet2-celebrate 0.6s ease-in-out 4; }
+.aios-pet[data-pose="startled"] .pet2-rig { animation: pet2-startle 0.5s ease-out 2; }
+.aios-pet[data-pose="eat"] .pet2-rig { animation: pet2-chomp 0.45s ease-in-out 3; }
+.aios-pet[data-pose="held"] .pet2-rig {
+  animation: pet2-dangle 1.5s ease-in-out infinite;
+  transform-origin: 50% 0%;
+}
+.aios-pet[data-pose="tossed"] .pet2-rig { animation: pet2-spin 0.6s linear infinite; transform-origin: center; }
+.aios-pet[data-pose="land"] .pet2-rig { animation: pet2-land 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 1; }
 
-.pet-pixel--starter .pet-pixel-ear {
-  width: 13px;
-  height: 24px;
-  border-width: 3px;
+.aios-pet .pet2-core {
+  animation: pet2-core 2.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.aios-pet .pet2-eyes {
+  animation: pet2-blink 4.6s infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.aios-pet[data-mood="sleepy"] .pet2-eyes { animation-duration: 2.8s; }
+.aios-pet .pet2-foot-l,
+.aios-pet .pet2-foot-r { transform-box: fill-box; transform-origin: center; }
+.aios-pet[data-pose="wander"] .pet2-foot-l { animation: pet2-step 0.55s ease-in-out infinite; }
+.aios-pet[data-pose="wander"] .pet2-foot-r { animation: pet2-step 0.55s ease-in-out infinite 0.27s; }
+.aios-pet .pet2-z { opacity: 0; animation: pet2-z 2.6s ease-out infinite; }
+.aios-pet .pet2-z2 { animation-delay: 0.6s; }
+.aios-pet .pet2-z3 { animation-delay: 1.2s; }
+.aios-pet .pet2-cursor { animation: pet2-cursor 1.4s steps(1) infinite; }
+.aios-pet .pet2-halo {
+  animation: pet2-halo 3.4s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.aios-pet .pet2-shadow { transition: opacity 0.25s ease; }
+
+@keyframes pet2-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.02, 0.97); }
+}
+@keyframes pet2-hop {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  30% { transform: translateY(-7%) scale(0.98, 1.04); }
+  60% { transform: translateY(0) scale(1.06, 0.94); }
+}
+@keyframes pet2-celebrate {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-16%) rotate(-6deg) scale(0.98, 1.05); }
+  60% { transform: translateY(0) rotate(4deg) scale(1.05, 0.95); }
+}
+@keyframes pet2-startle {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-6%) scale(0.96, 1.05); }
+  55% { transform: translateX(4%); }
+  100% { transform: translateX(0); }
+}
+@keyframes pet2-dangle {
+  0%, 100% { transform: rotate(6deg) scale(0.98, 1.07); }
+  50% { transform: rotate(-6deg) scale(0.98, 1.07); }
+}
+@keyframes pet2-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pet2-land {
+  0% { transform: scale(1.25, 0.6); }
+  45% { transform: scale(0.92, 1.1); }
+  100% { transform: scale(1, 1); }
+}
+@keyframes pet2-chomp {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.94); }
+}
+@keyframes pet2-core {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+@keyframes pet2-blink {
+  0%, 91%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.08); }
+}
+@keyframes pet2-step {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+@keyframes pet2-z {
+  0% { opacity: 0; transform: translate(0, 4px); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(6px, -10px); }
+}
+@keyframes pet2-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+@keyframes pet2-halo {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
-.pet-pixel--starter .pet-pixel-ear-left { left: -15px; }
-.pet-pixel--starter .pet-pixel-ear-right { right: -15px; }
-
-.pet-pixel--starter .pet-pixel-eyes {
-  gap: 8px;
+[data-reduce-motion="true"] .aios-pet *,
+[data-reduce-motion="true"] .aios-pet { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .aios-pet *, .aios-pet { animation: none !important; }
 }
 
-.pet-pixel--starter .pet-pixel-eye {
-  width: 8px;
-  height: 8px;
-  box-shadow:
-    2px 2px 0 color-mix(in srgb, var(--pet-eye) 70%, white),
-    0 0 0 2px var(--pet-outline);
+/* ── the HORIZON lock screen (L1–L3, living-cockpit; owner picked sketch B:
+   "the world is busy, but it feels good to watch it move around") ──────────
+   All ambience is transform/opacity-only. Per-element timing rides CSS vars
+   (--delay/--dur/--hi/--sway) set inline from the deterministic spec arrays
+   in IdleControlCenter. The master reduce-motion guard at the end stills
+   every piece; the shooting star + fireflies rest at opacity 0 so a frozen
+   frame stays clean. */
+
+/* the line itself: warm accent fading to the cold glow across the width */
+.aios-horizon-line {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-accent) 55%, transparent) 18%,
+    color-mix(in srgb, var(--aios-accent-2) 45%, transparent) 82%,
+    transparent
+  );
+  box-shadow: 0 0 16px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+/* a slow pulse of light traveling the line, left → right */
+.aios-horizon-flow {
+  background: linear-gradient(
+    90deg,
+    transparent 42%,
+    color-mix(in srgb, white 70%, transparent) 50%,
+    transparent 58%
+  );
+  background-size: 240% 100%;
+  background-repeat: no-repeat;
+  animation: aios-horizon-flow 9s ease-in-out infinite;
+  opacity: 0.7;
+}
+@keyframes aios-horizon-flow {
+  from { background-position: 220% 0; }
+  to { background-position: -140% 0; }
 }
 
-.pet-pixel--starter .pet-pixel-mouth {
-  width: 20px;
-  height: 6px;
-  box-shadow: 0 2px 0 var(--pet-outline);
+.aios-lock-star {
+  animation: aios-lock-twinkle var(--dur, 4.6s) ease-in-out var(--delay, 0s) infinite;
+  opacity: 0.2;
+}
+@keyframes aios-lock-twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: var(--hi, 0.7); }
 }
 
-.pet-pixel--starter .pet-pixel-pattern {
-  transform: scale(0.58);
-  transform-origin: 50% 50%;
+/* satellites — a faint dot on a long straight crossing */
+.aios-lock-sat { animation: aios-lock-sat 110s linear infinite; }
+@keyframes aios-lock-sat {
+  from { transform: translateX(-4vw); }
+  to { transform: translateX(104vw); }
 }
 
-.pet-pixel--starter .pet-pixel-legs {
-  gap: 3px;
-}
-
-.pet-pixel--starter .pet-pixel-leg {
-  height: 18px;
-  border-width: 3px;
-  border-bottom-width: 5px;
-  box-shadow: inset -3px -3px 0 var(--pet-shadow);
-}
-
-.pet-pixel-shadow {
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: 5%;
-  height: 18px;
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow: 12px 0 0 rgba(0, 0, 0, 0.18), -12px 0 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-pixel-tail {
-  position: absolute;
-  z-index: 0;
-  right: 5%;
-  bottom: 28%;
-  width: 34px;
-  height: 34px;
-  background: var(--pet-shadow);
-  border: 6px solid var(--pet-outline);
-  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.14);
-}
-
-.pet-pixel-tail--none {
-  display: none;
-}
-
-.pet-pixel-tail--stub {
-  right: 2%;
-  bottom: 34%;
-  width: 28px;
-  height: 28px;
-}
-
-.pet-pixel-tail--spark {
-  right: 0;
-  bottom: 43%;
-  width: 32px;
-  height: 32px;
-  background: var(--pet-accent);
-  clip-path: polygon(50% 0, 62% 34%, 100% 50%, 62% 66%, 50% 100%, 38% 66%, 0 50%, 38% 34%);
-}
-
-.pet-pixel-tail--leaf {
-  right: 0;
-  bottom: 36%;
-  width: 42px;
-  height: 30px;
-  background: color-mix(in srgb, var(--pet-primary) 64%, #44ff88);
-  clip-path: polygon(0 45%, 28% 0, 100% 20%, 74% 100%, 22% 76%);
-}
-
-.pet-pixel-tail--ribbon {
-  right: 0;
-  bottom: 31%;
-  width: 48px;
-  height: 24px;
-  background: var(--pet-accent);
-  clip-path: polygon(0 0, 100% 0, 74% 50%, 100% 100%, 0 100%);
-}
-
-.pet-pixel-body {
-  position: absolute;
-  z-index: 1;
-  left: 13%;
-  right: 13%;
-  top: 16%;
-  bottom: 25%;
-  background: var(--pet-primary);
-  border: 8px solid var(--pet-outline);
-  box-shadow:
-    inset -18px -18px 0 var(--pet-shadow),
-    10px 10px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-pixel-body--brick {
-  clip-path: polygon(8% 0, 92% 0, 92% 10%, 100% 10%, 100% 82%, 90% 82%, 90% 100%, 10% 100%, 10% 82%, 0 82%, 0 10%, 8% 10%);
-}
-
-.pet-pixel-body--wide {
-  left: 7%;
-  right: 7%;
-  top: 22%;
-  bottom: 25%;
-  clip-path: polygon(12% 0, 88% 0, 88% 12%, 100% 12%, 100% 78%, 88% 78%, 88% 100%, 12% 100%, 12% 78%, 0 78%, 0 12%, 12% 12%);
-}
-
-.pet-pixel-body--totem {
-  left: 22%;
-  right: 22%;
-  top: 9%;
-  bottom: 20%;
-  clip-path: polygon(15% 0, 85% 0, 85% 8%, 100% 8%, 100% 88%, 82% 88%, 82% 100%, 18% 100%, 18% 88%, 0 88%, 0 8%, 15% 8%);
-}
-
-.pet-pixel-body--mush {
-  left: 14%;
-  right: 14%;
-  top: 18%;
-  bottom: 23%;
-  clip-path: polygon(18% 0, 82% 0, 82% 8%, 94% 8%, 94% 20%, 100% 20%, 100% 74%, 88% 74%, 88% 88%, 70% 88%, 70% 100%, 30% 100%, 30% 88%, 12% 88%, 12% 74%, 0 74%, 0 20%, 6% 20%, 6% 8%, 18% 8%);
-}
-
-.pet-pixel-body--bean {
-  left: 10%;
-  right: 12%;
-  top: 17%;
-  bottom: 24%;
-  clip-path: polygon(24% 0, 76% 0, 76% 8%, 92% 8%, 92% 18%, 100% 18%, 100% 74%, 92% 74%, 92% 90%, 76% 90%, 76% 100%, 24% 100%, 24% 90%, 8% 90%, 8% 74%, 0 74%, 0 24%, 8% 24%, 8% 8%, 24% 8%);
-}
-
-.pet-pixel-body--gem {
-  left: 16%;
-  right: 16%;
-  top: 12%;
-  bottom: 20%;
-  clip-path: polygon(30% 0, 70% 0, 70% 10%, 88% 10%, 88% 24%, 100% 24%, 100% 62%, 88% 62%, 88% 78%, 70% 78%, 70% 100%, 30% 100%, 30% 78%, 12% 78%, 12% 62%, 0 62%, 0 24%, 12% 24%, 12% 10%, 30% 10%);
-}
-
-.pet-pixel-body--shell {
-  left: 9%;
-  right: 9%;
-  top: 24%;
-  bottom: 24%;
-  clip-path: polygon(8% 24%, 16% 24%, 16% 12%, 32% 12%, 32% 0, 68% 0, 68% 12%, 84% 12%, 84% 24%, 92% 24%, 92% 38%, 100% 38%, 100% 78%, 88% 78%, 88% 100%, 12% 100%, 12% 78%, 0 78%, 0 38%, 8% 38%);
-}
-
-.pet-pixel-body--squat {
-  left: 6%;
-  right: 6%;
-  top: 30%;
-  bottom: 22%;
-  clip-path: polygon(10% 0, 90% 0, 90% 14%, 100% 14%, 100% 78%, 88% 78%, 88% 100%, 12% 100%, 12% 78%, 0 78%, 0 14%, 10% 14%);
-}
-
-.pet-pixel-topper {
-  position: absolute;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.pet-pixel-topper--none {
-  display: none;
-}
-
-.pet-pixel-topper--cap {
-  left: 8%;
-  right: 6%;
-  top: -26px;
-  height: 24px;
-  background: var(--pet-outline);
-  box-shadow:
-    -18px 8px 0 var(--pet-outline),
-    18px 8px 0 var(--pet-outline),
-    -10px 18px 0 var(--pet-accent);
-}
-
-.pet-pixel-topper--horns {
-  left: 14%;
-  right: 14%;
-  top: -20px;
-  height: 28px;
-  background: transparent;
-  box-shadow:
-    -20px 8px 0 var(--pet-accent),
-    -20px 16px 0 var(--pet-outline),
-    20px 8px 0 var(--pet-accent),
-    20px 16px 0 var(--pet-outline);
-}
-
-.pet-pixel-topper--sprout {
-  left: 48%;
-  top: -34px;
-  width: 10px;
-  height: 34px;
-  background: var(--pet-outline);
-  box-shadow:
-    -16px 8px 0 color-mix(in srgb, var(--pet-primary) 64%, #44ff88),
-    14px 0 0 color-mix(in srgb, var(--pet-accent) 70%, #44ff88);
-}
-
-.pet-pixel-topper--crown {
-  left: 20%;
-  right: 20%;
-  top: -30px;
-  height: 30px;
-  background: var(--pet-accent);
-  clip-path: polygon(0 100%, 0 36%, 20% 36%, 20% 0, 40% 48%, 50% 0, 60% 48%, 80% 0, 80% 36%, 100% 36%, 100% 100%);
-  filter: drop-shadow(0 6px 0 var(--pet-outline));
-}
-
-.pet-pixel-topper--halo {
-  left: 22%;
-  right: 22%;
-  top: -32px;
-  height: 16px;
-  border: 6px solid var(--pet-accent);
-  background: transparent;
-  box-shadow: 0 6px 0 var(--pet-outline);
-}
-
-.pet-pixel-topper--visor {
-  left: 12%;
-  right: 12%;
-  top: 18%;
-  height: 18px;
-  background: color-mix(in srgb, var(--pet-eye) 60%, var(--pet-accent));
-  box-shadow:
-    inset 10px 0 0 color-mix(in srgb, var(--pet-accent) 60%, white),
-    0 5px 0 var(--pet-outline);
-}
-
-.pet-pixel-ear {
-  position: absolute;
-  top: 34%;
-  width: 26px;
-  height: 48px;
-  background: var(--pet-primary);
-  border: 6px solid var(--pet-outline);
-}
-
-.pet-pixel-ear-left { left: -30px; }
-.pet-pixel-ear-right { right: -30px; }
-
-.pet-pixel-eyes {
-  position: absolute;
-  left: 50%;
-  top: 34%;
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  transform: translateX(-50%);
-}
-
-.pet-pixel-eyes--1 { gap: 0; }
-.pet-pixel-eyes--3 { gap: 14px; }
-.pet-pixel-eyes--4 { gap: 10px; }
-
-.pet-pixel-eye {
-  width: 18px;
-  height: 18px;
-  background: var(--pet-eye);
-  box-shadow:
-    4px 4px 0 color-mix(in srgb, var(--pet-eye) 70%, white),
-    0 0 0 4px var(--pet-outline);
-}
-
-.pet-pixel-mouth {
-  position: absolute;
-  left: 50%;
-  top: 58%;
-  width: 44px;
-  height: 12px;
-  transform: translateX(-50%);
-  background: var(--pet-eye);
-  box-shadow: 0 4px 0 var(--pet-outline);
-}
-
-.pet-pixel-pattern {
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.pet-pixel-pattern--none {
-  display: none;
-}
-
-.pet-pixel-pattern--bolt {
-  right: -20px;
-  top: 18%;
-  width: 26px;
-  height: 46px;
-  background: var(--pet-accent);
-  clip-path: polygon(38% 0, 100% 0, 66% 38%, 100% 38%, 24% 100%, 40% 54%, 0 54%);
-  filter: drop-shadow(4px 4px 0 var(--pet-outline));
-}
-
-.pet-pixel-pattern--spots {
-  left: 16%;
-  top: 56%;
-  width: 14px;
-  height: 14px;
-  background: var(--pet-accent);
-  box-shadow:
-    46px -18px 0 var(--pet-accent),
-    76px 8px 0 color-mix(in srgb, var(--pet-accent) 70%, white),
-    22px 24px 0 color-mix(in srgb, var(--pet-shadow) 70%, var(--pet-accent));
-}
-
-.pet-pixel-pattern--stripe {
-  left: 12%;
-  right: 12%;
-  top: 64%;
-  height: 12px;
-  background: var(--pet-accent);
-  box-shadow:
-    0 -26px 0 color-mix(in srgb, var(--pet-shadow) 64%, var(--pet-accent)),
-    0 24px 0 color-mix(in srgb, var(--pet-accent) 70%, white);
-}
-
-.pet-pixel-pattern--panel {
-  left: 28%;
-  right: 28%;
-  top: 56%;
-  height: 34px;
-  border: 6px solid var(--pet-outline);
-  background: color-mix(in srgb, var(--pet-accent) 70%, var(--pet-primary));
-  box-shadow: inset -8px -8px 0 var(--pet-shadow);
-}
-
-.pet-pixel-pattern--star {
-  right: 18%;
-  bottom: 14%;
-  width: 22px;
-  height: 22px;
-  background: var(--pet-accent);
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
-  filter: drop-shadow(4px 4px 0 var(--pet-outline));
-}
-
-.pet-pixel-pattern--cheeks {
-  left: 18%;
-  top: 50%;
-  width: 16px;
-  height: 10px;
-  background: color-mix(in srgb, var(--pet-accent) 70%, white);
-  box-shadow:
-    88px 0 0 color-mix(in srgb, var(--pet-accent) 70%, white),
-    0 4px 0 var(--pet-outline),
-    88px 4px 0 var(--pet-outline);
-}
-
-.pet-pixel-legs {
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: 7%;
-  display: grid;
-  grid-template-columns: repeat(var(--pet-leg-count), 1fr);
-  gap: 8px;
-  align-items: end;
-}
-
-.pet-pixel-leg {
-  height: 42px;
-  background: var(--pet-primary);
-  border: 7px solid var(--pet-outline);
-  border-bottom: 12px solid var(--pet-accent);
-  box-shadow: inset -7px -7px 0 var(--pet-shadow);
-}
-
-.pet-pixel--happy .pet-pixel-eye {
-  height: 10px;
-  transform: translateY(4px);
-}
-
-.pet-pixel--happy .pet-pixel-mouth {
-  height: 28px;
-  width: 50px;
-  box-shadow:
-    inset 0 -10px 0 #ff9f6e,
-    0 4px 0 var(--pet-outline);
-}
-
-.pet-pixel--content .pet-pixel-mouth,
-.pet-pixel--bloated .pet-pixel-mouth {
-  width: 24px;
-  height: 10px;
-}
-
-.pet-pixel--hungry .pet-pixel-mouth,
-.pet-pixel--tired .pet-pixel-mouth {
-  width: 34px;
-  height: 8px;
-  transform: translateX(-50%) translateY(8px);
-}
-
-.pet-pixel--bloated .pet-pixel-body {
-  transform: scale(1.08, 1.02);
-}
-
-.pet-pixel--overloaded .pet-pixel-body,
-.pet-pixel--critical .pet-pixel-body {
-  animation: pet-shake 0.14s steps(2, end) infinite alternate;
-}
-
-.pet-pixel--critical .pet-pixel-body {
-  box-shadow:
-    inset -18px -18px 0 var(--pet-shadow),
-    inset 0 0 0 6px color-mix(in srgb, var(--color-danger) 70%, transparent),
-    10px 10px 0 rgba(0, 0, 0, 0.18);
-}
-
-.pet-control {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pet-status-chip {
-  min-width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pet-status-chip span:first-child {
-  font-size: 13px;
-  font-weight: 560;
-}
-
-.pet-status-sub {
-  color: var(--color-muted);
-  font-size: 11px;
-}
-
-.pet-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.pet-reroll-bank {
-  color: var(--color-muted);
-  font-size: 11px;
-  padding: 0 2px;
-}
-
-.pet-action-btn {
-  appearance: none;
-  border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+/* the shooting star — a streak that lives for ~0.8s of a lazy 15s cycle */
+.aios-lock-shoot {
+  background: linear-gradient(90deg, color-mix(in srgb, white 85%, transparent), transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-panel-2) 80%, transparent);
-  color: var(--color-text);
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 560;
-  transition: all 0.2s ease;
+  opacity: 0;
+  animation: aios-lock-shoot 15s ease-in 5s infinite;
+}
+@keyframes aios-lock-shoot {
+  0% { transform: translate(0, 0) rotate(16deg) scaleX(0.4); opacity: 0; }
+  1% { opacity: 0.9; }
+  5% { transform: translate(-34vw, 9.5vw) rotate(16deg) scaleX(1); opacity: 0; }
+  100% { transform: translate(-34vw, 9.5vw) rotate(16deg) scaleX(1); opacity: 0; }
 }
 
-.pet-action-btn:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 52%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 34%, transparent);
+/* fireflies — sparks of the working world drifting up out of the ground */
+.aios-lock-fly {
+  animation: aios-lock-fly var(--dur, 12s) linear var(--delay, 0s) infinite;
+  opacity: 0;
+}
+@keyframes aios-lock-fly {
+  0% { transform: translate(0, 6px); opacity: 0; }
+  10% { opacity: 0.6; }
+  55% { opacity: 0.45; }
+  100% { transform: translate(var(--sway, 20px), -19vh); opacity: 0; }
 }
 
-.pet-action-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-  border-color: color-mix(in srgb, var(--color-border) 56%, transparent);
-  box-shadow: none;
+/* parallax terrain — two soft ridge glows drifting at different paces.
+   Elements are 200% wide with a 50%-repeating background, translating -50%
+   per cycle → a seamless loop. */
+.aios-lock-ridge-a,
+.aios-lock-ridge-b {
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+  will-change: transform;
+}
+.aios-lock-ridge-a {
+  background-image: radial-gradient(
+      42% 130% at 24% 100%,
+      color-mix(in srgb, var(--color-accent) 10%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      36% 110% at 72% 100%,
+      color-mix(in srgb, var(--aios-accent-2) 7%, transparent),
+      transparent 70%
+    );
+  animation: aios-lock-ridge 85s linear infinite;
+}
+.aios-lock-ridge-b {
+  background-image: radial-gradient(
+      38% 120% at 48% 100%,
+      color-mix(in srgb, var(--aios-accent-2) 6%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      30% 100% at 90% 100%,
+      color-mix(in srgb, var(--color-accent) 7%, transparent),
+      transparent 70%
+    );
+  animation: aios-lock-ridge 135s linear infinite reverse;
+}
+@keyframes aios-lock-ridge {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 
-.pet-dashboard {
-  min-width: 0;
-  display: grid;
-  gap: 10px;
+[data-reduce-motion="true"] :is(.aios-lock-star, .aios-lock-sat, .aios-lock-shoot, .aios-lock-fly, .aios-lock-ridge-a, .aios-lock-ridge-b, .aios-horizon-flow) {
+  animation: none !important;
 }
-
-.pet-dashboard-head {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.pet-dashboard-kicker {
-  color: var(--color-muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.pet-dashboard-title {
-  color: var(--color-text);
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.pet-dashboard-sub {
-  color: var(--color-faint);
-  font-size: 11px;
-}
-
-.pet-dashboard-canvas {
-  min-height: 220px;
-  max-height: 260px;
-}
-
-.pet-dashboard-canvas .pet-world {
-  min-height: 220px;
-}
-
-.pet-dashboard-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pet-meters {
-  display: grid;
-  gap: 10px;
-}
-
-.pet-meter {
-  display: grid;
-  gap: 4px;
-  padding: 8px;
-  border-radius: var(--aios-radius-md);
-  background: color-mix(in srgb, var(--color-panel-2) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
-}
-
-.pet-meter-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.pet-meter-label {
-  font-size: 12px;
-  color: var(--color-text);
-  font-weight: 560;
-}
-
-.pet-meter-head span:last-child {
-  color: var(--color-faint);
-  font-size: 11px;
-}
-
-.pet-meter-track {
-  height: 10px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--color-bg) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
-}
-
-.pet-meter-fill {
-  height: 100%;
-  border-radius: inherit;
-  transition: width 300ms linear;
-}
-
-.pet-meter-value {
-  color: var(--color-muted);
-  font-size: 11px;
-  justify-self: end;
-}
-
-@keyframes pet-avatar-roam {
-  0%, 100% { transform: translateX(-50%) translate(0, 0); }
-  25% { transform: translateX(-50%) translate(14px, -2px); }
-  50% { transform: translateX(-50%) translate(0, 0); }
-  75% { transform: translateX(-50%) translate(-16px, -1px); }
-}
-
-@keyframes pet-avatar-type {
-  0%, 100% { transform: translateX(-50%) translate(0, 0); }
-  33% { transform: translateX(-50%) translate(8px, 0); }
-  66% { transform: translateX(-50%) translate(8px, -3px); }
-}
-
-@keyframes pet-avatar-forage {
-  0%, 100% { transform: translateX(-50%) translate(0, 0); }
-  25% { transform: translateX(-50%) translate(-18px, 0); }
-  50% { transform: translateX(-50%) translate(-30px, 4px); }
-  75% { transform: translateX(-50%) translate(-12px, 0); }
-}
-
-@keyframes pet-avatar-work {
-  0%, 100% { transform: translateX(-50%) translate(0, 0); }
-  50% { transform: translateX(-50%) translate(0, -6px); }
-}
-
-@keyframes pet-avatar-nap {
-  0%, 100% { transform: translateX(-50%) translate(0, 4px) rotate(0deg); }
-  50% { transform: translateX(-50%) translate(0, 6px) rotate(-2deg); }
-}
-
-@keyframes pet-avatar-repair {
-  0%, 100% { transform: translateX(-50%) translate(0, 0); }
-  20% { transform: translateX(-50%) translate(-6px, 0); }
-  40% { transform: translateX(-50%) translate(6px, 0); }
-  60% { transform: translateX(-50%) translate(0, -4px); }
-}
-
-@keyframes pet-screen-code {
-  0%, 100% { filter: brightness(0.88); }
-  50% { filter: brightness(1.22); }
-}
-
-@keyframes pet-block-pop {
-  0%, 100% { transform: translate(0, 0); }
-  33% { transform: translate(-8px, -16px); }
-  66% { transform: translate(10px, -8px); }
-}
-
-@keyframes pet-block-compress-a {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(28px, 8px) scale(0.72); }
-}
-
-@keyframes pet-block-compress-b {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-26px, 16px) scale(0.72); }
-}
-
-@keyframes pet-pellet-hop {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(14px, -16px); }
-  50% { transform: translate(32px, 0); }
-  75% { transform: translate(48px, -12px); }
-}
-
-@keyframes pet-cool-pulse {
-  0%, 100% { opacity: 0.56; transform: translateY(0); }
-  50% { opacity: 1; transform: translateY(-8px); }
-}
-
-@keyframes pet-z-float {
-  0% { transform: translate(0, 8px); opacity: 0; }
-  35% { opacity: 1; }
-  100% { transform: translate(28px, -42px); opacity: 0; }
-}
-
-@keyframes pet-pixel-flicker {
-  0%, 100% { opacity: 0.58; }
-  50% { opacity: 1; }
-}
-
-@keyframes pet-breath {
-  0%, 100% { transform: translateY(1px) scaleY(0.98); }
-  50% { transform: translateY(-2px) scaleY(1.01); }
-}
-
-@keyframes pet-blink {
-  0%, 88%, 100% { transform: scaleY(1); }
-  90%, 92% { transform: scaleY(0.06); }
-  93%, 97% { transform: scaleY(1); }
-}
-
-@keyframes pet-core {
-  0%, 100% { opacity: 0.12; }
-  50% { opacity: 0.42; }
-}
-
-@keyframes pet-scanline {
-  from { transform: translateY(-14px); opacity: 0.2; }
-  to { transform: translateY(13px); opacity: 0.5; }
-}
-
-@keyframes pet-mouth-tremor {
-  from { transform: translate(-50%, 7px) rotate(-1deg); }
-  to { transform: translate(-50%, 7px) rotate(1deg); }
-}
-
-@keyframes pet-mouth-twitch {
-  from { transform: translate(-50%, -1px); }
-  to { transform: translate(-50%, 2px); }
-}
-
-@keyframes pet-shake {
-  from { transform: translateX(-1px) rotate(-0.4deg); }
-  to { transform: translateX(1px) rotate(0.4deg); }
+@media (prefers-reduced-motion: reduce) {
+  .aios-lock-star, .aios-lock-sat, .aios-lock-shoot, .aios-lock-fly,
+  .aios-lock-ridge-a, .aios-lock-ridge-b, .aios-horizon-flow {
+    animation: none !important;
+  }
 }

@@ -15,6 +15,7 @@ import {
   MonitorUp,
   NotebookPen,
   TerminalSquare,
+  Zap,
 } from "lucide-react";
 
 import type { PaneKind } from "../components/TerminalPane";
@@ -83,6 +84,10 @@ export const SPAWN: AppDef[] = [
   { id: "browser", kind: { type: "browser" }, icon: Globe, label: "browser", group: "tools", firstClass: true },
   { id: "history", kind: { type: "history" }, icon: History, label: "history", group: "tools", firstClass: true },
   { id: "projects", kind: { type: "projects" }, icon: FolderGit2, label: "projects", group: "tools", firstClass: true },
+  // pulse was RENDERABLE but unreachable (no palette command, no sidebar
+  // seed, no dashboard tile) — the owner literally couldn't find it. Not
+  // firstClass: ⌘K + sidebar-customize reach it without crowding the rail.
+  { id: "pulse", kind: { type: "pulse" }, icon: Zap, label: "pulse", group: "tools" },
   ...(isApple
     ? [
         // Attach (focus/screenshot another app) is still mac-only (mac_list_apps).

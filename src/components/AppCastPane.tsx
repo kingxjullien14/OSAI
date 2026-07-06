@@ -36,7 +36,7 @@ import {
 } from "../lib/appcast";
 import type { Rect } from "../lib/browser";
 import { type NotificationLevel } from "../lib/notifications";
-import { onPaneOverlay } from "../lib/paneBus";
+import { onPaneOverlay, onWindowGesture } from "../lib/paneBus";
 import { reportDiag } from "../lib/diag";
 
 /** macOS deep-link straight to Privacy › Screen Recording. */
@@ -193,12 +193,30 @@ function AppCastPaneInner({
     [label, notify, onWindowChange],
   );
 
-  // ── bounds-sync loop (copied shape from BrowserPane.tsx:268-302) ──────────
-  // Creates the native view on first sync (appcast_start), then repositions it
-  // to the slot rect on every rAF / resize / 300ms poll. `picked == null` (no
-  // window chosen yet) or `!active` → skip / hide.
+  // While the WINDOW is being dragged (windowed workspace), hide the mirror —
+  // same reasoning + timing as BrowserPane (native view chases the chrome via
+  // IPC and ghosts; re-show waits out the 300ms snap glide).
+  const [winGestureArmed, setWinGestureArmed] = useState(false);
+  const winGestureTimer = useRef<number | null>(null);
+  useEffect(
+    () =>
+      onWindowGesture((on) => {
+        if (winGestureTimer.current != null) {
+          clearTimeout(winGestureTimer.current);
+          winGestureTimer.current = null;
+        }
+        if (on) setWinGestureArmed(true);
+        else winGestureTimer.current = window.setTimeout(() => setWinGestureArmed(false), 340);
+      }),
+    [],
+  );
+
+  // ── bounds-sync loop (same shape as BrowserPane's) ────────────────────────
+  // Creates the native view on first sync (appcast_start), then follows the
+  // slot rect with a CHANGE-DETECTED rAF loop (glides/dock animations track
+  // per-frame; idle frames cost one getBoundingClientRect and no IPC).
   useEffect(() => {
-    if (!active) {
+    if (!active || winGestureArmed) {
       if (startedRef.current) appcastHide(label).catch((e) => reportDiag("appcast.hide", e, { action: "hide" }));
       return;
     }
@@ -213,11 +231,14 @@ function AppCastPaneInner({
     if (picked == null) return;
 
     let raf = 0;
+    let lastKey = "";
     const sync = () => {
       const r = rect();
       if (!r) return;
+      const key = `${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
       if (!startedRef.current) {
         startedRef.current = true;
+        lastKey = key;
         setStarting(true);
         appcastStart(label, picked, r)
           .then(() => {
@@ -229,24 +250,33 @@ function AppCastPaneInner({
             setStarting(false);
             setError(typeof e === "string" ? e : String(e));
           });
-      } else {
+      } else if (key !== lastKey) {
+        lastKey = key;
         // Re-show in case it was hidden while inactive, then reposition.
         appcastShow(label).catch(() => {});
         appcastSetBounds(label, r).catch((e) => reportDiag("appcast.bounds", e, { action: "setBounds" }));
       }
     };
+    sync(); // immediate re-show when coming back from hidden
     raf = requestAnimationFrame(() => requestAnimationFrame(sync));
     const ro = new ResizeObserver(sync);
     if (slotRef.current) ro.observe(slotRef.current);
     window.addEventListener("resize", sync);
-    const poll = setInterval(sync, 300);
+    let follow = 0;
+    const loop = () => {
+      sync();
+      follow = requestAnimationFrame(loop);
+    };
+    follow = requestAnimationFrame(loop);
+    const poll = setInterval(sync, 1000);
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(follow);
       ro.disconnect();
       window.removeEventListener("resize", sync);
       clearInterval(poll);
     };
-  }, [active, picked, label, rect, pickerOpen, chromeMenuOpen]);
+  }, [active, picked, label, rect, pickerOpen, chromeMenuOpen, winGestureArmed]);
 
   // Teardown on unmount: hide then close (stops capture + drops the view).
   useEffect(() => {
@@ -353,8 +383,12 @@ function AppCastPaneInner({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-pane)]">
-      {/* Toolbar — window picker (mirrors BrowserPane's URL-bar row). */}
-      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
+      {/* Toolbar — window picker (mirrors BrowserPane's URL-bar row).
+          `relative z-20` is LOAD-BEARING (same stacking trap as the browser
+          toolbar): backdrop-filter makes this a stacking context, and without
+          position+z the dropdown inside paints BELOW the positioned slot that
+          follows — visible but unclickable. */}
+      <div className="relative z-20 flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_45%,transparent)] px-2 backdrop-blur-md">
         <MonitorUp size={14} className="shrink-0 text-[var(--color-muted)]" />
         <div ref={pickerRef} className="relative min-w-0 flex-1">
           <button
@@ -373,7 +407,7 @@ function AppCastPaneInner({
             {starting && <Loader2 size={12} className="shrink-0 animate-spin text-[var(--color-accent)]" />}
           </button>
           {pickerOpen && (
-            <div className="surface-pop absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col overflow-hidden text-[12px]">
+            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] text-[12px] shadow-[var(--aios-shadow-pop)]">
               {/* search + refresh header (sticky) */}
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
                 <Search size={12} className="shrink-0 text-[var(--color-faint)]" />
@@ -411,7 +445,7 @@ function AppCastPaneInner({
                       <span className="font-medium">Screen Recording not enabled</span>
                     </div>
                     <p className="leading-relaxed text-[var(--color-faint)]">
-                      Enable Screen Recording for AIOS in System Settings › Privacy & Security, then
+                      Enable Screen Recording for OSAI in System Settings › Privacy & Security, then
                       retry.
                     </p>
                     <div className="mt-2 flex gap-2">
@@ -505,7 +539,7 @@ function AppCastPaneInner({
                     Screen Recording not enabled
                   </div>
                   <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-faint)]">
-                    Enable Screen Recording for AIOS in System Settings › Privacy & Security, then
+                    Enable Screen Recording for OSAI in System Settings › Privacy & Security, then
                     retry.
                   </p>
                   <div className="mt-3 flex justify-center gap-2">

@@ -53,3 +53,16 @@ export function fmtChord(parts: string[]): string {
 export function chord(key: string): string {
   return fmtChord(["mod", key]);
 }
+
+/** Shell-quote a path (single-quote wrap) only when it needs it, for the
+ *  platform's ACTUAL shell. POSIX shells escape an embedded quote as '\'';
+ *  PowerShell doubles it — and backslashes are ordinary path characters on
+ *  Windows, so they must NOT trigger quoting. (Was duplicated in
+ *  TerminalRuntime + TerminalComposer; the composer's copy was POSIX-only and
+ *  mis-quoted every Windows path — owner-era bug, W7 pane 1.) */
+export function shellQuotePath(path: string): string {
+  if (!APPLE) {
+    return /[\s'"&(){}\[\];,$]/.test(path) ? `'${path.replace(/'/g, "''")}'` : path;
+  }
+  return /[\s'"\\]/.test(path) ? `'${path.replace(/'/g, "'\\''")}'` : path;
+}

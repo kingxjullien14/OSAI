@@ -283,7 +283,9 @@ export function GlobalSearch({
         >
           {rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
-              <img src="/mascot.png" alt="" className="h-10 w-10 rounded-full object-cover opacity-40" />
+              <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] opacity-40">
+                <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]" />
+              </span>
               <div className="text-[12.5px] text-[var(--color-muted)]">
                 {!root
                   ? "no files pane open"
