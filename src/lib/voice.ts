@@ -5,14 +5,22 @@
  *  subprocess, which couldn't inherit the TCC grant and silently produced "no
  *  audio captured"). We record with MediaRecorder (typically webm/opus), then
  *  on stop we decode the blob via an AudioContext, downmix + resample to 16 kHz
- *  mono, encode a 16-bit PCM WAV in-JS, and POST it as multipart `file` to the
- *  local whisper.cpp server at /inference. One dictation at a time.
+ *  mono, and encode a 16-bit PCM WAV in-JS. One dictation at a time.
+ *
+ *  Transcription is backend-pluggable (settings.transcribeVia):
+ *    - "openai" → the Rust `transcribe_audio` command (BYOK key lives in the OS
+ *      keychain and never crosses into JS, so the HTTP call happens Rust-side)
+ *    - "local"  → multipart POST to the whisper.cpp server at settings.whisperUrl
+ *    - "auto"   → openai when a key is configured, else local
+ *  (The CLI engines — claude / codex OAuth — expose no speech-to-text API, so
+ *  the chat provider itself can't transcribe.)
  *
  *  Public API is intentionally identical to the previous Rust-backed module so
  *  callers (VoiceButton, and via the pane-writer bridge, ChatPane's composer)
  *  keep working unchanged: dictateStart / dictateStop / dictateCancel. */
 
 import { getSetting } from "./settings";
+import { invoke, isTauriRuntime } from "./tauri";
 
 /** Local whisper.cpp server transcription endpoint. Multipart `file` field,
  *  same contract the old Rust path used (temperature + response_format).
@@ -33,6 +41,29 @@ const PREFLIGHT_TIMEOUT_MS = 1500;
 const PREFLIGHT_OK_TTL_MS = 60_000;
 
 let preflightOkAt = 0;
+
+/** Which backend will transcribe the NEXT clip. Honors the transcribeVia
+ *  setting; "auto" prefers the cloud when an OpenAI key is configured (checked
+ *  via the Rust command — the key itself never reaches JS). Throws early (before
+ *  the mic arms) when the user forced openai without a key. */
+export type TranscribeBackend = "openai" | "local";
+
+async function resolveTranscribeBackend(): Promise<TranscribeBackend> {
+  const via = getSetting("transcribeVia") || "auto";
+  if (via === "local") return "local";
+  const cloudReady = isTauriRuntime()
+    ? await invoke<boolean>("transcribe_available").catch(() => false)
+    : false;
+  if (via === "openai") {
+    if (!cloudReady) {
+      throw new Error(
+        "dictation is set to OpenAI but no OpenAI API key is configured — add one in Settings, or switch dictation to the local whisper server",
+      );
+    }
+    return "openai";
+  }
+  return cloudReady ? "openai" : "local";
+}
 
 /** True iff the whisper endpoint answered an HTTP request recently. ANY status
  *  counts as reachable (whisper.cpp may 404/405 a HEAD on /inference) — the
@@ -67,6 +98,9 @@ interface Session {
   chunks: Blob[];
   /** Resolves once the recorder has flushed its final data + fully stopped. */
   stopped: Promise<void>;
+  /** Transcription backend picked at start — the stop path MUST use the same
+   *  one (settings may change mid-recording). */
+  backend: TranscribeBackend;
 }
 
 /** Module-level singleton — exactly one dictation may be live at a time. */
@@ -129,12 +163,13 @@ export async function dictateStart(): Promise<void> {
     throw new Error("audio recording (MediaRecorder) unavailable");
   }
 
-  // Pre-flight the transcription endpoint BEFORE touching the mic. A dead
-  // whisper server used to surface only after you'd finished speaking — the
-  // recording was then thrown away. Fail fast, name the URL, point at the fix.
-  if (!(await whisperReachable())) {
+  // Pick + pre-flight the transcription backend BEFORE touching the mic. A dead
+  // endpoint used to surface only after you'd finished speaking — the recording
+  // was then thrown away. Fail fast, name the fix.
+  const backend = await resolveTranscribeBackend();
+  if (backend === "local" && !(await whisperReachable())) {
     throw new Error(
-      `whisper server not reachable at ${whisperUrl()} — start it, or set the endpoint in Settings → general`,
+      `whisper server not reachable at ${whisperUrl()} — start it, set the endpoint in Settings → general, or add an OpenAI API key to transcribe in the cloud`,
     );
   }
 
@@ -173,7 +208,7 @@ export async function dictateStart(): Promise<void> {
     recorder.onerror = () => resolve();
   });
 
-  session = { stream, recorder, chunks, stopped };
+  session = { stream, recorder, chunks, stopped, backend };
 
   try {
     recorder.start(); // single blob on stop; we don't need timeslices
@@ -217,7 +252,9 @@ export async function dictateStop(): Promise<string> {
       throw new Error("no audio captured — check microphone permission");
     }
 
-    return await postToWhisper(wavBlob);
+    return active.backend === "openai"
+      ? await postToOpenAI(wavBlob)
+      : await postToWhisper(wavBlob);
   } finally {
     releaseStream(active.stream);
   }
@@ -369,6 +406,26 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   }
 
   return new Blob([buffer], { type: "audio/wav" });
+}
+
+// ── openai transport ─────────────────────────────────────────────────────────
+
+/** Ship the WAV to the Rust `transcribe_audio` command (OpenAI API with the
+ *  keychain key). Base64 the blob chunk-wise so a long clip can't blow the
+ *  argument-size ceiling of String.fromCharCode(...spread). */
+async function postToOpenAI(wav: Blob): Promise<string> {
+  const bytes = new Uint8Array(await wav.arrayBuffer());
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  try {
+    const text = await invoke<string>("transcribe_audio", { wavB64: btoa(bin) });
+    return text.trim();
+  } catch (e) {
+    throw new Error(String(e));
+  }
 }
 
 // ── whisper transport ────────────────────────────────────────────────────────

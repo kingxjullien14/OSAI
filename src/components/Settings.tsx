@@ -77,6 +77,7 @@ import {
   type AppSettings,
   type PaneType,
   type FlashLevel,
+  type TranscribeVia,
   type NotificationNativeMode,
   type SidebarMode,
   type TopBarMode,
@@ -2226,7 +2227,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            OSAI · v2.0.0 · Jul.Nazz
+            OSAI · v2.1.0 · Jul.Nazz
           </div>
         </nav>
 
@@ -2338,8 +2339,22 @@ export function Settings({
                       />
                     </Row>
                     <Row
+                      label="dictation transcription"
+                      sub="auto uses your OpenAI API key when one is configured (see API keys below), else the local whisper server — claude/codex have no speech-to-text API"
+                    >
+                      <Segmented<TranscribeVia>
+                        value={s.transcribeVia}
+                        onChange={(v) => patch({ transcribeVia: v })}
+                        options={[
+                          { value: "auto", label: "auto" },
+                          { value: "openai", label: "openai" },
+                          { value: "local", label: "local whisper" },
+                        ]}
+                      />
+                    </Row>
+                    <Row
                       label="dictation server"
-                      sub="whisper.cpp endpoint for push-to-talk — probed before each recording"
+                      sub="whisper.cpp endpoint for the local backend — probed before each recording"
                     >
                       <input
                         value={s.whisperUrl}
@@ -2740,7 +2755,7 @@ export function Settings({
                       OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v2.0.0 · Jul.Nazz
+                      v2.1.0 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">

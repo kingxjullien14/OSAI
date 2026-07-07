@@ -3,6 +3,8 @@
  *  emitter so panes can react to changes without pulling in a state lib.
  *  Persisted as JSON under a single key. */
 
+import { scheduleUiMirrorSave } from "./uiMirror";
+
 const STORAGE_KEY = "aios.settings";
 
 export type PaneType = "terminal" | "files" | "browser";
@@ -49,6 +51,13 @@ export interface AppSettings {
 
   // voice — local whisper.cpp transcription endpoint (dictation POSTs here).
   whisperUrl: string;
+  // voice — which backend transcribes a dictation clip:
+  //   "auto"   → OpenAI when a key is configured (BYOK keychain), else local
+  //   "openai" → always the OpenAI API (errors without a key)
+  //   "local"  → always the whisper.cpp server at whisperUrl
+  // The CLI engines (claude / codex OAuth) have no speech-to-text API, so
+  // "follow the chat provider" isn't possible — this is the honest knob.
+  transcribeVia: TranscribeVia;
 
   // soundscape — whisper-quiet synthesized cues when a run finishes/fails.
   // OFF by default: an opt-in nicety, never a notification channel.
@@ -136,6 +145,9 @@ export type DefaultAi = "codex-code" | "claude-code" | "terminal" | "chat";
 /** Composer flash intensity. */
 export type FlashLevel = "calm" | "lush" | "max";
 
+/** Dictation transcription backend. */
+export type TranscribeVia = "auto" | "local" | "openai";
+
 /** Reflect the flash level as `data-flash` on <html> so App.css can gate the
  *  ambient composer effects. Mirrors how theme/accent drive `data-theme`. */
 export function applyFlashLevel(level: FlashLevel = loadSettings().flashLevel): void {
@@ -164,6 +176,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   primaryOracleId: "",
   whisperUrl: "http://localhost:9000/inference",
+  transcribeVia: "auto",
   soundscape: false,
   funFx: true,
   petRoam: true,
@@ -244,8 +257,19 @@ export function saveSettings(partial: Partial<AppSettings>): AppSettings {
   } catch {
     /* quota / unavailable — keep in-memory cache */
   }
+  scheduleUiMirrorSave();
   listeners.forEach((fn) => fn(next));
   return next;
+}
+
+/** Drop the in-memory cache and re-read localStorage, then notify subscribers.
+ *  Called after the disk mirror restores keys at boot (uiMirror.ts) so already-
+ *  mounted consumers pick up the recovered values. */
+export function rehydrateSettings(): AppSettings {
+  cache = null;
+  const s = loadSettings();
+  listeners.forEach((fn) => fn(s));
+  return s;
 }
 
 /** Read a single setting by key. */

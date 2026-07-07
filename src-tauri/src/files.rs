@@ -1927,7 +1927,10 @@ pub fn find_files(root: String, max: Option<usize>) -> Result<Vec<String>, Strin
                 .path()
                 .strip_prefix(root_path)
                 .unwrap_or(dent.path());
-            out.push(rel.to_string_lossy().to_string());
+            // Always emit forward slashes — the frontend (⌘P scoring, chat's
+            // fuzzy file-open fallback) matches against `/`-joined paths, and
+            // Windows APIs accept either separator on the way back in.
+            out.push(rel.to_string_lossy().replace('\\', "/"));
         }
     }
     Ok(out)
@@ -1965,7 +1968,11 @@ pub fn resolve_in_cwd(cwd: String, reference: String) -> Option<String> {
         std::path::Path::new(&home_dir()).join(rest)
     } else if r == "~" {
         std::path::PathBuf::from(home_dir())
-    } else if r.starts_with('/') {
+    } else if r.starts_with('/') || std::path::Path::new(r).is_absolute() {
+        // covers `/…` AND Windows `C:\…` / `C:/…` / UNC — joining an absolute
+        // ref onto cwd would be wrong on all of them. (`/…` is checked
+        // explicitly: on Windows a rooted-but-driveless path isn't
+        // `is_absolute()`, yet joining it onto cwd would still be wrong.)
         std::path::PathBuf::from(r)
     } else if cwd.trim().is_empty() {
         // no cwd to anchor a relative ref against → can't resolve deterministically.
@@ -1976,9 +1983,85 @@ pub fn resolve_in_cwd(cwd: String, reference: String) -> Option<String> {
 
     let canon = candidate.canonicalize().ok()?;
     if canon.is_file() {
-        Some(canon.to_string_lossy().to_string())
+        Some(strip_verbatim(&canon.to_string_lossy()))
     } else {
         None
+    }
+}
+
+/// Windows `canonicalize` returns extended-length paths (`\\?\C:\…`,
+/// `\\?\UNC\server\share`). Strip the verbatim prefix back to the familiar
+/// form — downstream consumers (pane titles, dedup-by-path, MRU) compare
+/// against plain paths. No-op on Unix and on already-plain paths.
+fn strip_verbatim(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        p.to_string()
+    }
+}
+
+/// `~/.aios/state/ui-state.json` — a tiny disk mirror of the webview's
+/// localStorage-backed UI prefs (settings blob, theme, accents, density).
+/// WebView2 can drop localStorage on profile resets, and dev vs installed
+/// builds live on different origins with separate localStorage — the mirror
+/// survives both; boot re-hydrates any missing keys (lib/uiMirror.ts).
+fn ui_state_path() -> std::path::PathBuf {
+    std::path::Path::new(&home_dir()).join(".aios/state/ui-state.json")
+}
+
+#[tauri::command]
+pub fn ui_state_load() -> Option<String> {
+    std::fs::read_to_string(ui_state_path()).ok()
+}
+
+#[tauri::command]
+pub fn ui_state_save(json: String) -> Result<(), String> {
+    let path = ui_state_path();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    // atomic-ish: temp + rename so a crash mid-write can't truncate the mirror.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::{resolve_in_cwd, strip_verbatim};
+
+    #[test]
+    fn verbatim_prefix_stripped() {
+        assert_eq!(strip_verbatim(r"\\?\C:\x\y.md"), r"C:\x\y.md");
+        assert_eq!(strip_verbatim(r"\\?\UNC\srv\share\y.md"), r"\\srv\share\y.md");
+        assert_eq!(strip_verbatim("/plain/unix"), "/plain/unix");
+    }
+
+    #[test]
+    fn relative_ref_resolves_to_a_plain_path() {
+        let dir = std::env::temp_dir().join("aios-resolve-test");
+        std::fs::create_dir_all(dir.join("docs")).unwrap();
+        std::fs::write(dir.join("docs").join("note.md"), "x").unwrap();
+        // forward slashes + a :line suffix, exactly as a model writes them
+        let got = resolve_in_cwd(dir.to_string_lossy().to_string(), "docs/note.md:12".into())
+            .expect("exact join should resolve");
+        assert!(!got.starts_with(r"\\?\"), "verbatim prefix must be stripped: {got}");
+        assert!(got.ends_with("note.md"), "unexpected path: {got}");
+    }
+
+    #[test]
+    fn absolute_ref_ignores_cwd() {
+        let dir = std::env::temp_dir().join("aios-resolve-test-abs");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "x").unwrap();
+        let abs = dir.join("a.txt").to_string_lossy().to_string();
+        let got = resolve_in_cwd("definitely-not-a-dir".into(), abs)
+            .expect("absolute ref should resolve without cwd");
+        assert!(got.ends_with("a.txt"), "unexpected path: {got}");
     }
 }
 

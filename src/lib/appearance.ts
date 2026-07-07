@@ -5,6 +5,7 @@
  *  the user's reduce-motion / font-scale / density until they opened Settings).
  *  See PLAN-superapp-uiux.md §13 (boot-time apply) + §2 (motion). */
 import { loadSettings } from "./settings";
+import { scheduleUiMirrorSave } from "./uiMirror";
 
 /** "terminal" = compact spacing + the whole UI set in the mono stack — the
  *  W5 "Terminal density" variant of Neon Glass (PLAN-odysseus-feel.md). */
@@ -31,6 +32,7 @@ export function applyDensity(d: Density): void {
   } catch {
     /* ignore */
   }
+  scheduleUiMirrorSave();
   if (typeof document !== "undefined") {
     document.documentElement.dataset.density = d;
   }

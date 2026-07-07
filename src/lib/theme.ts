@@ -8,6 +8,8 @@
 // re-tints instantly without a rebuild. Accent is orthogonal to light/dark —
 // both layers compose.
 
+import { scheduleUiMirrorSave } from "./uiMirror";
+
 export type Theme = "system" | "light" | "dark";
 
 const STORAGE_KEY = "aios.theme";
@@ -56,6 +58,7 @@ export function setTheme(t: Theme): void {
   } catch {
     // ignore persistence failures — still apply for this session.
   }
+  scheduleUiMirrorSave();
   applyTheme(t);
   for (const fn of listeners) fn(t);
 }
@@ -321,6 +324,7 @@ export function setAccent(a: Accent): void {
   } catch {
     // ignore persistence failures — still apply for this session.
   }
+  scheduleUiMirrorSave();
   applyAccent(stored);
   for (const fn of accentListeners) fn(stored);
 }
@@ -408,6 +412,7 @@ export function setAccent2(a: Accent2): void {
   } catch {
     // ignore persistence failures — still apply for this session.
   }
+  scheduleUiMirrorSave();
   applyAccent2(stored);
   for (const fn of accent2Listeners) fn(stored);
 }

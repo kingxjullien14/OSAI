@@ -1,6 +1,6 @@
 [package]
 name = "osai"
-version = "2.0.0"
+version = "2.1.0"
 description = "OSAI — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"
@@ -52,7 +52,9 @@ keyring = "2"
 # OpenRouter / Ollama) with the user's own key, on the chat reader thread (so no
 # tokio runtime needed there). rustls so there's no openssl/native-tls on Windows
 # (sqlx already pulls rustls). See chat_api.rs (pure) + chat.rs run_api_turn (I/O).
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+# `multipart` feeds the dictation upload (voice.rs transcribe_audio — WAV as a
+# multipart `file` field, same wire shape whisper.cpp and OpenAI both expect).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "multipart"] }
 # Files-pane delete goes to the OS trash (Recycle Bin / macOS Trash) so a
 # mis-click is recoverable — never a hard unlink of a folder tree.
 trash = "5"

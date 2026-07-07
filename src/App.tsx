@@ -107,7 +107,8 @@ import {
   type LiveChat,
 } from "./lib/chat";
 import { detectProviders } from "./lib/providerDetect";
-import { initTheme, setTheme } from "./lib/theme";
+import { applyAccent, applyAccent2, applyTheme, initTheme, setTheme } from "./lib/theme";
+import { hydrateUiMirror } from "./lib/uiMirror";
 import { dictateCancel, dictateStart, dictateStop } from "./lib/voice";
 import { parseConductor, type ConductorStep } from "./lib/conductor";
 import { monitorStart, monitorStop } from "./lib/monitor";
@@ -166,7 +167,7 @@ import { HoverBorderGradient } from "./components/fx/HoverBorderGradient";
 import { spotlightMove } from "./components/fx/spotlightGlow";
 import { modalPop, overlayFade, paneExit, toastPop } from "./components/fx/motionTokens";
 import { trapTab } from "./components/ui";
-import { loadSettings, saveSettings, applyFlashLevel, subscribe as subscribeSettings, DEFAULT_SETTINGS, type AppSettings } from "./lib/settings";
+import { loadSettings, saveSettings, rehydrateSettings, applyFlashLevel, subscribe as subscribeSettings, DEFAULT_SETTINGS, type AppSettings } from "./lib/settings";
 import { applyAppearance } from "./lib/appearance";
 import { MOD, chord, fmtChord, isApple } from "./lib/platform";
 import { homeDir, startupOpenPane } from "./lib/fs";
@@ -1061,6 +1062,20 @@ function App() {
     const teardown = initTheme();
     applyFlashLevel(); // reflect stored composer flash level on <html>
     applyAppearance(); // font-scale + density + reduce-motion at boot (not just when Settings mounts)
+    // localStorage isn't durable (WebView2 profile resets; dev vs installed
+    // builds are different origins) — restore any UI prefs missing from it
+    // out of the ~/.aios disk mirror, then re-apply. No-op when intact.
+    void hydrateUiMirror()
+      .then((restored) => {
+        if (!restored) return;
+        rehydrateSettings();
+        applyTheme();
+        applyAccent();
+        applyAccent2();
+        applyFlashLevel();
+        applyAppearance();
+      })
+      .catch((e) => reportDiag("app.uiMirror", e, { action: "hydrate" }));
     return teardown;
   }, []);
 

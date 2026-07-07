@@ -145,6 +145,7 @@ import {
   setPaneAttention,
 } from "../lib/paneBus";
 import { resolvePaneFileTarget, targetLabel } from "../lib/paneRouting";
+import { isAbsolutePath } from "../lib/paths.ts";
 import {
   emptyRunEventState,
   parseRunEventState,
@@ -989,12 +990,14 @@ function artifactFromTool(turn: ToolTurn): Artifact | null {
 /** Resolve a file reference against `cwd` (backend existence check) and open it
  *  in a pane. Absolute/`~` paths skip resolution. Falls back to a BOUNDED fuzzy
  *  basename match via `find_files` only when an exact join fails — never a blind
- *  name search. Silent if nothing real resolves (no broken pane spawn). */
+ *  name search. A reference that resolves to nothing raises a toast naming the
+ *  ref + cwd (it used to fail dead-silent, which read as a broken click). */
 async function openChatFileReference(ref: string, cwd?: string | null): Promise<void> {
   const normalized = resolvePaneFileTarget(ref);
-  // Absolute or home paths are already concrete — open directly (paneForFile
-  // handles the existence/decoding). This matches harvested tool paths too.
-  if (normalized.startsWith("/") || normalized.startsWith("~/")) {
+  // Absolute (incl. Windows `C:\…`) or home paths are already concrete — open
+  // directly (paneForFile handles the existence/decoding). Matches harvested
+  // tool paths too.
+  if (isAbsolutePath(normalized) || normalized.startsWith("~")) {
     openFileInPane(normalized, targetLabel(normalized));
     return;
   }
@@ -1003,6 +1006,15 @@ async function openChatFileReference(ref: string, cwd?: string | null): Promise<
     openFileInPane(normalized, targetLabel(normalized));
     return;
   }
+  const notFound = () =>
+    pushNotification({
+      kind: "chat.file_missing",
+      title: `couldn't open ${targetLabel(normalized)}`,
+      body: `"${normalized}" wasn't found under ${cwd}`,
+      level: "warning",
+      priority: "high",
+      sourceLabel: "chat",
+    });
   try {
     const resolved = await invoke<string | null>("resolve_in_cwd", {
       cwd,
@@ -1013,19 +1025,25 @@ async function openChatFileReference(ref: string, cwd?: string | null): Promise<
       return;
     }
     // last resort: bounded fuzzy basename match (exact join already failed).
-    const base = targetLabel(normalized).toLowerCase();
+    // find_files emits `/`-separated rel paths on every OS; normalize the ref
+    // side too so a `docs\x.md` mention still matches.
+    const base = targetLabel(normalized).toLowerCase().replace(/\\/g, "/");
     if (base.includes(".")) {
       const files = await invoke<string[]>("find_files", { root: cwd, max: 20000 });
       const hit =
-        files.find((f) => f.toLowerCase().endsWith(`/${base}`)) ??
-        files.find((f) => f.toLowerCase() === base);
+        files.find((f) => f.toLowerCase().replace(/\\/g, "/").endsWith(`/${base}`)) ??
+        files.find((f) => f.toLowerCase().replace(/\\/g, "/") === base);
       if (hit) {
-        const abs = hit.startsWith("/") ? hit : `${cwd.replace(/\/+$/, "")}/${hit}`;
+        const abs = isAbsolutePath(hit) ? hit : `${cwd.replace(/[\\/]+$/, "")}/${hit}`;
         openFileInPane(abs, targetLabel(abs));
+        return;
       }
     }
-  } catch {
-    /* resolution failed → don't open a broken pane */
+    notFound();
+  } catch (e) {
+    // resolution failed → don't open a broken pane, but say so.
+    reportDiag("chat.openFile", e, { action: "resolve", ref: normalized });
+    notFound();
   }
 }
 

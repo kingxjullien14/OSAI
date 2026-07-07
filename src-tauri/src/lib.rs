@@ -28,6 +28,7 @@ mod snc;
 mod stats;
 mod telemetry;
 mod usage;
+mod voice;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -422,6 +423,10 @@ pub fn run() {
             files::find_files,
             files::resolve_in_cwd,
             files::search_in_files,
+            files::ui_state_load,
+            files::ui_state_save,
+            voice::transcribe_available,
+            voice::transcribe_audio,
             plugins::list_plugins,
             browser::browser_zoom,
             browser::browser_clear_cookies,
