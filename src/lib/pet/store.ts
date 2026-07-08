@@ -7,6 +7,7 @@
  *  resetting to a stranger hatchling. */
 
 import { createSoul, parseSoul, type PetSoul } from "./engine";
+import { scheduleUiMirrorSave } from "../uiMirror";
 
 const SOUL_KEY = "aios.pet.soul.v1";
 const VARIANT_KEYS = ["aios.pet.variant.v2", "aios.pet.variant.v1"];
@@ -50,7 +51,33 @@ export function saveSoul(soul: PetSoul): void {
   } catch {
     /* keep the in-memory soul */
   }
+  // Write through to the durable disk mirror — the webview's localStorage isn't
+  // durable across installed-app restarts, and the soul must survive a wipe.
+  scheduleUiMirrorSave();
   listeners.forEach((fn) => fn(soul));
+}
+
+/** Reconcile the live soul against one recovered from the disk mirror at boot.
+ *  The mirror wins only when it represents MORE progress — bond is monotonic, so
+ *  a higher bond is strictly the more-real soul (tie broken by the newer tick).
+ *  This repairs the boot race: a pane's synchronous loadSoul() during render can
+ *  mint a fresh soul (localStorage was wiped) BEFORE the async mirror hydrate
+ *  runs, so restore-if-missing isn't enough — we must overwrite the fresh soul
+ *  with the mirrored one. A no-op when the mirror is absent, corrupt, or staler. */
+export function reconcileSoulFromMirror(mirrorRaw: string | null | undefined): void {
+  if (!mirrorRaw) return;
+  let mirrored: PetSoul | null;
+  try {
+    mirrored = parseSoul(JSON.parse(mirrorRaw));
+  } catch {
+    return;
+  }
+  if (!mirrored) return;
+  const current = loadSoul();
+  const mirrorWins =
+    mirrored.bond > current.bond ||
+    (mirrored.bond === current.bond && mirrored.lastTick > current.lastTick);
+  if (mirrorWins) saveSoul(mirrored);
 }
 
 /** Subscribe to soul changes (any writer). Returns an unsubscribe fn. */
@@ -77,10 +104,12 @@ export function loadPetName(): string {
 
 export function savePetName(name: string): void {
   try {
-    const trimmed = name.trim().slice(0, 24);
-    if (trimmed) localStorage.setItem(NAME_KEY, trimmed);
-    else localStorage.removeItem(NAME_KEY);
+    // Store "" (not removeItem) when cleared: loadPetName treats "" as unnamed,
+    // and an explicit "" lets the disk mirror's merge honor the clear instead of
+    // resurrecting the old name from its last-seen fallback.
+    localStorage.setItem(NAME_KEY, name.trim().slice(0, 24));
   } catch {
     /* unavailable — the room keeps its in-state copy */
   }
+  scheduleUiMirrorSave();
 }

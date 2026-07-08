@@ -10,41 +10,10 @@ import { Check, CornerDownLeft, Globe, Terminal } from "lucide-react";
 
 import { spawnPane, openUrlInPane } from "../../lib/paneBus";
 import { isHttpPaneTarget, isPaneFileTarget } from "../../lib/paneRouting";
+import { splitFences } from "../../lib/chatFences";
 import { CopyButton } from "../ui";
 import { PaneMenu, type PaneMenuEntry } from "../PaneMenu";
 import { useChatCwd, useChatFileOpener, useChatSubmit } from "./context";
-
-/** Split text into fenced-code and non-code segments. Tolerates an unclosed
- *  trailing fence (mid-stream) by treating the remainder as an open block. */
-function splitFences(
-  text: string,
-): Array<{ code: true; lang: string; body: string } | { code: false; body: string }> {
-  const out: Array<
-    { code: true; lang: string; body: string } | { code: false; body: string }
-  > = [];
-  const re = /```([^\n`]*)\n?([\s\S]*?)```/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push({ code: false, body: text.slice(last, m.index) });
-    out.push({ code: true, lang: (m[1] || "").trim(), body: m[2] ?? "" });
-    last = re.lastIndex;
-  }
-  const rest = text.slice(last);
-  // an unclosed fence while streaming: render what we have as an open code block
-  const openIdx = rest.indexOf("```");
-  if (openIdx >= 0) {
-    if (openIdx > 0) out.push({ code: false, body: rest.slice(0, openIdx) });
-    const after = rest.slice(openIdx + 3);
-    const nl = after.indexOf("\n");
-    const lang = (nl >= 0 ? after.slice(0, nl) : after).trim();
-    const body = nl >= 0 ? after.slice(nl + 1) : "";
-    out.push({ code: true, lang, body });
-  } else if (rest) {
-    out.push({ code: false, body: rest });
-  }
-  return out;
-}
 
 export const Markdown = memo(function Markdown({
   text,

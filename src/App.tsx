@@ -75,6 +75,7 @@ import {
 import { PaneMenu, type PaneMenuEntry } from "./components/PaneMenu";
 import { PetOverlay } from "./components/pet/PetOverlay";
 import type { PetSurface } from "./lib/pet/engine";
+import { reconcileSoulFromMirror } from "./lib/pet/store";
 import { AccountMenu } from "./components/AccountMenu";
 import { ShortcutHud } from "./components/ShortcutHud";
 import { Onboarding } from "./components/Onboarding";
@@ -1066,14 +1067,18 @@ function App() {
     // builds are different origins) — restore any UI prefs missing from it
     // out of the ~/.aios disk mirror, then re-apply. No-op when intact.
     void hydrateUiMirror()
-      .then((restored) => {
-        if (!restored) return;
+      .then((snap) => {
+        if (!snap) return;
         rehydrateSettings();
         applyTheme();
         applyAccent();
         applyAccent2();
         applyFlashLevel();
         applyAppearance();
+        // The pet soul can't ride the restore-if-missing path: a pane mints a
+        // fresh soul during render (before this runs) and writes it to
+        // localStorage, so the key is never "missing". Reconcile by bond instead.
+        reconcileSoulFromMirror(snap["aios.pet.soul.v1"]);
       })
       .catch((e) => reportDiag("app.uiMirror", e, { action: "hydrate" }));
     return teardown;

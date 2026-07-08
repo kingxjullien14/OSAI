@@ -2227,7 +2227,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            OSAI · v2.1.0 · Jul.Nazz
+            OSAI · v2.1.1 · Jul.Nazz
           </div>
         </nav>
 
@@ -2755,7 +2755,7 @@ export function Settings({
                       OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v2.1.0 · Jul.Nazz
+                      v2.1.1 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">
