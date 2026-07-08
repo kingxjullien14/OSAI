@@ -9,6 +9,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# tauri-action creates a GitHub Release on a v* tag; the default read-only
+# GITHUB_TOKEN can't ("Resource not accessible by integration"), so grant write.
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
