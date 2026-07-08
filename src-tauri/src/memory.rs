@@ -8,7 +8,7 @@
 //!
 //! Vault path resolves portably so the cockpit works for ANY user, not just the
 //! original author. Resolution order (first that exists wins):
-//!   1. `$AIOS_MEMORY_VAULT` — explicit override, used verbatim if it's a dir.
+//!   1. `$OSAI_MEMORY_VAULT` — explicit override, used verbatim if it's a dir.
 //!   2. `$HOME/.claude/projects/<encoded-$HOME>/memory` — Claude Code encodes a
 //!      project's cwd by replacing `/` with `-`; for the user's home dir this is
 //!      their canonical per-project auto-memory vault.
@@ -16,7 +16,7 @@
 //!      dir for whatever user (sorted for determinism).
 //!   4. `$HOME/.claude/memory` — a flat top-level vault, if present.
 //! When none exist the graph command returns an empty (but valid) graph rather
-//! than panicking — graceful degradation on machines without AIOS memory.
+//! than panicking — graceful degradation on machines without OSAI memory.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -58,7 +58,7 @@ pub struct MemoryHit {
 /// settle on — callers tolerate it being absent (empty graph).
 fn vault_dir() -> std::path::PathBuf {
     // 1. Explicit override wins, used verbatim when it points at a real dir.
-    if let Some(v) = std::env::var_os("AIOS_MEMORY_VAULT") {
+    if let Some(v) = std::env::var_os("OSAI_MEMORY_VAULT") {
         let p = std::path::PathBuf::from(v);
         if p.is_dir() {
             return p;
@@ -596,19 +596,19 @@ mod tests {
 
     #[test]
     fn memory_search_ranks_title_and_project_matches() {
-        let root = std::env::temp_dir().join(format!("aios-memory-search-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("osai-memory-search-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
-            root.join("project_aios_shell.md"),
+            root.join("project_osai_shell.md"),
             r#"---
-name: aios shell architecture
+name: osai shell architecture
 description: pane-native tauri superapp memory for the user
 metadata:
   type: project
 ---
 
-repo: /Users/aios/Repo/aios/shell
+repo: /Users/osai/Repo/osai/shell
 the shell uses panes, command registry, and memory context.
 "#,
         )
@@ -629,13 +629,13 @@ browser note that mentions shell once.
 
         let hits = search_memory_dir(
             &root,
-            "aios shell".to_string(),
-            Some("/Users/aios/Repo/aios/shell".to_string()),
+            "osai shell".to_string(),
+            Some("/Users/osai/Repo/osai/shell".to_string()),
             Some(5),
         );
 
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].id, "project_aios_shell");
+        assert_eq!(hits[0].id, "project_osai_shell");
         assert!(hits[0].score > hits[1].score);
         assert!(hits[0].reasons.iter().any(|r| r.contains("title")));
         assert!(hits[0]

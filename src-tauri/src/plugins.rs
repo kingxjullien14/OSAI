@@ -1,7 +1,7 @@
-//! Plugins / skills catalog for the cockpit — "make AIOS work your way".
-//! Reads the canonical AIOS skill index (the Level-0 catalog markdown) + the
+//! Plugins / skills catalog for the cockpit — "make OSAI work your way".
+//! Reads the canonical OSAI skill index (the Level-0 catalog markdown) + the
 //! connected MCP servers from `~/.claude.json`, so the cockpit can show what
-//! AIOS can actually do.
+//! OSAI can actually do.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -19,17 +19,17 @@ pub struct Plugins {
     mcps: Vec<String>,
 }
 
-/// Resolves the AIOS skill index in a portable, env-overridable way (first that
+/// Resolves the OSAI skill index in a portable, env-overridable way (first that
 /// exists wins):
-///   1. `$AIOS_SKILL_INDEX` — explicit override, used verbatim if the file exists.
+///   1. `$OSAI_SKILL_INDEX` — explicit override, used verbatim if the file exists.
 ///   2. `$HOME/.claude/skills/_INDEX.md` — the conventional top-level catalog.
 ///   3. `$HOME/.claude/projects/*/skills/_INDEX.md` — first per-project catalog
 ///      for whatever user (sorted for determinism).
 /// Returns `None` when nothing is found, so the cockpit shows an empty (but
-/// valid) plugin list on machines without an AIOS skill index.
+/// valid) plugin list on machines without an OSAI skill index.
 fn index_path() -> Option<std::path::PathBuf> {
     // 1. Explicit override.
-    if let Some(v) = std::env::var_os("AIOS_SKILL_INDEX") {
+    if let Some(v) = std::env::var_os("OSAI_SKILL_INDEX") {
         let p = std::path::PathBuf::from(v);
         if p.is_file() {
             return Some(p);

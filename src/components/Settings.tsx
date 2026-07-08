@@ -1,5 +1,5 @@
 /** Glassmorphic settings window — native-feeling preferences modal for the
- *  AIOS cockpit. Left nav rail + scrollable right panel. Esc / backdrop close.
+ *  OSAI cockpit. Left nav rail + scrollable right panel. Esc / backdrop close.
  *  Every control persists through src/lib/settings.ts. lowercase, terse. */
 import {
   type ComponentType,
@@ -199,8 +199,8 @@ function Toggle({
           ? "var(--color-accent)"
           : "var(--color-border-strong)",
         boxShadow: checked
-          ? "var(--aios-glow-soft)"
-          : "inset 0 1px 0 0 var(--aios-glass-edge)",
+          ? "var(--osai-glow-soft)"
+          : "inset 0 1px 0 0 var(--osai-glass-edge)",
       }}
     >
       <span
@@ -231,7 +231,7 @@ function Stepper({
   const stepBtn =
     "press grid h-6 w-6 place-items-center rounded-md text-[var(--color-text-2)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-2)]";
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] p-0.5 backdrop-blur-sm">
+    <div className="flex items-center gap-1 rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] p-0.5 backdrop-blur-sm">
       <button
         onClick={() => onChange(clamp(value - step))}
         disabled={value <= min}
@@ -277,7 +277,7 @@ function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_28%,transparent),0_1px_3px_rgba(0,0,0,0.4)] [&::-webkit-slider-thumb]:transition-shadow hover:[&::-webkit-slider-thumb]:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-accent)_40%,transparent),0_1px_3px_rgba(0,0,0,0.4)]"
         style={{
-          background: `linear-gradient(to right, var(--color-accent) 0%, var(--aios-accent-2) ${pct}%, color-mix(in srgb, white 8%, transparent) ${pct}%)`,
+          background: `linear-gradient(to right, var(--color-accent) 0%, var(--osai-accent-2) ${pct}%, color-mix(in srgb, white 8%, transparent) ${pct}%)`,
         }}
       />
       <span className="w-7 text-right font-mono text-[11px] tabular-nums text-[var(--color-muted)]">
@@ -298,7 +298,7 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-[9px] border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] backdrop-blur-sm">
+    <div className="inline-flex overflow-hidden rounded-[9px] border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] backdrop-blur-sm">
       {options.map((o, i) => {
         const active = o.value === value;
         return (
@@ -306,7 +306,7 @@ function Segmented<T extends string>({
             key={o.value}
             onClick={() => onChange(o.value)}
             className={`press px-3 py-1.5 text-[12px] transition-colors ${
-              i > 0 ? "border-l border-[var(--aios-surface-edge)]" : ""
+              i > 0 ? "border-l border-[var(--osai-surface-edge)]" : ""
             }`}
             style={{
               background: active
@@ -574,7 +574,7 @@ function AppearancePreview({ fontPx }: { fontPx: number }) {
       <div
         aria-hidden
         className="pointer-events-none absolute -bottom-12 -right-6 h-28 w-28 rounded-full opacity-[0.18] blur-2xl"
-        style={{ background: "var(--aios-accent-2)" }}
+        style={{ background: "var(--osai-accent-2)" }}
       />
       {/* a second window peeking behind — the workspace has depth now */}
       <div
@@ -585,7 +585,7 @@ function AppearancePreview({ fontPx }: { fontPx: number }) {
 
       {/* the floating window */}
       <div
-        className="relative m-4 mr-16 rounded-lg border shadow-[var(--aios-shadow-pop)]"
+        className="relative m-4 mr-16 rounded-lg border shadow-[var(--osai-shadow-pop)]"
         style={{ borderColor: "var(--color-border-strong)", background: "var(--color-pane)" }}
       >
         <div
@@ -616,7 +616,7 @@ function AppearancePreview({ fontPx }: { fontPx: number }) {
             className="absolute inset-x-3 top-0 h-[2px] rounded-full opacity-80"
             style={{
               background:
-                "linear-gradient(90deg, transparent, var(--color-accent), var(--aios-accent-2), transparent)",
+                "linear-gradient(90deg, transparent, var(--color-accent), var(--osai-accent-2), transparent)",
             }}
           />
           <p className="font-mono leading-none text-[var(--color-text)]" style={{ fontSize: fontPx }}>
@@ -684,12 +684,12 @@ function Card({ label, children }: { label?: string; children: ReactNode }) {
 /* Shared glass field styles — a translucent fill + accent focus-glow, so every
    text input across the sections reads the same. Add a width per use. */
 const FIELD =
-  "glow-focus rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text)] outline-none";
+  "glow-focus rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text)] outline-none";
 const FIELD_MONO =
-  "glow-focus rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none";
+  "glow-focus rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none";
 /** Quiet glass button — the secondary action across the sections. */
 const GHOST_BTN =
-  "press flex items-center gap-1.5 rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--aios-surface-edge-strong)] hover:text-[var(--color-text)]";
+  "press flex items-center gap-1.5 rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[12px] text-[var(--color-text-2)] transition-colors hover:border-[var(--osai-surface-edge-strong)] hover:text-[var(--color-text)]";
 
 /* ── sections ───────────────────────────────────────────────────────── */
 
@@ -1012,7 +1012,7 @@ function DiagnosticsSection() {
         <select
           value={kindFilter}
           onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
-          className="rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
+          className="rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
         >
           <option value="all">all kinds</option>
           <option value="error">errors</option>
@@ -1022,7 +1022,7 @@ function DiagnosticsSection() {
         <select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
-          className="rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
+          className="rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-1 text-[11px] text-[var(--color-text)] outline-none"
         >
           <option value="all">all sources</option>
           {sources.map((s) => (
@@ -1036,7 +1036,7 @@ function DiagnosticsSection() {
         </button>
         <button
           onClick={clearAll}
-          className="press ml-auto rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[11px] text-[var(--color-danger)] transition-colors hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)]"
+          className="press ml-auto rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 py-1 text-[11px] text-[var(--color-danger)] transition-colors hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)]"
         >
           clear
         </button>
@@ -1102,9 +1102,9 @@ function MetaChip({
       bd: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
     },
     cyan: {
-      bg: "color-mix(in srgb, var(--aios-accent-2) 14%, transparent)",
-      fg: "var(--aios-accent-2)",
-      bd: "color-mix(in srgb, var(--aios-accent-2) 38%, transparent)",
+      bg: "color-mix(in srgb, var(--osai-accent-2) 14%, transparent)",
+      fg: "var(--osai-accent-2)",
+      bd: "color-mix(in srgb, var(--osai-accent-2) 38%, transparent)",
     },
     warn: {
       bg: "color-mix(in srgb, var(--color-warning) 16%, transparent)",
@@ -1354,7 +1354,7 @@ function WorkspaceCard({
           </div>
           <p className="pb-1.5 text-[10px] leading-snug text-[var(--color-faint)]">
             inserts a managed block into CLAUDE.md + AGENTS.md (your own notes are untouched) and
-            writes aios.workspace.json (git-ignored). Agents launched here read it natively.
+            writes osai.workspace.json (git-ignored). Agents launched here read it natively.
           </p>
           {ctxStatus && (
             <p
@@ -1364,7 +1364,7 @@ function WorkspaceCard({
               {ctxStatus}
             </p>
           )}
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] p-2 font-mono text-[10px] leading-snug text-[var(--color-text-2)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] p-2 font-mono text-[10px] leading-snug text-[var(--color-text-2)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {preview ?? "loading…"}
           </pre>
         </div>
@@ -1507,7 +1507,7 @@ export function ProjectsSection({
                 <button
                   key={s}
                   onClick={() => addRoot(s)}
-                  className="press rounded-md border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-text-2)] transition-colors hover:border-[var(--aios-surface-edge-strong)] hover:text-[var(--color-text)]"
+                  className="press rounded-md border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-text-2)] transition-colors hover:border-[var(--osai-surface-edge-strong)] hover:text-[var(--color-text)]"
                 >
                   + {s}
                 </button>
@@ -1520,7 +1520,7 @@ export function ProjectsSection({
       <Card label="agent context">
         <Row
           label="keep context fresh on rescan"
-          sub="when on, workspaces that already have an aios.workspace.json get their CLAUDE.md / AGENTS.md regenerated on rescan. off → generate by hand via the context button on each workspace."
+          sub="when on, workspaces that already have an osai.workspace.json get their CLAUDE.md / AGENTS.md regenerated on rescan. off → generate by hand via the context button on each workspace."
         >
           <Toggle
             checked={regenOnChange}
@@ -1635,7 +1635,7 @@ function PluginsSummarySection({ onClose }: { onClose: () => void }) {
                 ? "couldn't read the catalog"
                 : "reading the catalog…"
           }
-          sub={err ?? "the canonical aios skill catalog — browse + search it in the plugins pane"}
+          sub={err ?? "the canonical osai skill catalog — browse + search it in the plugins pane"}
           subClassName={err ? "text-[var(--color-danger)]" : undefined}
         >
           <button onClick={openPane} className={GHOST_BTN}>
@@ -1756,7 +1756,7 @@ function ChannelsSummarySection({ onClose }: { onClose: () => void }) {
 type ControlStatus = { enabled: boolean; running: boolean; port: number };
 
 /** Agent control (Tier 2): toggle the localhost control plane that lets an
- *  external oracle drive AIOS via the aios-control MCP. Backed by RUST state (the
+ *  external oracle drive OSAI via the osai-control MCP. Backed by RUST state (the
  *  server owns the on/off + token + persisted choice), not localStorage — so this
  *  reads/writes it over `invoke`. Hidden on the web shell and on builds that
  *  predate the commands (the status invoke rejects → card stays hidden). */
@@ -1769,7 +1769,7 @@ function AgentControlCard() {
     let alive = true;
     // a rejection here = the command isn't in this binary yet → leave the card
     // hidden (status stays null) rather than showing a dead toggle.
-    invoke<ControlStatus>("aios_control_status")
+    invoke<ControlStatus>("osai_control_status")
       .then((st) => alive && setStatus(st))
       .catch(() => {});
     return () => {
@@ -1781,7 +1781,7 @@ function AgentControlCard() {
     if (busy) return;
     setBusy(true);
     setErr(null);
-    invoke<ControlStatus>("aios_set_control", { on })
+    invoke<ControlStatus>("osai_set_control", { on })
       .then(setStatus)
       .catch(() => setErr("couldn't update — is this a current build?"))
       .finally(() => setBusy(false));
@@ -1790,14 +1790,14 @@ function AgentControlCard() {
     <Card label="agent control">
       <Row
         label="allow agent control"
-        sub="let an external agent (the aios-control MCP) drive this cockpit — open panes, run terminals, read state — over a localhost-only, token-gated server. Off by default; enabling starts it immediately, no restart."
+        sub="let an external agent (the osai-control MCP) drive this cockpit — open panes, run terminals, read state — over a localhost-only, token-gated server. Off by default; enabling starts it immediately, no restart."
       >
         <Toggle checked={status.enabled} onChange={toggle} />
       </Row>
       {status.enabled && (
         <Row
           label="endpoint"
-          sub="discovery files: ~/.aios/control-token + ~/.aios/control-port — point the aios-control MCP at them, then ask your oracle to drive the app"
+          sub="discovery files: ~/.osai/control-token + ~/.osai/control-port — point the osai-control MCP at them, then ask your oracle to drive the app"
         >
           <span className="font-mono text-[11px] text-[var(--color-muted)] tabular-nums">
             {status.running && status.port ? `127.0.0.1:${status.port}` : "starting…"}
@@ -2119,19 +2119,19 @@ export function Settings({
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
-        className="glass-strong flex h-[600px] w-[900px] max-w-full overflow-hidden rounded-[18px] shadow-[var(--aios-shadow-pop)] focus:outline-none"
+        className="glass-strong flex h-[600px] w-[900px] max-w-full overflow-hidden rounded-[18px] shadow-[var(--osai-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
         {/* nav rail */}
         <nav className="relative flex w-[236px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_55%,transparent)] backdrop-blur-md">
           {/* the signature gradient edge running down the rail's right border */}
-          <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-[linear-gradient(180deg,transparent,var(--color-accent)_40%,var(--aios-accent-2)_75%,transparent)] opacity-50" />
+          <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-[linear-gradient(180deg,transparent,var(--color-accent)_40%,var(--osai-accent-2)_75%,transparent)] opacity-50" />
 
           {/* brand — gradient diamond + wordmark */}
           <div className="flex items-center gap-2.5 px-4 pb-3.5 pt-4">
             <span
-              className="h-[22px] w-[22px] rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]"
+              className="h-[22px] w-[22px] rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))]"
               style={{ boxShadow: "0 0 14px -2px color-mix(in srgb, var(--color-accent) 45%, transparent)" }}
             />
             <span className="text-[15px] font-semibold lowercase tracking-tight text-[var(--color-text)]">
@@ -2150,7 +2150,7 @@ export function Settings({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="search settings…"
               spellCheck={false}
-              className="glow-focus w-full rounded-[9px] border border-[var(--aios-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] py-1.5 pl-7 pr-6 text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
+              className="glow-focus w-full rounded-[9px] border border-[var(--osai-surface-edge)] bg-[color-mix(in_srgb,white_3%,transparent)] py-1.5 pl-7 pr-6 text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
             />
             {query && (
               <button
@@ -2173,7 +2173,7 @@ export function Settings({
               <SlidingIndicator
                 top={navRect.top}
                 height={navRect.height}
-                className="rounded-[9px] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),color-mix(in_srgb,var(--color-accent)_4%,transparent))] shadow-[inset_2px_0_0_var(--color-accent),0_0_22px_-10px_var(--aios-glow-accent)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-accent)_34%,transparent)]"
+                className="rounded-[9px] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),color-mix(in_srgb,var(--color-accent)_4%,transparent))] shadow-[inset_2px_0_0_var(--color-accent),0_0_22px_-10px_var(--osai-glow-accent)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-accent)_34%,transparent)]"
               />
             )}
             {NAV_GROUPS.map((group, gi) => {
@@ -2227,7 +2227,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            OSAI · v2.1.1 · Jul.Nazz
+            OSAI · v2.1.2 · Jul.Nazz
           </div>
         </nav>
 
@@ -2273,7 +2273,7 @@ export function Settings({
                     <Row label="setup" sub="replay the first-run onboarding">
                       <button
                         type="button"
-                        onClick={() => window.dispatchEvent(new Event("aios:replay-onboarding"))}
+                        onClick={() => window.dispatchEvent(new Event("osai:replay-onboarding"))}
                         className={GHOST_BTN}
                       >
                         replay setup
@@ -2333,7 +2333,7 @@ export function Settings({
                       <input
                         value={s.terminalSocket}
                         onChange={(e) => patch({ terminalSocket: e.target.value })}
-                        placeholder="aios"
+                        placeholder="osai"
                         spellCheck={false}
                         className={`w-[230px] ${FIELD_MONO}`}
                       />
@@ -2682,7 +2682,7 @@ export function Settings({
                 <Card label="agents">
                   <Row
                     label="default oracle name"
-                    sub="identity for the one-tap “spawn an oracle” shortcut (aios-<id>) — blank uses your name, else “agent”. shares the terminal socket set in general."
+                    sub="identity for the one-tap “spawn an oracle” shortcut (osai-<id>) — blank uses your name, else “agent”. shares the terminal socket set in general."
                   >
                     <input
                       value={s.primaryOracleId}
@@ -2706,12 +2706,12 @@ export function Settings({
                     />
                   </Row>
                   <Row
-                    label="show non-aios tmux sessions"
-                    sub="include sessions not started by aios"
+                    label="show non-osai tmux sessions"
+                    sub="include sessions not started by osai"
                   >
                     <Toggle
-                      checked={s.showNonAiosSessions}
-                      onChange={(v) => patch({ showNonAiosSessions: v })}
+                      checked={s.showNonOsaiSessions}
+                      onChange={(v) => patch({ showNonOsaiSessions: v })}
                     />
                   </Row>
                 </Card>
@@ -2747,15 +2747,15 @@ export function Settings({
               {section === "about" && (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
                   {/* the OSAI diamond — same mark as the app icon + sidebar */}
-                  <span className="grid h-20 w-20 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)]">
-                    <span className="block h-9 w-9 rotate-45 rounded-[9px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_18px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                  <span className="grid h-20 w-20 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--osai-glow-soft)]">
+                    <span className="block h-9 w-9 rotate-45 rounded-[9px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))] shadow-[0_0_18px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
                   </span>
                   <div>
                     <div className="text-[16px] font-medium text-[var(--color-text)]">
                       OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v2.1.1 · Jul.Nazz
+                      v2.1.2 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">

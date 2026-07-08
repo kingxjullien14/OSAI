@@ -5,7 +5,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "./tauri";
 
-/** An AIOS oracle session discovered by the backend (tmux + instances.json). */
+/** An OSAI oracle session discovered by the backend (tmux + instances.json). */
 export interface OracleInfo {
   identity: string;
   session: string;
@@ -24,11 +24,11 @@ export interface TmuxSession {
   windows: number;
   is_oracle: boolean;
   /** Friendly display label (the session's window name — datetime/renamed for
-   *  `aios-term-*`). Falls back to `name` in the UI when empty. */
+   *  `osai-term-*`). Falls back to `name` in the UI when empty. */
   label: string;
 }
 
-/** Lists oracle sessions (`aios-<identity>`) on the given socket (default "aios"). */
+/** Lists oracle sessions (`osai-<identity>`) on the given socket (default "osai"). */
 export async function listOracles(socket?: string | null): Promise<OracleInfo[]> {
   return invoke<OracleInfo[]>("list_oracles", { socket: socket ?? null });
 }
@@ -38,7 +38,7 @@ export async function listTmuxSessions(socket?: string | null): Promise<TmuxSess
   return invoke<TmuxSession[]>("list_tmux_sessions", { socket: socket ?? null });
 }
 
-/** Creates a new oracle session `aios-<identity>`; optional startup command. */
+/** Creates a new oracle session `osai-<identity>`; optional startup command. */
 export async function createOracle(
   identity: string,
   command?: string,
@@ -79,7 +79,7 @@ export async function spawnShell(
 }
 
 /**
- * Spawns a pane attached to a PERSISTENT terminal tmux session `aios-term-<name>`
+ * Spawns a pane attached to a PERSISTENT terminal tmux session `osai-term-<name>`
  * (created on first use). Closing the pane / quitting the app only detaches the
  * tmux client — the session (and `cmd`, e.g. `claude`) keeps running and is
  * reattachable. Unix-only: on Windows the backend command is absent, so callers
@@ -117,7 +117,7 @@ export async function setSessionLabel(
   return invoke("pty_set_label", { socket: socket ?? null, session, label });
 }
 
-/** Spawns a pane attached to the oracle session `aios-<identity>` on `socket`. */
+/** Spawns a pane attached to the oracle session `osai-<identity>` on `socket`. */
 export async function spawnOracle(
   onData: Channel<string>,
   identity: string,
@@ -184,7 +184,7 @@ export async function ptyKill(id: number): Promise<void> {
 }
 
 /**
- * Startup GC (B2): kills orphaned `aios-term-*` tmux sessions that have NO live
+ * Startup GC (B2): kills orphaned `osai-term-*` tmux sessions that have NO live
  * restored pane. `keep` is the list of `termSessionName` suffixes for the panes
  * currently in the layout; the backend reaps only sessions outside that set.
  * Returns the full session names that were reaped.

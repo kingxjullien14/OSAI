@@ -1,5 +1,5 @@
 //! LSP process supervisor + dumb framed pipe (TRACK B). Ported from
-//! upstream/aios-superapp@24b3855, with Windows-native binary resolution
+//! upstream/osai-superapp@24b3855, with Windows-native binary resolution
 //! + `.no_window()` so a built Windows app never flashes a console per server.
 //!
 //! Rust's ONLY jobs here: spawn a language server per (workspaceRoot, language)
@@ -227,7 +227,7 @@ pub struct LspStartInfo {
 
 /// Spawns a language server for (root, lang) and wires its stdout to `on_event`
 /// as raw JSON message strings (one channel message per LSP message). Framing
-/// errors / process exit emit a `$/aios/serverExit` pseudo-notification so the
+/// errors / process exit emit a `$/osai/serverExit` pseudo-notification so the
 /// frontend can run crash-restart logic.
 #[tauri::command]
 pub fn lsp_start(
@@ -311,7 +311,7 @@ pub fn lsp_start(
         // Tell the frontend (best-effort — channel may already be gone) so the
         // manager can run its crash-restart / degrade logic.
         let _ = on_event.send(format!(
-            "{{\"jsonrpc\":\"2.0\",\"method\":\"$/aios/serverExit\",\"params\":{{\"serverId\":{id}}}}}"
+            "{{\"jsonrpc\":\"2.0\",\"method\":\"$/osai/serverExit\",\"params\":{{\"serverId\":{id}}}}}"
         ));
         // Reap + deregister.
         if let Some(entry) = with_servers(|m| m.remove(&id)) {
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn nearest_marker_wins_and_git_bounds() {
-        let tmp = std::env::temp_dir().join(format!("aios-lsp-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("osai-lsp-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         // repo/.git, repo/package.json, repo/pkg/tsconfig.json, repo/pkg/src/a.ts
         mk(&tmp, "repo/.git/HEAD");

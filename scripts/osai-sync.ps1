@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   *** LEGACY (Firaz-era) ***
-  Written when this tree tracked Firaz's AIOS as its direct upstream. OSAI has
+  Written when this tree tracked Firaz's OSAI as its direct upstream. OSAI has
   diverged since (the upstream remote now has an UNRELATED history - his ideas
   are hand-ported, never merged), so running a merge from it will conflict on
   everything. Kept for reference; at most use -Preview to see what changed
@@ -20,9 +20,9 @@
   Commit any local changes and push this branch to origin (for the team).
 
 .EXAMPLE
-  .\scripts\aios-sync.ps1 -Preview      # see what's new from upstream
-  .\scripts\aios-sync.ps1               # pull his changes + rebuild
-  .\scripts\aios-sync.ps1 -Push         # publish our branch for the team
+  .\scripts\osai-sync.ps1 -Preview      # see what's new from upstream
+  .\scripts\osai-sync.ps1               # pull his changes + rebuild
+  .\scripts\osai-sync.ps1 -Push         # publish our branch for the team
 #>
 param(
   [switch]$Preview,
@@ -90,7 +90,7 @@ $dirty = git status --porcelain
 if ($dirty) {
   Write-Host "x You have uncommitted changes. Commit or stash them first:" -ForegroundColor Red
   git status --short
-  Write-Host "  (tip: .\scripts\aios-sync.ps1 -Push   to commit + publish them)" -ForegroundColor DarkGray
+  Write-Host "  (tip: .\scripts\osai-sync.ps1 -Push   to commit + publish them)" -ForegroundColor DarkGray
   exit 1
 }
 
@@ -115,7 +115,7 @@ if ($mergeFailed) {
   if ($remaining.Count -gt 0) {
     Write-Host "x Real conflicts need a human (likely upstream changed the same lines we did):" -ForegroundColor Red
     $remaining | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-    Write-Host "  Resolve them, then run:  git commit  &&  .\scripts\aios-sync.ps1" -ForegroundColor DarkGray
+    Write-Host "  Resolve them, then run:  git commit  &&  .\scripts\osai-sync.ps1" -ForegroundColor DarkGray
     exit 1
   }
   git commit --no-edit | Out-Null
@@ -140,4 +140,4 @@ if (-not $cargoOk) { Die "cargo build failed - the upstream changes may need a W
 
 Write-Host ""
 Say "synced the upstream $incoming commit(s) and rebuilt clean." "Green"
-Say "  launch with:  .\scripts\run.ps1     publish with:  .\scripts\aios-sync.ps1 -Push" "Green"
+Say "  launch with:  .\scripts\run.ps1     publish with:  .\scripts\osai-sync.ps1 -Push" "Green"

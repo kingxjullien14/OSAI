@@ -9,7 +9,7 @@
  *  below is just the set of profile NAMES the user has created, persisted so the
  *  switcher remembers them. */
 
-const KEY = "aios.browser.profiles";
+const KEY = "osai.browser.profiles";
 export const DEFAULT_PROFILE = "default";
 
 export function loadProfiles(): string[] {

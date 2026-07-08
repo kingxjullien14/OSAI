@@ -21,7 +21,7 @@ import type { OracleInfo } from "./pty.ts";
 import type { ProjectInfo } from "./run.ts";
 import { allComponents, joinPath, type ProjectWorkspace } from "./projectWorkspaces.ts";
 import { SPAWN, type PaneContent } from "./apps.ts";
-import { commandToPaletteCommand, createCommand, type AiosCommand } from "./commands.ts";
+import { commandToPaletteCommand, createCommand, type OsaiCommand } from "./commands.ts";
 import { MOD, chord } from "./platform.ts";
 import type { Workspace } from "./workspaces.ts";
 import type { WorkSession } from "./workSessions.ts";
@@ -64,7 +64,7 @@ export interface AppCommandDeps {
 }
 
 interface RegistryEntry {
-  command: AiosCommand;
+  command: OsaiCommand;
   group: string;
   actionLabel: string;
 }

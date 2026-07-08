@@ -229,7 +229,7 @@ export function GlobalSearch({
         role="dialog"
         aria-modal="true"
         aria-label="search in files"
-        className="glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
+        className="glass absolute top-[10vh] flex max-h-[74vh] w-[680px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--osai-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // Escape closes from anywhere (a clicked hit row holds focus);
@@ -284,7 +284,7 @@ export function GlobalSearch({
           {rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
               <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] opacity-40">
-                <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]" />
+                <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))]" />
               </span>
               <div className="text-[12.5px] text-[var(--color-muted)]">
                 {!root
@@ -322,7 +322,7 @@ export function GlobalSearch({
                       if (i >= 0) setSel(i);
                     }}
                     onClick={() => pick(row.path, row.hit)}
-                    className={`flex w-full items-baseline gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-1 text-left transition-colors ${
+                    className={`flex w-full items-baseline gap-3 rounded-[var(--osai-radius-md)] px-2.5 py-1 text-left transition-colors ${
                       rowIdx === selRowIdx ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel-2)]/50"
                     }`}
                   >

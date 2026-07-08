@@ -36,7 +36,7 @@ export function CadencedShimmer({ children }: { children: string }) {
   }, []);
 
   return (
-    <span ref={ref} className={active ? "aios-shimmer" : undefined}>
+    <span ref={ref} className={active ? "osai-shimmer" : undefined}>
       {children}
     </span>
   );

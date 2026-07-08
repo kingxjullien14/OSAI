@@ -17,7 +17,7 @@ test("paneFileTarget returns file path and display name for file-backed panes", 
 });
 
 test("containingDir returns the parent directory for reveal-in-files actions", () => {
-  assert.equal(containingDir("/Users/aios/report.md"), "/Users/aios");
+  assert.equal(containingDir("/Users/osai/report.md"), "/Users/osai");
   assert.equal(containingDir("/report.md"), "/");
   assert.equal(containingDir("C:\\Users\\kingx\\report.md"), "C:\\Users\\kingx");
   assert.equal(containingDir("C:\\report.md"), "C:\\");

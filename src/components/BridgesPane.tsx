@@ -1,4 +1,4 @@
-/** Channels — the AIOS dispatch center. Every messaging channel AIOS speaks
+/** Channels — the OSAI dispatch center. Every messaging channel OSAI speaks
  *  through, in one hub: which are connected + alive, and what's flowing through
  *  them. WhatsApp is the live, fully-detected proof (status + stats + an
  *  expandable conversation feed); the rest are connectors on the way, shown in
@@ -257,7 +257,7 @@ export function BridgesPane() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <p className="mb-3 text-[11px] leading-relaxed text-[var(--color-muted)]">
-          all the apps AIOS can message people through. a{" "}
+          all the apps OSAI can message people through. a{" "}
           <span className="text-[var(--color-success)]">green dot</span> means it's on and
           working — grey means it's not set up yet.
           {isWindows && (
@@ -277,7 +277,7 @@ export function BridgesPane() {
             hint={
               isWindows
                 ? "channels run on the macOS bridge host — this pane is read-only here"
-                : "start the aios bridge (launchd) and hit refresh"
+                : "start the osai bridge (launchd) and hit refresh"
             }
             action={{ label: "refresh", onClick: () => void refresh() }}
           />
@@ -295,7 +295,7 @@ export function BridgesPane() {
         <m.div
           key={toast}
           {...toastPop()}
-          className="pointer-events-none absolute bottom-3 left-1/2 z-10 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
+          className="pointer-events-none absolute bottom-3 left-1/2 z-10 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]"
         >
           {toast}
         </m.div>

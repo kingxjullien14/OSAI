@@ -55,9 +55,9 @@ export async function ensureScheduledAgentHome(): Promise<string> {
 
 const agentHome = () => runtimeHome || "~";
 
-const customAgentsKey = "aios.chatAgents.custom";
-const lastScheduledRunKey = (id: string) => `aios.chatAgents.lastScheduledRun:${id}`;
-const agentChatSessionKey = (id: string) => `aios.scheduledAgent.chatSession:${id}`;
+const customAgentsKey = "osai.chatAgents.custom";
+const lastScheduledRunKey = (id: string) => `osai.chatAgents.lastScheduledRun:${id}`;
+const agentChatSessionKey = (id: string) => `osai.scheduledAgent.chatSession:${id}`;
 
 /** Empty catalog — the shell ships with no agents; only the ones users create
  *  exist. (Kept as an export for type/id lookups.) */
@@ -114,7 +114,7 @@ function normalizeAgentId(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/^aios-/, "")
+    .replace(/^osai-/, "")
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);

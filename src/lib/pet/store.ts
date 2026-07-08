@@ -1,7 +1,7 @@
 /** Pet soul persistence + migration (P0's I/O half — the engine stays pure).
  *
  *  MIGRATION PROMISE (plan): nobody's pet dies. An install that already has a
- *  pet identity (`aios.pet.variant.v2` / v1 from the current PetPane) but no
+ *  pet identity (`osai.pet.variant.v2` / v1 from the current PetPane) but no
  *  soul yet gets a soul born A WEEK AGO with a warmed-up bond — the companion
  *  that's been on the dashboard all along "remembers you", instead of
  *  resetting to a stranger hatchling. */
@@ -9,8 +9,8 @@
 import { createSoul, parseSoul, type PetSoul } from "./engine";
 import { scheduleUiMirrorSave } from "../uiMirror";
 
-const SOUL_KEY = "aios.pet.soul.v1";
-const VARIANT_KEYS = ["aios.pet.variant.v2", "aios.pet.variant.v1"];
+const SOUL_KEY = "osai.pet.soul.v1";
+const VARIANT_KEYS = ["osai.pet.variant.v2", "osai.pet.variant.v1"];
 
 const DAY = 24 * 3_600_000;
 
@@ -92,7 +92,7 @@ export function subscribeSoul(fn: (soul: PetSoul) => void): () => void {
 // Kept OUTSIDE the soul so the pure engine's shape stays stable (parseSoul
 // would strip it anyway). Empty string = unnamed.
 
-const NAME_KEY = "aios.pet.name.v1";
+const NAME_KEY = "osai.pet.name.v1";
 
 export function loadPetName(): string {
   try {

@@ -44,7 +44,7 @@ interface EffortLike {
 function engineDot(engine: string | undefined): string {
   const e = engine ?? "claude";
   if (e === "codex" || e === "openai") return "var(--color-info)";
-  if (e === "local" || e === "ollama") return "var(--aios-accent-2)";
+  if (e === "local" || e === "ollama") return "var(--osai-accent-2)";
   if (e === "openrouter") return "var(--color-warning)";
   return "var(--color-accent)";
 }
@@ -253,7 +253,7 @@ export function ModelMenu({
                   className={`flex-1 rounded-md px-0.5 py-[3px] text-center font-sans text-[10.5px] transition-colors ${
                     on
                       ? ef.ultra
-                        ? "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_30%,transparent),color-mix(in_srgb,var(--aios-accent-2)_25%,transparent))] text-[var(--color-text)]"
+                        ? "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_30%,transparent),color-mix(in_srgb,var(--osai-accent-2)_25%,transparent))] text-[var(--color-text)]"
                         : "bg-[var(--color-accent-soft)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
                       : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
                   }`}

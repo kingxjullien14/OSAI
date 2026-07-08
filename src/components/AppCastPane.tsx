@@ -1,4 +1,4 @@
-/** App-cast pane — live-mirrors ONE native macOS app window inside an AIOS pane
+/** App-cast pane — live-mirrors ONE native macOS app window inside an OSAI pane
  *  (ScreenCaptureKit). Phase A: capture + mirror. Phase B: input forwarding —
  *  clicks/scroll/keys on the overlay are mapped to the real window + posted to
  *  the target app's pid (handled natively in the overlay's event handlers).
@@ -407,7 +407,7 @@ function AppCastPaneInner({
             {starting && <Loader2 size={12} className="shrink-0 animate-spin text-[var(--color-accent)]" />}
           </button>
           {pickerOpen && (
-            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] text-[12px] shadow-[var(--aios-shadow-pop)]">
+            <div className="absolute left-0 right-0 top-full z-[70] mt-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] text-[12px] shadow-[var(--osai-shadow-pop)]">
               {/* search + refresh header (sticky) */}
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
                 <Search size={12} className="shrink-0 text-[var(--color-faint)]" />
@@ -598,7 +598,7 @@ function AppCastPaneInner({
           <m.div
             key={toast}
             {...toastPop()}
-            className="pointer-events-none absolute bottom-2 left-1/2 z-50 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
+            className="pointer-events-none absolute bottom-2 left-1/2 z-50 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[11px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]"
           >
             {toast}
           </m.div>

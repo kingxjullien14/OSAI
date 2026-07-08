@@ -1,4 +1,4 @@
-//! Multi-session PTY manager for the AIOS cockpit.
+//! Multi-session PTY manager for the OSAI cockpit.
 //!
 //! Each terminal pane owns one real PTY (via portable-pty → openpty on unix,
 //! ConPTY on Windows). Output is streamed to the frontend over a per-session
@@ -23,10 +23,10 @@ use tauri::Manager;
 #[cfg(not(windows))]
 use crate::oracles::tmux_bin;
 
-/// Default multiplexer socket name for AIOS's own persistent terminal sessions
+/// Default multiplexer socket name for OSAI's own persistent terminal sessions
 /// when the frontend doesn't pass one. Was a legacy hardcoded name; now a
 /// neutral default the user can override in Settings → "terminal socket".
-const DEFAULT_TERM_SOCKET: &str = "aios";
+const DEFAULT_TERM_SOCKET: &str = "osai";
 
 /// Resolves + sanitizes the socket name from the optional frontend setting.
 /// Falls back to `DEFAULT_TERM_SOCKET`; rejects anything with shell-unsafe chars
@@ -100,14 +100,14 @@ pub fn run_mux_quiet(bin: &str, args: &[&str]) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// Applies AIOS's shared session styling on a socket (global, idempotent):
+/// Applies OSAI's shared session styling on a socket (global, idempotent):
 /// mouse ON — copy-mode IS tmux/psmux's scrollback, so `mouse off` killed
 /// wheel scrolling outright (owner-verified live). Right-click paste is
 /// blocked FRONTEND-side instead (TerminalRuntime shields right-button
 /// events from xterm). Plus a `status-left` that shows the WINDOW NAME —
 /// which we set to a friendly per-session label (datetime by default,
 /// renameable) via `new-session -n`. The default `[#S]` truncated every
-/// `aios-term-*` key to the same `aios-term`; `#W` is the human label instead.
+/// `osai-term-*` key to the same `osai-term`; `#W` is the human label instead.
 #[cfg(windows)]
 fn apply_mux_style(bin: &str, sock: &str) {
     apply_mux_style_once(bin, sock);
@@ -345,7 +345,7 @@ pub fn pty_spawn(
     spawn_internal(app, &state, on_data, cmd, cols, rows)
 }
 
-/// Attaches a pane to an oracle session (`aios-<identity>`) on the configurable
+/// Attaches a pane to an oracle session (`osai-<identity>`) on the configurable
 /// socket. Closing the pane detaches the client without killing the session
 /// (`pty_kill` only kills the attach client).
 #[tauri::command]
@@ -366,7 +366,7 @@ pub fn pty_spawn_oracle(
     if !safe {
         return Err("invalid oracle identity".into());
     }
-    let session = format!("aios-{identity}");
+    let session = format!("osai-{identity}");
     #[cfg(windows)]
     {
         let Some(psmux) = resolve_mux(&app) else {
@@ -413,7 +413,7 @@ pub fn pty_spawn_oracle(
     }
 }
 
-/// Attaches a pane to a PERSISTENT terminal tmux session (`aios-term-<name>` on
+/// Attaches a pane to a PERSISTENT terminal tmux session (`osai-term-<name>` on
 /// socket), creating it on first use. Unlike `pty_spawn`'s ephemeral
 /// login shell, this session lives on the tmux daemon — so closing the pane (or
 /// quitting the whole app) only detaches the `tmux attach` client; the shell (or
@@ -452,7 +452,7 @@ pub fn pty_spawn_terminal(
             .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
     if safe_name {
         if let Some(psmux) = resolve_mux(&app) {
-            let session = format!("aios-term-{name}");
+            let session = format!("osai-term-{name}");
             // create-or-noop, detached. `-A` makes a re-open a harmless no-op
             // (not a relaunch of `cmd`) — same atomic guarantee as unix.
             let mut create: Vec<String> = vec![
@@ -575,7 +575,7 @@ pub fn pty_spawn_terminal(
     }
     let tmux = tmux_bin();
     let sock = term_socket(socket);
-    let session = format!("aios-term-{name}");
+    let session = format!("osai-term-{name}");
     // Single-quote for the outer `sh -c` so spaces/args survive.
     let sq = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
     // `-n <label>` names the window = the human display label (datetime by
@@ -606,7 +606,7 @@ pub fn pty_spawn_terminal(
     // detached if absent and is a harmless no-op (NOT a re-launch of `cmd`) if it
     // already exists. This replaces the old `has-session || new-session` pair,
     // whose gap before `attach` was a TOCTOU race — if the session wasn't present
-    // at attach time tmux printed `can't find session: aios-term-<name>`. With
+    // at attach time tmux printed `can't find session: osai-term-<name>`. With
     // `-A` the session is GUARANTEED to exist before we attach, so that error
     // class is gone.
     let create = if startup.is_empty() {
@@ -789,7 +789,7 @@ pub fn pty_resize(state: State<PtyState>, id: u32, cols: u16, rows: u16) -> Resu
 /// For any tmux-backed pane (oracle, all-tmux, OR a persistent terminal spawned
 /// via `pty_spawn_terminal`) the child PTY runs the `tmux attach` process, not
 /// the tmux session itself — so killing it merely DETACHES the client. Closing
-/// the pane = detach; the `aios-term-*` (or `aios-*`) session keeps running on
+/// the pane = detach; the `osai-term-*` (or `osai-*`) session keeps running on
 /// the tmux daemon and is reattachable later. The session only dies when its own
 /// process exits or someone explicitly `kill-session`s it.
 #[tauri::command]
@@ -803,7 +803,7 @@ pub fn pty_kill(state: State<PtyState>, id: u32) -> Result<(), String> {
 
 /// Renames a session's friendly DISPLAY label (what the status bar shows + the
 /// reattach list lists). We rename the session's window — the session NAME stays
-/// the stable `aios-term-<key>` so workspace-restore reattach still works. The
+/// the stable `osai-term-<key>` so workspace-restore reattach still works. The
 /// label survives detach/reattach (it lives on the multiplexer server).
 #[tauri::command]
 pub fn pty_set_label(
@@ -834,16 +834,16 @@ pub fn pty_set_label(
     }
 }
 
-/// Startup reaper (B2): kills orphaned `aios-term-*` tmux sessions on the oracle
+/// Startup reaper (B2): kills orphaned `osai-term-*` tmux sessions on the oracle
 /// socket that have NO corresponding restored pane. Without this, B1's old
 /// new-key-every-launch behaviour (now fixed) plus normal pane churn leaves
 /// zombie sessions — often a `claude` still burning context — accumulating
 /// forever (`pty_kill` only detaches the attach client; nothing ever
 /// kill-sessions them).
 ///
-/// `keep` is the set of `aios-term-<name>` SESSION SUFFIXES that map to live
+/// `keep` is the set of `osai-term-<name>` SESSION SUFFIXES that map to live
 /// restored panes (the frontend passes each pane's `termSessionName`). We list
-/// every `aios-term-*` session and `kill-session` only those NOT in `keep` —
+/// every `osai-term-*` session and `kill-session` only those NOT in `keep` —
 /// conservative by design: an unknown session is reaped only when it provably
 /// has no pane. Non-unix / no-tmux → no-op. Returns the names reaped.
 #[tauri::command]
@@ -858,10 +858,10 @@ pub fn pty_reap_terminals(keep: Vec<String>, socket: Option<String>) -> Result<V
         use std::collections::HashSet;
         let tmux = tmux_bin();
         let sock = term_socket(socket);
-        // The full session names we must preserve, e.g. `aios-term-k3-abcd`.
+        // The full session names we must preserve, e.g. `osai-term-k3-abcd`.
         let keep: HashSet<String> = keep
             .into_iter()
-            .map(|n| format!("aios-term-{n}"))
+            .map(|n| format!("osai-term-{n}"))
             .collect();
         let output = std::process::Command::new(&tmux)
             .args(["-L", &sock, "list-sessions", "-F", "#{session_name}"])
@@ -875,7 +875,7 @@ pub fn pty_reap_terminals(keep: Vec<String>, socket: Option<String>) -> Result<V
         let mut reaped = Vec::new();
         for line in stdout.lines() {
             let name = line.trim();
-            if name.is_empty() || !name.starts_with("aios-term-") {
+            if name.is_empty() || !name.starts_with("osai-term-") {
                 continue;
             }
             if keep.contains(name) {

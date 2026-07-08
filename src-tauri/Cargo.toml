@@ -1,6 +1,6 @@
 [package]
 name = "osai"
-version = "2.1.1"
+version = "2.1.2"
 description = "OSAI — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"
@@ -37,7 +37,7 @@ walkdir = "2"
 ignore = "0.4"
 base64 = "0.22"
 # Control plane (Tier 2): a tiny localhost-only HTTP server so an external agent
-# (the aios-control MCP / curl / the WhatsApp bridge) can drive the app. Blocking +
+# (the osai-control MCP / curl / the WhatsApp bridge) can drive the app. Blocking +
 # dependency-light; runs on its own thread (see control.rs). Off by default.
 tiny_http = "0.12"
 # 256-bit control-plane bearer token from the OS CSPRNG (control.rs gen_token).
@@ -91,7 +91,7 @@ objc2-foundation = { version = "0.3", features = ["NSString", "NSDate", "NSSet",
 objc2-web-kit = { version = "0.3", features = ["WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKFindConfiguration", "WKFindResult", "WKWebsiteDataStore", "WKWebsiteDataRecord", "block2"] }
 
 # ── ScreenCaptureKit "native app as a pane" spike (appcast.rs) ───────────────
-# Live-mirror a single foreign macOS window into an AIOS pane: SCK captures the
+# Live-mirror a single foreign macOS window into an OSAI pane: SCK captures the
 # window's backing store as GPU-resident IOSurface frames, which we assign to a
 # CALayer-backed NSView child of the main window (zero-copy, frames never touch
 # JS). Lower-level objc2-* bindings (NOT the high-level `screencapturekit`

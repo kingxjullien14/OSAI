@@ -7,9 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Settings as SettingsIcon } from "lucide-react";
 import { displayName, monogram, subscribe as subscribeSettings } from "../lib/settings";
 
-const AVATAR_KEY = "aios.avatar";
+const AVATAR_KEY = "osai.avatar";
 /** Broadcast within the tab so other avatar instances update live. */
-const AVATAR_EVENT = "aios:avatar";
+const AVATAR_EVENT = "osai:avatar";
 
 export function loadAvatar(): string | null {
   try {

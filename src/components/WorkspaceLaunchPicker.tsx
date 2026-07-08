@@ -33,9 +33,9 @@ function Chip({ label, tone = "muted" }: { label: string; tone?: "accent" | "cya
       bd: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
     },
     cyan: {
-      bg: "color-mix(in srgb, var(--aios-accent-2) 14%, transparent)",
-      fg: "var(--aios-accent-2)",
-      bd: "color-mix(in srgb, var(--aios-accent-2) 38%, transparent)",
+      bg: "color-mix(in srgb, var(--osai-accent-2) 14%, transparent)",
+      fg: "var(--osai-accent-2)",
+      bd: "color-mix(in srgb, var(--osai-accent-2) 38%, transparent)",
     },
     muted: {
       bg: "color-mix(in srgb, var(--color-panel-2) 60%, transparent)",
@@ -66,7 +66,7 @@ function TargetRow({
   onOpen: (mode: Mode) => void;
 }) {
   return (
-    <div className="group flex items-center justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 transition-colors hover:border-[var(--aios-surface-edge)] hover:bg-[color-mix(in_srgb,white_3%,transparent)]">
+    <div className="group flex items-center justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 transition-colors hover:border-[var(--osai-surface-edge)] hover:bg-[color-mix(in_srgb,white_3%,transparent)]">
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="truncate text-[12.5px] text-[var(--color-text)]">{title}</span>
@@ -149,7 +149,7 @@ export function WorkspaceLaunchPicker({
           role="dialog"
           aria-modal="true"
           aria-label={`open ${ws.name}`}
-          className="glass-strong flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-2xl shadow-[var(--aios-shadow-pop)]"
+          className="glass-strong flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-2xl shadow-[var(--osai-shadow-pop)]"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">

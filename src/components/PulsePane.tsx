@@ -73,7 +73,7 @@ export function PulsePane() {
           <div className="surface-card mb-6 flex items-center gap-3 rounded-2xl p-4">
             <Flame
               size={28}
-              className={extras.currentStreak > 0 ? "aios-flame text-[var(--color-accent)]" : "text-[var(--color-faint)]"}
+              className={extras.currentStreak > 0 ? "osai-flame text-[var(--color-accent)]" : "text-[var(--color-faint)]"}
               fill={extras.currentStreak > 0 ? "currentColor" : "none"}
             />
             <span
@@ -142,7 +142,7 @@ export function PulsePane() {
                     <span
                       key={d.date}
                       title={`${d.date} · ${d.count}`}
-                      className="aios-cell flex-1 rounded-[2px]"
+                      className="osai-cell flex-1 rounded-[2px]"
                       style={{ background: heatColor(d.count, max), animationDelay: `${(wi * 7 + di) * 5}ms` }}
                     />
                   ))}

@@ -46,7 +46,7 @@
       "item": "Tokenize strays: #a855f7 sparkle, frozen .hero-title/.helper-line, text-white CTAs",
       "tier": "P0",
       "status": "partial",
-      "evidence": "--color-spark token done (App.css:66, ChatPane.tsx:3364/3384) and .hero-title adopted by Onboarding, but the chat hero itself still hardcodes the frozen values (ChatPane.tsx:3618,3627), 8+ text-white/text-black CTAs persist, and raw #a855f7 remains in .aios-ultra (App.css:526-538)."
+      "evidence": "--color-spark token done (App.css:66, ChatPane.tsx:3364/3384) and .hero-title adopted by Onboarding, but the chat hero itself still hardcodes the frozen values (ChatPane.tsx:3618,3627), 8+ text-white/text-black CTAs persist, and raw #a855f7 remains in .osai-ultra (App.css:526-538)."
     },
     {
       "item": "Accent discipline on resting context chips",
@@ -64,7 +64,7 @@
       "item": "Delete dead bento CSS + dead hotkeys field + reportUsage telemetry loop",
       "tier": "P0",
       "status": "open",
-      "evidence": "All three still ship: .aios-tile/.aios-omni/aios-idle-glow (App.css:390-488, zero references), commands.ts hotkeys declared/set but never read, diag.ts:163-182 reportUsage still a write-only loop fired from App.tsx:762 and CommandPalette.tsx:40."
+      "evidence": "All three still ship: .osai-tile/.osai-omni/osai-idle-glow (App.css:390-488, zero references), commands.ts hotkeys declared/set but never read, diag.ts:163-182 reportUsage still a write-only loop fired from App.tsx:762 and CommandPalette.tsx:40."
     },
     {
       "item": "Accent discipline: strip generic border-hovers on the four superapp panes",
@@ -118,7 +118,7 @@
       "item": "Shell focus + drag: focused-pane indicator, token chrome strip, real AccountMenu, drag-to-cell, discoverable Mission Control",
       "tier": "P1",
       "status": "done",
-      "evidence": "All five in code: accent focus border (App.tsx:3942-3947), --aios-h-chrome strip (3951), settings-driven AccountMenu, pointer drag-to-swap (500-550, 3952-3957), MC disabled-at-zero + 'N panes' pill (2249-2255, 3716-3726). New drag defects over browser panes tracked separately."
+      "evidence": "All five in code: accent focus border (App.tsx:3942-3947), --osai-h-chrome strip (3951), settings-driven AccountMenu, pointer drag-to-swap (500-550, 3952-3957), MC disabled-at-zero + 'N panes' pill (2249-2255, 3716-3726). New drag defects over browser panes tracked separately."
     },
     {
       "item": "Palette/discovery: platform labels, ARIA + focus trap, live MRU, no-dead-end no-results, backtracking matcher",
@@ -136,7 +136,7 @@
       "item": "Design-system convergence sweep: secondary panes onto .pane-header/.surface-pop/tokens + lint guard",
       "tier": "P2",
       "status": "partial",
-      "evidence": "CSS primitives all landed (.pane-header, .pill, .surface-pop, .focus-accent, --aios-shadow-pop in App.css) but ZERO panes adopted them — 7+ hand-rolled headers at divergent heights, 55 hex/text-white/bg-black literals across 18 files, PaneEmpty/Skeleton/CopyButton/toast/uiHooks don't exist, no lint guard."
+      "evidence": "CSS primitives all landed (.pane-header, .pill, .surface-pop, .focus-accent, --osai-shadow-pop in App.css) but ZERO panes adopted them — 7+ hand-rolled headers at divergent heights, 55 hex/text-white/bg-black literals across 18 files, PaneEmpty/Skeleton/CopyButton/toast/uiHooks don't exist, no lint guard."
     },
     {
       "item": "Superapp-pane polish: Windows-gate cast/attach, native-layer fade-in, live mirroring indicator, .surface-pop menus, transitioned polls",
@@ -148,7 +148,7 @@
       "item": "Interactive surfaces: terminalFontSize wiring, token-driven xterm/Monaco themes, voice waveform, pet status, skeletons, wave dedupe",
       "tier": "P2",
       "status": "partial",
-      "evidence": "Only the reduce-motion gating sub-part landed (App.css:552-567 + boot apply). Open: xterm/Monaco hardcode fontSize:13 and frozen hex themes, VoiceButton still animate-ping dot, PetPane debug spec dump (PetPane.tsx:277), bare-spinner loading states, aios-wave duplicated inline in two components."
+      "evidence": "Only the reduce-motion gating sub-part landed (App.css:552-567 + boot apply). Open: xterm/Monaco hardcode fontSize:13 and frozen hex themes, VoiceButton still animate-ping dot, PetPane debug spec dump (PetPane.tsx:277), bare-spinner loading states, osai-wave duplicated inline in two components."
     },
     {
       "item": "Full motion choreography",
@@ -174,7 +174,7 @@
       "title": "Any agent whose id normalizes to 'firaz' is force-reported as running with a stranger's job copy",
       "severity": "high",
       "file": "src/lib/moneyAgents.ts:334",
-      "detail": "CONFIRMED; the plan's critical §6 item, untouched. summarizeMoneyAgentState special-cases agent.id==='firaz': health 'unknown'→'running' plus fabricated currentJob 'personal goals and shell control' and nextAction 'open the existing firaz chatpane agent' (334-345) even with no state file. normalizeAgentId lowercases/strips 'aios-' (104-112), so a user-created 'Firaz' collides; the fake green agent is counted active in the home StatusFooter (IdleControlCenter.tsx:116-118, 536). Gate behind actual state-file existence and neutralize the firaz-addressed role/guardrail copy (240-261)."
+      "detail": "CONFIRMED; the plan's critical §6 item, untouched. summarizeMoneyAgentState special-cases agent.id==='firaz': health 'unknown'→'running' plus fabricated currentJob 'personal goals and shell control' and nextAction 'open the existing firaz chatpane agent' (334-345) even with no state file. normalizeAgentId lowercases/strips 'osai-' (104-112), so a user-created 'Firaz' collides; the fake green agent is counted active in the home StatusFooter (IdleControlCenter.tsx:116-118, 536). Gate behind actual state-file existence and neutralize the firaz-addressed role/guardrail copy (240-261)."
     },
     {
       "title": "Settings 'text size' and 'density' controls are complete no-ops disguised as live by the preview",
@@ -282,7 +282,7 @@
       "title": "Stranger-identity residue: firaz seeds, OracleRoster persona, mirror room prefix, adletic socket",
       "severity": "medium",
       "file": "src/lib/moneyAgents.ts:279",
-      "detail": "Merged from four audits: (1) every custom agent's seed says 'do not ask firaz…' (moneyAgents.ts:279,301) and claims model gpt-5.3-codex-spark (270) when agents boot on the user's base model; (2) OracleRoster PRIMARY_ORACLE_IDENTITY='firaz' drives 'spawn your oracle (aios-firaz)' / 'firaz · offline' / delete warnings (OracleRoster.tsx:52,263,272-274,520); (3) mirror rooms are still `firaz-${token}` on a personal workers.dev endpoint (mirrorTransport.ts:56,28) — the plan claimed this was neutralized; (4) defaultSocketName defaults to 'adletic' (settings.ts:101). Route all through displayName()/settings/config."
+      "detail": "Merged from four audits: (1) every custom agent's seed says 'do not ask firaz…' (moneyAgents.ts:279,301) and claims model gpt-5.3-codex-spark (270) when agents boot on the user's base model; (2) OracleRoster PRIMARY_ORACLE_IDENTITY='firaz' drives 'spawn your oracle (osai-firaz)' / 'firaz · offline' / delete warnings (OracleRoster.tsx:52,263,272-274,520); (3) mirror rooms are still `firaz-${token}` on a personal workers.dev endpoint (mirrorTransport.ts:56,28) — the plan claimed this was neutralized; (4) defaultSocketName defaults to 'adletic' (settings.ts:101). Route all through displayName()/settings/config."
     },
     {
       "title": "Windows codex/opencode home-dir installs invisible: resolvers read HOME, not USERPROFILE",
@@ -366,7 +366,7 @@
       "title": "Settings dead chrome: four unconsumed controls, dead github/docs buttons, hardcoded version, 'macos' copy",
       "severity": "medium",
       "file": "src/components/Settings.tsx:1427",
-      "detail": "Merged: defaultSocketName/autoRefreshSeconds/showNonAiosSessions/graphPhysicsStrength have zero consumers (OracleRoster polls a hardcoded 5000ms and always shows non-aios sessions); 'github'/'docs' buttons have no onClick (1515-1520); version is hardcoded 'v0.1.0' while diagInfo() returns the real app_version (719-721); 'native alerts' sub says 'macos notifications outside the shell' on Windows (1395, isApple already imported) and AppearancePreview draws macOS traffic-light dots (515-517). Also: the redundant boot-time appearance effect at 1020-1026 duplicates App.tsx's applyAppearance — delete it."
+      "detail": "Merged: defaultSocketName/autoRefreshSeconds/showNonOsaiSessions/graphPhysicsStrength have zero consumers (OracleRoster polls a hardcoded 5000ms and always shows non-osai sessions); 'github'/'docs' buttons have no onClick (1515-1520); version is hardcoded 'v0.1.0' while diagInfo() returns the real app_version (719-721); 'native alerts' sub says 'macos notifications outside the shell' on Windows (1395, isApple already imported) and AppearancePreview draws macOS traffic-light dots (515-517). Also: the redundant boot-time appearance effect at 1020-1026 duplicates App.tsx's applyAppearance — delete it."
     },
     {
       "title": "Hover-only action rows are invisible to keyboard focus across the transcript",
@@ -507,7 +507,7 @@
     {
       "title": "Motion choreography wave 1 (fix substrate defects first, then adopt)",
       "why": "The P0 substrate landed but two structural defects (unlayered baseline killing Tailwind transitions; shorthand utilities cancelling color easing) must be fixed before adoption, after which each entrance is a one-line className.",
-      "scope": "App.css (move baseline into @layer, longhand transitions in .press/.lift/.btn-glow, author §2.4 .overlay-backdrop/.toast-in/out/.disclose/.skeleton, hoist aios-wave keyframe, retune the ~9 hardcoded duration literals, reduce-motion transform:none companions); adopt .scale-in on composer Dropdown + palette backdrop, .fade-in-up on pane mount/toasts; splash unmount on transitionend."
+      "scope": "App.css (move baseline into @layer, longhand transitions in .press/.lift/.btn-glow, author §2.4 .overlay-backdrop/.toast-in/out/.disclose/.skeleton, hoist osai-wave keyframe, retune the ~9 hardcoded duration literals, reduce-motion transform:none companions); adopt .scale-in on composer Dropdown + palette backdrop, .fade-in-up on pane mount/toasts; splash unmount on transitionend."
     },
     {
       "title": "Interactive-surfaces P2 + remaining chat affordances",

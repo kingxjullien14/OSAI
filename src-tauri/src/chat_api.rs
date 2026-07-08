@@ -11,7 +11,7 @@
 //!   - `openai-chat`        (OpenAI + OpenRouter) → /v1/chat/completions (SSE)
 //!   - `ollama-chat`        (local Ollama)        → POST /api/chat       (ndjson)
 //!
-//! `messages` is the FULL conversation [{role, content}] in order — AIOS owns this
+//! `messages` is the FULL conversation [{role, content}] in order — OSAI owns this
 //! array (unlike the CLI tier, where the binary owns context), which is also what
 //! makes honest branching / edit-rewind possible.
 

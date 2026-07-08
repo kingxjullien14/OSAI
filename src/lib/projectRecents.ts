@@ -7,7 +7,7 @@
  *  from anywhere, or any pane spawned with a cwd (terminal-here, chat-here,
  *  files-here). localStorage map of normalized path → last-access ms. */
 
-const KEY = "aios.projects.access.v1";
+const KEY = "osai.projects.access.v1";
 const MAX_ENTRIES = 40;
 
 /** Normalize for matching: forward slashes, no trailing slash, lowercase

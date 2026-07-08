@@ -188,7 +188,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               <DotPattern className="opacity-60" gap={20} />
               {/* brand mark: the OSAI diamond with a single light travelling its rim */}
               <span className="brand-logo relative mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-[var(--color-accent-soft)]">
-                <span className="block h-7 w-7 rotate-45 rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_16px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                <span className="block h-7 w-7 rotate-45 rounded-[7px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))] shadow-[0_0_16px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
                 <BorderBeam duration={6} size={44} />
               </span>
               <h1 className="hero-title mb-2">
@@ -245,7 +245,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                 }}
                 placeholder="your name"
                 spellCheck={false}
-                className="focus-accent w-full rounded-[var(--aios-radius-md)] border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-4 py-3 text-[var(--aios-text-lg)] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+                className="focus-accent w-full rounded-[var(--osai-radius-md)] border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-4 py-3 text-[var(--osai-text-lg)] text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
               />
             </div>
           )}
@@ -267,7 +267,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                       key={eng.id}
                       type="button"
                       onClick={() => setProvider(`${eng.id}-cli`)}
-                      className={`press flex items-center gap-3 rounded-[var(--aios-radius-md)] border px-3 py-2.5 text-left transition-colors ${
+                      className={`press flex items-center gap-3 rounded-[var(--osai-radius-md)] border px-3 py-2.5 text-left transition-colors ${
                         selected
                           ? "border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)]"
                           : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
@@ -369,7 +369,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
                       setTheme(t.id);
                       setThemeLocal(t.id);
                     }}
-                    className={`press flex flex-col items-center gap-1.5 rounded-[var(--aios-radius-md)] border px-2 py-3 transition-colors ${
+                    className={`press flex flex-col items-center gap-1.5 rounded-[var(--osai-radius-md)] border px-2 py-3 transition-colors ${
                       theme === t.id
                         ? "border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)] text-[var(--color-text)]"
                         : "border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-border-strong)]"
@@ -418,11 +418,11 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           >
             {step === 0 ? "skip setup" : "back"}
           </button>
-          <HoverBorderGradient radius="rounded-[var(--aios-radius-pill)]">
+          <HoverBorderGradient radius="rounded-[var(--osai-radius-pill)]">
             <button
               type="button"
               onClick={next}
-              className="btn-glow flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-[var(--color-accent-fg)]"
+              className="btn-glow flex items-center gap-1.5 rounded-[var(--osai-radius-pill)] bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-[var(--color-accent-fg)]"
             >
               {step === 0 ? "get started" : step === last ? "enter osai" : "continue"}
               <ArrowRight size={14} />

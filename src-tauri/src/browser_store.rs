@@ -1,7 +1,7 @@
-//! Persistent browser state — history, bookmarks, downloads — for the AIOS
+//! Persistent browser state — history, bookmarks, downloads — for the OSAI
 //! browser pane. The store mechanism MIRRORS `diag.rs`: a local-first, zero-
 //! network JSON store under the Tauri **app-data dir** (per-bundle, portable — a
-//! fork gets its own dir, no dependency on the user's `~/.aios`).
+//! fork gets its own dir, no dependency on the user's `~/.osai`).
 //!
 //! WHY JSON, not SQLite: `sqlx` IS a dep but is compiled with only the
 //! `postgres` + `mysql` features (see Cargo.toml) — there is NO `sqlite` feature

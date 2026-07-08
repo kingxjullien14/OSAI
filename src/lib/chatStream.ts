@@ -384,7 +384,7 @@ export function reduceChatStreamEvent(
         : "";
     // image PATH refs recorded alongside the turn (chat.rs user_record_line).
     const images = blocks
-      .filter((b) => b?.type === "aios_image_ref")
+      .filter((b) => b?.type === "osai_image_ref")
       .map((b) => String((b as { path?: unknown }).path ?? ""))
       .filter(Boolean);
     if (text || images.length) {
@@ -559,7 +559,7 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
         // — restore the bubble's thumbnails instead of silently dropping the
         // picture the model was shown.
         const images = blocks
-          .filter((b) => (b as { type?: string }).type === "aios_image_ref")
+          .filter((b) => (b as { type?: string }).type === "osai_image_ref")
           .map((b) => String((b as { path?: unknown }).path ?? ""))
           .filter(Boolean);
         if (text || images.length) {

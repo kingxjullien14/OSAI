@@ -3,12 +3,12 @@
 
 @theme {
   /* ============================================================
-     AIOS DESIGN SYSTEM — token layer.  See /DESIGN.md for the
+     OSAI DESIGN SYSTEM — token layer.  See /DESIGN.md for the
      written spec, usage rules, and component patterns.
 
      Derived from the CHAT surface (ChatPane.tsx), which is the
      gold standard: calm near-black ground, generously layered
-     surfaces, soft borders, restrained AIOS orange accent
+     surfaces, soft borders, restrained OSAI orange accent
      (accent only on primary / active / focus — never every
      border or hover).  These VALUES were retuned to read like
      the chat everywhere; the token NAMES are frozen because
@@ -46,7 +46,7 @@
   --color-muted: oklch(0.60 0.004 240);      /* secondary labels, tool args */
   --color-faint: oklch(0.46 0.004 240);      /* helper text, placeholders, dividers·dots */
 
-  /* ---- accent — AIOS orange (RESTRAINED use; see DESIGN.md)
+  /* ---- accent — OSAI orange (RESTRAINED use; see DESIGN.md)
      primary buttons, active state, focus rings ONLY.  NOTE: these
      six are overridden at runtime by lib/theme.ts applyAccent();
      keep names + meaning, values here are the orange default. */
@@ -75,90 +75,90 @@
     "Fira Code", Consolas, ui-monospace, monospace;
 
   /* ============================================================
-     SCALES — radii, type, spacing.  Namespaced --aios-* on purpose:
+     SCALES — radii, type, spacing.  Namespaced --osai-* on purpose:
      Tailwind v4 treats --radius-* / --text-* inside @theme as
      reserved utility namespaces, so using those would silently
      re-map `rounded-md`/`text-sm` across every existing component.
      These neutral names are PURELY additive — reference as
-     var(--aios-radius-lg) etc.  Values mirror the chat's exact
+     var(--osai-radius-lg) etc.  Values mirror the chat's exact
      measurements (composer rounded-2xl=16, cards rounded-xl=12,
      code rounded-lg=8, pills rounded-full).  See DESIGN.md.
      ============================================================ */
 
   /* radii — the chat's rounding language */
-  --aios-radius-xs: 6px;    /* inline code chip, tiny tags */
-  --aios-radius-sm: 8px;    /* pane-card chrome, code blocks, menu rows */
-  --aios-radius-md: 10px;   /* small buttons, approval action buttons */
-  --aios-radius-lg: 12px;   /* tool cards, dropdown menus, overlays */
-  --aios-radius-xl: 16px;   /* the composer surface — the signature radius */
-  --aios-radius-pill: 9999px; /* pills, status dots, accent send button */
+  --osai-radius-xs: 6px;    /* inline code chip, tiny tags */
+  --osai-radius-sm: 8px;    /* pane-card chrome, code blocks, menu rows */
+  --osai-radius-md: 10px;   /* small buttons, approval action buttons */
+  --osai-radius-lg: 12px;   /* tool cards, dropdown menus, overlays */
+  --osai-radius-xl: 16px;   /* the composer surface — the signature radius */
+  --osai-radius-pill: 9999px; /* pills, status dots, accent send button */
 
   /* type scale — px sizes lifted from the chat surface. Every token multiplies
      by --app-font-scale (the Settings "text size" slider, applied at boot by
      appearance.ts) so token-driven surfaces scale together; the slider was a
      visible no-op before this had consumers. */
-  --aios-text-hero: calc(30px * var(--app-font-scale, 1));
-  --aios-text-title: calc(17px * var(--app-font-scale, 1));
-  --aios-text-lg: calc(15px * var(--app-font-scale, 1));
-  --aios-text-body: calc(14px * var(--app-font-scale, 1));
-  --aios-text-sm: calc(12.5px * var(--app-font-scale, 1));
-  --aios-text-xs: calc(11.5px * var(--app-font-scale, 1));
-  --aios-text-2xs: calc(11px * var(--app-font-scale, 1));
-  --aios-text-micro: calc(10.5px * var(--app-font-scale, 1));
+  --osai-text-hero: calc(30px * var(--app-font-scale, 1));
+  --osai-text-title: calc(17px * var(--app-font-scale, 1));
+  --osai-text-lg: calc(15px * var(--app-font-scale, 1));
+  --osai-text-body: calc(14px * var(--app-font-scale, 1));
+  --osai-text-sm: calc(12.5px * var(--app-font-scale, 1));
+  --osai-text-xs: calc(11.5px * var(--app-font-scale, 1));
+  --osai-text-2xs: calc(11px * var(--app-font-scale, 1));
+  --osai-text-micro: calc(10.5px * var(--app-font-scale, 1));
 
   /* spacing — 4px base rhythm (matches the chat's gap-/px- usage) */
-  --aios-space-1: 4px;
-  --aios-space-2: 8px;
-  --aios-space-3: 12px;   /* standard pane-header horizontal padding */
-  --aios-space-4: 16px;
-  --aios-space-5: 20px;   /* composer horizontal padding */
-  --aios-space-6: 24px;
+  --osai-space-1: 4px;
+  --osai-space-2: 8px;
+  --osai-space-3: 12px;   /* standard pane-header horizontal padding */
+  --osai-space-4: 16px;
+  --osai-space-5: 20px;   /* composer horizontal padding */
+  --osai-space-6: 24px;
 
   /* header heights — the two header conventions in the app */
-  --aios-h-chrome: 28px;  /* outer pane-card title strip (PaneCard) */
-  --aios-h-header: 36px;  /* in-pane tool toolbar (.pane-header) */
+  --osai-h-chrome: 28px;  /* outer pane-card title strip (PaneCard) */
+  --osai-h-header: 36px;  /* in-pane tool toolbar (.pane-header) */
 
   /* the chat's signature soft elevation for floating surfaces */
-  --aios-shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  --osai-shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
 
   /* ── NEON GLASS — the house material (frosted surfaces + accent glow).
-     Additive --aios-* tokens; see DESIGN.md §2. The glow tokens reference
+     Additive --osai-* tokens; see DESIGN.md §2. The glow tokens reference
      var(--color-accent) so they RE-TINT with the runtime theme (the owner
      runs a violet/purple accent) — never hardcode a hue. ── */
-  --aios-glass-blur: 16px;
-  --aios-glass-bg: color-mix(in srgb, var(--color-panel-2) 70%, transparent);
-  --aios-glass-bg-strong: color-mix(in srgb, var(--color-panel-2) 86%, transparent);
+  --osai-glass-blur: 16px;
+  --osai-glass-bg: color-mix(in srgb, var(--color-panel-2) 70%, transparent);
+  --osai-glass-bg-strong: color-mix(in srgb, var(--color-panel-2) 86%, transparent);
   /* the neon accent OUTLINE for cards/menus — the bright edge the owner asked
      for; mixes from --color-accent so it tracks the Settings theme. */
-  --aios-surface-edge: color-mix(in srgb, var(--color-accent) 26%, transparent);
-  --aios-surface-edge-strong: color-mix(in srgb, var(--color-accent) 42%, transparent);
-  --aios-glass-edge: color-mix(in srgb, white 9%, transparent);  /* the glass lip */
+  --osai-surface-edge: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  --osai-surface-edge-strong: color-mix(in srgb, var(--color-accent) 42%, transparent);
+  --osai-glass-edge: color-mix(in srgb, white 9%, transparent);  /* the glass lip */
   /* the cold companion to the runtime accent — the second end of the Neon
      Glass dual gradient (composer lip, send CTA, the pet's core, signature
      edges). Neon cyan is the brand DEFAULT; it's user-settable in Settings →
      appearance ("glow") because some accents clash with cyan — applyAccent2()
      (lib/theme.ts) overrides this var at runtime, and clears the override
      when the choice is cyan so fresh installs sit exactly here. */
-  --aios-accent-2: #3DE8FF;
-  --aios-glow-accent:
+  --osai-accent-2: #3DE8FF;
+  --osai-glow-accent:
     0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent),
     0 10px 30px -10px color-mix(in srgb, var(--color-accent) 50%, transparent);
-  --aios-glow-soft: 0 8px 26px -10px color-mix(in srgb, var(--color-accent) 38%, transparent);
+  --osai-glow-soft: 0 8px 26px -10px color-mix(in srgb, var(--color-accent) 38%, transparent);
 
   /* ── MOTION: the app's timing language (PLAN-superapp-uiux.md §2) ──────
      Durations: most user-triggered motion is fast/base; slow/slower are for
      entrances + larger surface moves only. */
-  --aios-dur-instant: 80ms;   /* micro feedback: press, toggle, dot */
-  --aios-dur-fast:    140ms;  /* hover, color/border, pill toggle, icon-btn */
-  --aios-dur-base:    200ms;  /* menus, dropdowns, tab cross-fade, tool-card */
-  --aios-dur-slow:    320ms;  /* pane mount, maximize/restore, modal in */
-  --aios-dur-slower:  480ms;  /* large entrances, route changes, list reveal */
+  --osai-dur-instant: 80ms;   /* micro feedback: press, toggle, dot */
+  --osai-dur-fast:    140ms;  /* hover, color/border, pill toggle, icon-btn */
+  --osai-dur-base:    200ms;  /* menus, dropdowns, tab cross-fade, tool-card */
+  --osai-dur-slow:    320ms;  /* pane mount, maximize/restore, modal in */
+  --osai-dur-slower:  480ms;  /* large entrances, route changes, list reveal */
   /* Easings: --ease-out is the house "settle"; --spring adds gentle overshoot
      for playful affordances (use sparingly); --ease-in is for EXITS only. */
-  --aios-ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
-  --aios-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --aios-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --aios-ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --osai-ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --osai-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --osai-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --osai-ease-in:     cubic-bezier(0.4, 0, 1, 1);
 }
 
 /* ============================================================
@@ -167,7 +167,7 @@
    before initTheme runs / if data-theme is absent). We redeclare
    the full dark token set explicitly so toggling back from light
    fully restores dark, then a clean professional light palette.
-   AIOS orange (--color-accent + variants) is kept in BOTH so
+   OSAI orange (--color-accent + variants) is kept in BOTH so
    brand identity holds across modes.
    NOTE: xterm terminals keep their own hardcoded dark THEME (in
    TerminalPane) — terminals stay dark in light mode by design,
@@ -189,7 +189,7 @@ html[data-theme="dark"] {
   --color-muted: oklch(0.60 0.004 240);
   --color-faint: oklch(0.46 0.004 240);
 
-  /* accent — AIOS orange (runtime-overridden by lib/theme.ts) */
+  /* accent — OSAI orange (runtime-overridden by lib/theme.ts) */
   --color-accent: oklch(0.72 0.18 50);
   --color-accent-hover: oklch(0.78 0.16 60);
   --color-accent-dim: oklch(0.45 0.13 50);
@@ -225,7 +225,7 @@ html[data-theme="light"] {
   --color-muted: #6b7280;                     /* secondary labels ≈ slate-500 */
   --color-faint: #9ca3af;                     /* helper / placeholder ≈ slate-400 */
 
-  /* accent — AIOS orange (runtime-overridden by lib/theme.ts) */
+  /* accent — OSAI orange (runtime-overridden by lib/theme.ts) */
   --color-accent: oklch(0.66 0.19 48);        /* ~#e85d1a — nudged darker for contrast on white */
   --color-accent-hover: oklch(0.60 0.18 45);
   --color-accent-dim: oklch(0.80 0.10 55);
@@ -259,14 +259,14 @@ html, body, #root {
    actually reads as glass. Themeable: the blooms are mixed from
    var(--color-accent), so they re-tint with the chosen accent. Opaque
    panes sit on top; the glow shows through translucent chrome + gutters. */
-.aios-stage {
+.osai-stage {
   position: relative;
   isolation: isolate;
   background: var(--color-bg);
 }
 /* the blooms live on a pseudo-layer (z-index below content) so they can drift
    slowly — a calm aurora — without moving any content. */
-.aios-stage::before {
+.osai-stage::before {
   content: "";
   position: absolute;
   inset: -8%;
@@ -276,14 +276,14 @@ html, body, #root {
     radial-gradient(1100px 720px at 6% -12%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 56%),
     radial-gradient(960px 700px at 114% 116%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 54%),
     radial-gradient(1400px 900px at 70% 30%, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent 70%);
-  animation: aios-aurora 24s ease-in-out infinite;
+  animation: osai-aurora 24s ease-in-out infinite;
 }
-@keyframes aios-aurora {
+@keyframes osai-aurora {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
   50%      { transform: translate3d(1.6%, 1.1%, 0) scale(1.06); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .aios-stage::before { animation: none; }
+  .osai-stage::before { animation: none; }
 }
 
 /* density — "compact" tightens the shared scales everywhere they're consumed
@@ -291,26 +291,26 @@ html, body, #root {
    <html> by appearance.ts; this was the other half of the Settings control
    that previously changed nothing. */
 html[data-density="compact"] {
-  --aios-space-2: 6px;
-  --aios-space-3: 10px;
-  --aios-space-4: 12px;
-  --aios-space-5: 16px;
-  --aios-space-6: 18px;
-  --aios-h-chrome: 24px;
-  --aios-h-header: 31px;
+  --osai-space-2: 6px;
+  --osai-space-3: 10px;
+  --osai-space-4: 12px;
+  --osai-space-5: 16px;
+  --osai-space-6: 18px;
+  --osai-h-chrome: 24px;
+  --osai-h-header: 31px;
 }
 
 /* "terminal" — compact's spacing + the WHOLE UI set in the mono stack: the
    W5 Terminal-density variant of Neon Glass. Everything that reads
    --font-sans (which is everything) goes mono; code surfaces are unchanged. */
 html[data-density="terminal"] {
-  --aios-space-2: 6px;
-  --aios-space-3: 10px;
-  --aios-space-4: 12px;
-  --aios-space-5: 16px;
-  --aios-space-6: 18px;
-  --aios-h-chrome: 24px;
-  --aios-h-header: 31px;
+  --osai-space-2: 6px;
+  --osai-space-3: 10px;
+  --osai-space-4: 12px;
+  --osai-space-5: 16px;
+  --osai-space-6: 18px;
+  --osai-h-chrome: 24px;
+  --osai-h-header: 31px;
   --font-sans: var(--font-mono);
 }
 
@@ -332,11 +332,11 @@ html[data-density="terminal"] {
   a, button, [role="button"], [role="menuitem"], [role="tab"], summary,
   input, textarea, select, .pill, .surface-card, .surface-pop, [data-pane-key] {
     transition:
-      color            var(--aios-dur-fast) var(--aios-ease-out),
-      background-color var(--aios-dur-fast) var(--aios-ease-out),
-      border-color     var(--aios-dur-fast) var(--aios-ease-out),
-      box-shadow       var(--aios-dur-fast) var(--aios-ease-out),
-      outline-color    var(--aios-dur-fast) var(--aios-ease-out);
+      color            var(--osai-dur-fast) var(--osai-ease-out),
+      background-color var(--osai-dur-fast) var(--osai-ease-out),
+      border-color     var(--osai-dur-fast) var(--osai-ease-out),
+      box-shadow       var(--osai-dur-fast) var(--osai-ease-out),
+      outline-color    var(--osai-dur-fast) var(--osai-ease-out);
   }
 }
 
@@ -358,33 +358,33 @@ select:focus-visible,
    the color baseline: a transform-only shorthand here would cancel the base
    rule's color/border easing on the same element. */
 .lift {
-  transition: transform var(--aios-dur-base) var(--aios-ease-out),
-              box-shadow var(--aios-dur-base) var(--aios-ease-out),
-              color var(--aios-dur-fast) var(--aios-ease-out),
-              background-color var(--aios-dur-fast) var(--aios-ease-out),
-              border-color var(--aios-dur-fast) var(--aios-ease-out);
+  transition: transform var(--osai-dur-base) var(--osai-ease-out),
+              box-shadow var(--osai-dur-base) var(--osai-ease-out),
+              color var(--osai-dur-fast) var(--osai-ease-out),
+              background-color var(--osai-dur-fast) var(--osai-ease-out),
+              border-color var(--osai-dur-fast) var(--osai-ease-out);
   will-change: transform;
 }
-.lift:hover { transform: translateY(-2px); box-shadow: var(--aios-shadow-pop); }
-.lift:active { transform: translateY(0); transition-duration: var(--aios-dur-instant); }
+.lift:hover { transform: translateY(-2px); box-shadow: var(--osai-shadow-pop); }
+.lift:active { transform: translateY(0); transition-duration: var(--osai-dur-instant); }
 
 /* .press — tactile push for buttons. Carries the color baseline (see .lift). */
 .press {
-  transition: transform var(--aios-dur-instant) var(--aios-ease-out),
-              color var(--aios-dur-fast) var(--aios-ease-out),
-              background-color var(--aios-dur-fast) var(--aios-ease-out),
-              border-color var(--aios-dur-fast) var(--aios-ease-out);
+  transition: transform var(--osai-dur-instant) var(--osai-ease-out),
+              color var(--osai-dur-fast) var(--osai-ease-out),
+              background-color var(--osai-dur-fast) var(--osai-ease-out),
+              border-color var(--osai-dur-fast) var(--osai-ease-out);
 }
 .press:active { transform: scale(0.96); }
 
 /* .btn-glow — the ONE primary action (send). Accent ring breathes on hover.
    Accent-only per DESIGN.md §6; never put this on a neutral control. */
 .btn-glow { position: relative;
-  transition: transform var(--aios-dur-base) var(--aios-ease-spring),
-              box-shadow var(--aios-dur-base) var(--aios-ease-out),
-              color var(--aios-dur-fast) var(--aios-ease-out),
-              background-color var(--aios-dur-fast) var(--aios-ease-out),
-              border-color var(--aios-dur-fast) var(--aios-ease-out); }
+  transition: transform var(--osai-dur-base) var(--osai-ease-spring),
+              box-shadow var(--osai-dur-base) var(--osai-ease-out),
+              color var(--osai-dur-fast) var(--osai-ease-out),
+              background-color var(--osai-dur-fast) var(--osai-ease-out),
+              border-color var(--osai-dur-fast) var(--osai-ease-out); }
 .btn-glow:hover { transform: translateY(-1px);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent); }
 .btn-glow:active { transform: translateY(0) scale(0.97); }
@@ -393,8 +393,8 @@ select:focus-visible,
    only: the W5-1 overlays animate via AnimatePresence + fx/motionTokens now;
    this class remains for surfaces still on CSS (RunCinema). Toast motion
    (the old .toast-in/.toast-out) lives in fx/motionTokens toastPop(). */
-@keyframes aios-fade-plain { from { opacity: 0; } to { opacity: 1; } }
-.overlay-backdrop { animation: aios-fade-plain var(--aios-dur-base) ease both; }
+@keyframes osai-fade-plain { from { opacity: 0; } to { opacity: 1; } }
+.overlay-backdrop { animation: osai-fade-plain var(--osai-dur-base) ease both; }
 
 /* ── chat reading column ──────────────────────────────────────────────
    42rem matches the old max-w-2xl; on wide panes (maximized, single-pane
@@ -406,7 +406,7 @@ select:focus-visible,
   /* owner: the conversation should breathe — 80% of the pane, not a fixed rem
      column. (Bubbles carry their own inner max-widths.) */
   max-width: 80%;
-  transition: max-width var(--aios-dur-slow) var(--aios-ease-out);
+  transition: max-width var(--osai-dur-slow) var(--osai-ease-out);
 }
 
 /* .disclose — animate auto-height disclosure (tool cards, diff expands)
@@ -414,7 +414,7 @@ select:focus-visible,
 .disclose {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--aios-dur-base) var(--aios-ease-out);
+  transition: grid-template-rows var(--osai-dur-base) var(--osai-ease-out);
 }
 .disclose[data-open="true"] { grid-template-rows: 1fr; }
 .disclose > * { overflow: hidden; min-height: 0; }
@@ -435,7 +435,7 @@ select:focus-visible,
   position: relative;
   overflow: hidden;
   background: color-mix(in srgb, var(--color-panel) 60%, transparent);
-  border-radius: var(--aios-radius-sm);
+  border-radius: var(--osai-radius-sm);
 }
 .skeleton::after {
   content: "";
@@ -444,36 +444,36 @@ select:focus-visible,
   transform: translateX(-100%);
   background: linear-gradient(90deg, transparent,
     color-mix(in srgb, var(--color-text) 6%, transparent), transparent);
-  animation: aios-skeleton 1.4s var(--aios-ease-in-out) infinite;
+  animation: osai-skeleton 1.4s var(--osai-ease-in-out) infinite;
 }
-@keyframes aios-skeleton { to { transform: translateX(100%); } }
+@keyframes osai-skeleton { to { transform: translateX(100%); } }
 
-/* .aios-wave-bar — the voice equalizer bar, hoisted from per-mount inline
+/* .osai-wave-bar — the voice equalizer bar, hoisted from per-mount inline
    <style> strings so every mic shares one keyframe. */
-@keyframes aios-wave { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@keyframes osai-wave { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
 /* composer deck (W4 redesign): the context filament's streaming light-sweep +
    the send orb's breathing stop ring. */
-@keyframes aios-fil-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
-@keyframes aios-orb-breathe { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.12); } }
-.aios-wave-bar {
+@keyframes osai-fil-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes osai-orb-breathe { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.12); } }
+.osai-wave-bar {
   width: 3px;
   background: var(--color-accent);
   transform-origin: center;
-  animation: aios-wave 0.9s ease-in-out infinite;
+  animation: osai-wave 0.9s ease-in-out infinite;
 }
 
 /* .fade-in-up / .scale-in — canonical entrances (token-driven; the existing
-   .aios-fade-in stays for the idle cockpit's slower 0.6s reveal). */
-@keyframes aios-fade-in-up { from { opacity: 0; transform: translateY(10px); }
+   .osai-fade-in stays for the idle cockpit's slower 0.6s reveal). */
+@keyframes osai-fade-in-up { from { opacity: 0; transform: translateY(10px); }
                             to   { opacity: 1; transform: translateY(0); } }
-.fade-in-up { animation: aios-fade-in-up var(--aios-dur-slow) var(--aios-ease-out) both; }
-@keyframes aios-scale-in { from { opacity: 0; transform: scale(0.96); }
+.fade-in-up { animation: osai-fade-in-up var(--osai-dur-slow) var(--osai-ease-out) both; }
+@keyframes osai-scale-in { from { opacity: 0; transform: scale(0.96); }
                           to   { opacity: 1; transform: scale(1); } }
-.scale-in { animation: aios-scale-in var(--aios-dur-base) var(--aios-ease-out) both;
-            transform-origin: var(--aios-origin, top center); }
+.scale-in { animation: osai-scale-in var(--osai-dur-base) var(--osai-ease-out) both;
+            transform-origin: var(--osai-origin, top center); }
 
 /* .stagger > * — list children cascade in; capped so long lists don't crawl. */
-.stagger > * { animation: aios-fade-in-up var(--aios-dur-base) var(--aios-ease-out) both; }
+.stagger > * { animation: osai-fade-in-up var(--osai-dur-base) var(--osai-ease-out) both; }
 .stagger > *:nth-child(1) { animation-delay: 0ms; }
 .stagger > *:nth-child(2) { animation-delay: 28ms; }
 .stagger > *:nth-child(3) { animation-delay: 56ms; }
@@ -481,16 +481,16 @@ select:focus-visible,
 .stagger > *:nth-child(5) { animation-delay: 112ms; }
 .stagger > *:nth-child(n+6) { animation-delay: 140ms; }
 
-.aios-cadenced-shimmer {
-  --aios-shimmer-secondary: var(--color-muted);
-  --aios-shimmer-contrast: var(--color-text);
+.osai-cadenced-shimmer {
+  --osai-shimmer-secondary: var(--color-muted);
+  --osai-shimmer-contrast: var(--color-text);
   position: relative;
-  color: var(--aios-shimmer-secondary);
+  color: var(--osai-shimmer-secondary);
   background: transparent;
   -webkit-text-fill-color: currentColor;
 }
 
-.aios-cadenced-shimmer__sweep {
+.osai-cadenced-shimmer__sweep {
   pointer-events: none;
   position: absolute;
   inset: 0 auto 0 0;
@@ -501,42 +501,42 @@ select:focus-visible,
   mask-image: linear-gradient(90deg, transparent 0%, #000 40% 60%, transparent 100%);
 }
 
-.aios-cadenced-shimmer__highlight {
+.osai-cadenced-shimmer__highlight {
   display: block;
   width: 200%;
-  color: var(--aios-shimmer-contrast);
+  color: var(--osai-shimmer-contrast);
   transform: translateX(50%);
   -webkit-text-fill-color: currentColor;
 }
 
-.aios-cadenced-shimmer--active .aios-cadenced-shimmer__sweep,
-.aios-cadenced-shimmer--active .aios-cadenced-shimmer__highlight {
+.osai-cadenced-shimmer--active .osai-cadenced-shimmer__sweep,
+.osai-cadenced-shimmer--active .osai-cadenced-shimmer__highlight {
   animation-duration: 1s;
   animation-iteration-count: 1;
   animation-timing-function: steps(48, end);
 }
 
-.aios-cadenced-shimmer--active .aios-cadenced-shimmer__sweep {
-  animation-name: aios-cadenced-shimmer-sweep;
+.osai-cadenced-shimmer--active .osai-cadenced-shimmer__sweep {
+  animation-name: osai-cadenced-shimmer-sweep;
 }
 
-.aios-cadenced-shimmer--active .aios-cadenced-shimmer__highlight {
-  animation-name: aios-cadenced-shimmer-highlight;
+.osai-cadenced-shimmer--active .osai-cadenced-shimmer__highlight {
+  animation-name: osai-cadenced-shimmer-highlight;
 }
 
-@keyframes aios-cadenced-shimmer-sweep {
+@keyframes osai-cadenced-shimmer-sweep {
   from { transform: translateX(-100%); }
   to { transform: translateX(250%); }
 }
 
-@keyframes aios-cadenced-shimmer-highlight {
+@keyframes osai-cadenced-shimmer-highlight {
   from { transform: translateX(50%); }
   to { transform: translateX(-125%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aios-cadenced-shimmer--active .aios-cadenced-shimmer__sweep,
-  .aios-cadenced-shimmer--active .aios-cadenced-shimmer__highlight {
+  .osai-cadenced-shimmer--active .osai-cadenced-shimmer__sweep,
+  .osai-cadenced-shimmer--active .osai-cadenced-shimmer__highlight {
     animation: none;
   }
 }
@@ -568,86 +568,86 @@ select:focus-visible,
 .xterm-viewport { overflow-y: auto !important; }
 
 /* ---- brand motion ---- */
-@keyframes aios-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-@keyframes aios-breathe { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.02); opacity: 1; } }
-@keyframes aios-dot-pulse {
+@keyframes osai-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes osai-breathe { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.02); opacity: 1; } }
+@keyframes osai-dot-pulse {
   0%, 100% { box-shadow: 0 0 0 0 var(--color-success-glow); }
   50% { box-shadow: 0 0 0 4px transparent; }
 }
-@keyframes aios-modal-in {
+@keyframes osai-modal-in {
   from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.brand-logo { animation: aios-pulse 3s ease-in-out infinite;
+.brand-logo { animation: osai-pulse 3s ease-in-out infinite;
   filter: drop-shadow(0 0 6px rgba(242, 101, 34, 0.25)); }
 .brand-logo--splash { filter: drop-shadow(0 0 24px rgba(242, 101, 34, 0.40)); }
-.mascot-idle { animation: aios-breathe 4s ease-in-out infinite; }
+.mascot-idle { animation: osai-breathe 4s ease-in-out infinite; }
 /* ENTRANCE only since W5-1 (exit = AnimatePresence + fx/motionTokens
    modalPop): remains for the PetPane speech bubble. */
-.modal-in { animation: aios-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-in { animation: osai-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* .find-current — find-in-chat's active hit: a one-shot highlight wash that
    plays when the class lands on a block wrapper (selection moved), then
    settles to transparent so the transcript never stays decorated. */
-@keyframes aios-find-flash {
+@keyframes osai-find-flash {
   from { background-color: color-mix(in srgb, var(--color-highlight) 16%, transparent); }
   to { background-color: transparent; }
 }
 .find-current {
-  animation: aios-find-flash 0.9s ease-out both;
-  border-radius: var(--aios-radius-sm, 8px);
+  animation: osai-find-flash 0.9s ease-out both;
+  border-radius: var(--osai-radius-sm, 8px);
 }
 
 /* .clock-tick — the idle hero clock's seconds glyph eases in on each 1Hz swap
    (keyed span remount) instead of hard-cutting. Opacity only: calm, no slide. */
-@keyframes aios-tick-in { from { opacity: 0.25; } to { opacity: 1; } }
-.clock-tick { animation: aios-tick-in 150ms ease-out both; }
+@keyframes osai-tick-in { from { opacity: 0.25; } to { opacity: 1; } }
+.clock-tick { animation: osai-tick-in 150ms ease-out both; }
 
 /* .maximize-hint — one quiet "esc to restore" that settles in, holds, then
    fades itself out; ends invisible + non-interactive (no JS timer needed). */
-@keyframes aios-hint-fade {
+@keyframes osai-hint-fade {
   0% { opacity: 0; transform: translate(-50%, 6px); }
   12%, 70% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, 0); }
 }
 .maximize-hint {
-  animation: aios-hint-fade 2.6s ease-out forwards;
+  animation: osai-hint-fade 2.6s ease-out forwards;
   pointer-events: none;
 }
 
 /* ---- idle cockpit motion (IdleDashboard) — the live data IS the decoration ---- */
-@keyframes aios-flame { 0%, 100% { transform: scale(1) translateY(0); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 50%, transparent)); } 50% { transform: scale(1.12) translateY(-1px); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--color-accent) 70%, transparent)); } }
-@keyframes aios-ring-sweep { from { stroke-dashoffset: 110; } }
-@keyframes aios-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes aios-cell-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
-@keyframes aios-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes osai-flame { 0%, 100% { transform: scale(1) translateY(0); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 50%, transparent)); } 50% { transform: scale(1.12) translateY(-1px); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--color-accent) 70%, transparent)); } }
+@keyframes osai-ring-sweep { from { stroke-dashoffset: 110; } }
+@keyframes osai-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes osai-cell-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes osai-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 /* Browser pane navigation progress bar — indeterminate sweep. */
 @keyframes browserprog { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
-@keyframes aios-colon { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0.25; } }
-@keyframes aios-node-live { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
-@keyframes aios-drift-a { 0% { transform: translate(-22vw, -14vh) scale(1); } 50% { transform: translate(18vw, 10vh) scale(1.15); } 100% { transform: translate(-22vw, -14vh) scale(1); } }
-@keyframes aios-drift-b { 0% { transform: translate(20vw, 16vh) scale(1.1); } 50% { transform: translate(-16vw, -12vh) scale(0.95); } 100% { transform: translate(20vw, 16vh) scale(1.1); } }
+@keyframes osai-colon { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0.25; } }
+@keyframes osai-node-live { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+@keyframes osai-drift-a { 0% { transform: translate(-22vw, -14vh) scale(1); } 50% { transform: translate(18vw, 10vh) scale(1.15); } 100% { transform: translate(-22vw, -14vh) scale(1); } }
+@keyframes osai-drift-b { 0% { transform: translate(20vw, 16vh) scale(1.1); } 50% { transform: translate(-16vw, -12vh) scale(0.95); } 100% { transform: translate(20vw, 16vh) scale(1.1); } }
 
-.aios-flame { animation: aios-flame 2.4s ease-in-out infinite; }
-.aios-ring { animation: aios-ring-sweep 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
-.aios-fade-in { animation: aios-fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.aios-cell { animation: aios-cell-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.aios-orbit { animation: aios-orbit 48s linear infinite; transform-origin: 50% 50%; }
-.aios-colon { animation: aios-colon 1.1s steps(1) infinite; }
-.aios-node-live { animation: aios-node-live 2.6s ease-in-out infinite; }
-.aios-drift-a { animation: aios-drift-a 34s ease-in-out infinite; top: 8%; left: 22%; }
-.aios-drift-b { animation: aios-drift-b 41s ease-in-out infinite; bottom: 6%; right: 18%; }
+.osai-flame { animation: osai-flame 2.4s ease-in-out infinite; }
+.osai-ring { animation: osai-ring-sweep 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
+.osai-fade-in { animation: osai-fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.osai-cell { animation: osai-cell-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.osai-orbit { animation: osai-orbit 48s linear infinite; transform-origin: 50% 50%; }
+.osai-colon { animation: osai-colon 1.1s steps(1) infinite; }
+.osai-node-live { animation: osai-node-live 2.6s ease-in-out infinite; }
+.osai-drift-a { animation: osai-drift-a 34s ease-in-out infinite; top: 8%; left: 22%; }
+.osai-drift-b { animation: osai-drift-b 41s ease-in-out infinite; bottom: 6%; right: 18%; }
 
-/* (the bento .aios-tile family lived here — deleted with the bento layout;
+/* (the bento .osai-tile family lived here — deleted with the bento layout;
    grep confirms zero component references. PLAN §6 P0 dead-code item.) */
 
 /* greeting name — accent gradient text so the hero line carries brand colour.
    W5-2: the gradient is now oversized + slowly panned (AnimatedGradientText
    shimmer, accent→highlight, 8s, breath-quiet) — the master reduce-motion
    guard freezes the pan. */
-@keyframes aios-greet-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-.aios-greet-name {
+@keyframes osai-greet-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+.osai-greet-name {
   background-image: linear-gradient(
     92deg,
     var(--color-accent),
@@ -658,43 +658,43 @@ select:focus-visible,
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: aios-greet-shimmer 8s linear infinite;
+  animation: osai-greet-shimmer 8s linear infinite;
 }
 
-/* .aios-spotlight — mouse-follow glow for NEUTRAL rows/chips (the CardSpotlight
+/* .osai-spotlight — mouse-follow glow for NEUTRAL rows/chips (the CardSpotlight
    pattern reduced to a CSS var radial; fx/spotlight.ts writes --spot-x/y on
    pointermove). Low-alpha --color-text, never accent (accent = primary only,
    DESIGN.md §6). border-radius:inherit clips the wash to the host's corners. */
-.aios-spotlight { position: relative; }
-.aios-spotlight::before {
+.osai-spotlight { position: relative; }
+.osai-spotlight::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--aios-dur-base) var(--aios-ease-out);
+  transition: opacity var(--osai-dur-base) var(--osai-ease-out);
   background: radial-gradient(
     180px circle at var(--spot-x, 50%) var(--spot-y, 50%),
     color-mix(in srgb, var(--color-text) 6%, transparent),
     transparent 60%
   );
 }
-.aios-spotlight:hover::before { opacity: 1; }
+.osai-spotlight:hover::before { opacity: 1; }
 
 /* W5-2 command line: rotating placeholder overlay + the vanish canvas both sit
    over the input; neither ever intercepts the caret. */
-.aios-cmd-ph,
-.aios-cmd-vanish {
+.osai-cmd-ph,
+.osai-cmd-vanish {
   pointer-events: none;
 }
 
-/* W5-3 .aios-shimmer — Magic UI ShimmerButton treatment, hover-ONLY (idle
+/* W5-3 .osai-shimmer — Magic UI ShimmerButton treatment, hover-ONLY (idle
    shimmer violates calm). A single light sweep crosses on hover; the master
    reduce-motion guard freezes it. Pair with the accent send CTA only (§6). */
-@keyframes aios-shimmer-sweep { from { transform: translateX(-160%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
-.aios-shimmer { position: relative; overflow: hidden; }
-.aios-shimmer::after {
+@keyframes osai-shimmer-sweep { from { transform: translateX(-160%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
+.osai-shimmer { position: relative; overflow: hidden; }
+.osai-shimmer::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -708,57 +708,57 @@ select:focus-visible,
   transform: translateX(-160%) skewX(-18deg);
   opacity: 0;
 }
-.aios-shimmer:hover::after {
+.osai-shimmer:hover::after {
   opacity: 1;
-  animation: aios-shimmer-sweep 0.9s var(--aios-ease-out);
+  animation: osai-shimmer-sweep 0.9s var(--osai-ease-out);
 }
 
-/* W5-4 .aios-dock-icon — proximity magnify on the icons-only rail. The scale
+/* W5-4 .osai-dock-icon — proximity magnify on the icons-only rail. The scale
    var is written by fx/dockMagnify on pointermove; transform doesn't reflow,
    so icons grow over the gap like a dock. Master guard freezes the transition
    under reduce-motion (and the move handler bails, so the var stays 1). */
-.aios-dock-icon {
+.osai-dock-icon {
   transform: scale(var(--dock-scale, 1));
   transform-origin: center;
-  transition: transform var(--aios-dur-fast) var(--aios-ease-out);
+  transition: transform var(--osai-dur-fast) var(--osai-ease-out);
   will-change: transform;
 }
 
-/* W5-5 .aios-ripple — whisper-faint concentric rings behind the idle pet
+/* W5-5 .osai-ripple — whisper-faint concentric rings behind the idle pet
    companion at high liveness (fx/Ripple). The component only mounts under
    funFx (so reduce-motion never renders it); the guard freezes this anyway. */
-@keyframes aios-ripple {
+@keyframes osai-ripple {
   0% { transform: scale(0.7); opacity: 0; }
   35% { opacity: 0.22; }
   100% { transform: scale(1.5); opacity: 0; }
 }
-.aios-ripple { animation: aios-ripple 3.4s var(--aios-ease-out) infinite; }
+.osai-ripple { animation: osai-ripple 3.4s var(--osai-ease-out) infinite; }
 
 /* (the idle-home corner pet tile retired with the Horizon lock screen —
    the spirit now lives ON the horizon line itself; see IdleControlCenter.) */
 
 /* ultracode — the flashy top effort tier (mirrors Anthropic's terminal gradient).
    An animated purple band that pans across the chip + a soft glow. */
-@keyframes aios-ultra-pan { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-@keyframes aios-ultra-glow {
+@keyframes osai-ultra-pan { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@keyframes osai-ultra-glow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
   50% { box-shadow: 0 0 14px 1px rgba(168, 85, 247, 0.55); }
 }
-.aios-ultra {
+.osai-ultra {
   background-image: linear-gradient(90deg, #6d28d9, #a855f7, #d8b4fe, #7c3aed, #a855f7, #6d28d9);
   background-size: 220% 100%;
-  animation: aios-ultra-pan 2.8s linear infinite, aios-ultra-glow 2.8s ease-in-out infinite;
+  animation: osai-ultra-pan 2.8s linear infinite, osai-ultra-glow 2.8s ease-in-out infinite;
   color: #fff !important;
   border-color: transparent !important;
   text-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
 }
-.aios-ultra-text {
+.osai-ultra-text {
   background-image: linear-gradient(90deg, #a855f7, #d8b4fe, #7c3aed, #a855f7);
   background-size: 220% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: aios-ultra-pan 2.8s linear infinite;
+  animation: osai-ultra-pan 2.8s linear infinite;
 }
 
 /* THE master reduce-motion switch (PLAN-superapp-uiux.md §2.2). One guard kills
@@ -785,7 +785,7 @@ select:focus-visible,
 }
 
 .status-dot { width: 8px; height: 8px; border-radius: 9999px; }
-.status-dot--active { background: var(--color-success); animation: aios-dot-pulse 3s ease-in-out infinite; }
+.status-dot--active { background: var(--color-success); animation: osai-dot-pulse 3s ease-in-out infinite; }
 .status-dot--idle { background: var(--color-warning); }
 .status-dot--dormant { background: var(--color-info); opacity: 0.6; }
 .status-dot--cold { background: var(--color-cold); opacity: 0.4; }
@@ -794,7 +794,7 @@ select:focus-visible,
    defined once in the utility section below — see DESIGN.md §2. */
 
 /* studio canvas — a subtle dot grid so pan/zoom has spatial reference */
-.aios-canvas-grid {
+.osai-canvas-grid {
   background-color: var(--color-pane);
   background-image: radial-gradient(color-mix(in srgb, var(--color-border) 55%, transparent) 1px, transparent 1px);
   background-size: 22px 22px;
@@ -811,13 +811,13 @@ select:focus-visible,
 }
 
 /* ============================================================
-   AIOS SYSTEM UTILITY CLASSES
+   OSAI SYSTEM UTILITY CLASSES
    ------------------------------------------------------------
    A small, documented set of classes that capture the chat
    surface's recurring patterns at their EXACT measurements, so
    panes can converge on one look over time without per-file
    rewrites.  All values trace to ChatPane.tsx / App.tsx and the
-   --aios-* scales above.  Full guidance lives in /DESIGN.md.
+   --osai-* scales above.  Full guidance lives in /DESIGN.md.
 
    Convention: these are plain CSS classes (not Tailwind @apply)
    so they survive independent of the utility pipeline and can be
@@ -832,13 +832,13 @@ select:focus-visible,
    border, 12px horizontal padding, vertically centered.  Pair the
    title text with .pane-header__title.  (The OUTER pane-card title
    strip in App.tsx PaneCard is a separate, denser 28px chrome —
-   see --aios-h-chrome / DESIGN.md; don't conflate the two.) */
+   see --osai-h-chrome / DESIGN.md; don't conflate the two.) */
 .pane-header {
   display: flex;
   align-items: center;
-  height: var(--aios-h-header);              /* 36px */
+  height: var(--osai-h-header);              /* 36px */
   flex-shrink: 0;
-  padding-inline: var(--aios-space-3);       /* 12px */
+  padding-inline: var(--osai-space-3);       /* 12px */
   border-bottom: 1px solid var(--color-border);
   /* Neon Glass: a frosted toolbar so the ambient ground reads through it. */
   background: color-mix(in srgb, var(--color-panel) 45%, transparent);
@@ -848,7 +848,7 @@ select:focus-visible,
 /* the label inside a pane header — mono, muted, quiet (chat footer voice) */
 .pane-header__title {
   font-family: var(--font-mono);
-  font-size: var(--aios-text-2xs);           /* 11px */
+  font-size: var(--osai-text-2xs);           /* 11px */
   color: var(--color-muted);
   letter-spacing: 0.01em;
 }
@@ -867,21 +867,21 @@ select:focus-visible,
      lip"). No backdrop-blur here — lists can stack many cards (blur is GPU
      cost); the lip + translucency carry the look. */
   background: color-mix(in srgb, var(--color-panel-2) 88%, transparent);
-  border: 1px solid var(--aios-surface-edge);
-  border-radius: var(--aios-radius-lg);      /* 12px — chat tool card */
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
+  border: 1px solid var(--osai-surface-edge);
+  border-radius: var(--osai-radius-lg);      /* 12px — chat tool card */
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge);
   overflow: hidden;
 }
 /* the chat's composer/menu elevation, now full Neon Glass: frosted translucent
    fill + blur + the glass lip + a soft drop shadow. Floating things only
    (popovers, dropdowns, menus, the /+@ overlays) — few on screen at once. */
 .surface-pop {
-  background: var(--aios-glass-bg-strong);
-  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
-  border: 1px solid var(--aios-surface-edge-strong);
-  border-radius: var(--aios-radius-xl);      /* 16px — composer signature */
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-shadow-pop);
+  background: var(--osai-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.4);
+  border: 1px solid var(--osai-surface-edge-strong);
+  border-radius: var(--osai-radius-xl);      /* 16px — composer signature */
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge), var(--osai-shadow-pop);
 }
 
 /* --- .pill -------------------------------------------------------
@@ -894,12 +894,12 @@ select:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--aios-radius-pill);
+  border-radius: var(--osai-radius-pill);
   border: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-panel) 50%, transparent);
   padding: 4px 10px;                          /* py-1 px-2.5 */
   font-family: var(--font-sans);
-  font-size: var(--aios-text-xs);             /* 11.5px */
+  font-size: var(--osai-text-xs);             /* 11.5px */
   color: var(--color-text-2);
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 }
@@ -921,7 +921,7 @@ select:focus-visible,
   font-family: var(--font-sans);
   /* scales with the pane — 30px floor (the old fixed size), 42px in a wide
      canvas. The single biggest type moment in the app deserves the room. */
-  font-size: clamp(var(--aios-text-hero), 3.6vw, 42px);
+  font-size: clamp(var(--osai-text-hero), 3.6vw, 42px);
   font-weight: 550;
   letter-spacing: -0.025em;
   color: var(--color-text);
@@ -950,7 +950,7 @@ select:focus-visible,
    and status footers, never primary content. */
 .helper-line {
   font-family: var(--font-mono);
-  font-size: var(--aios-text-2xs);            /* 11px */
+  font-size: var(--osai-text-2xs);            /* 11px */
   color: var(--color-faint);
 }
 
@@ -967,39 +967,39 @@ select:focus-visible,
    lip"). Use .glass for discrete cards, .glass-strong for the composer /
    menus / modals. Glow utilities layer the accent halo on top. */
 .glass {
-  background: var(--aios-glass-bg);
-  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.3);
-  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.3);
-  border: 1px solid var(--aios-surface-edge);
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
+  background: var(--osai-glass-bg);
+  backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.3);
+  border: 1px solid var(--osai-surface-edge);
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge);
 }
 .glass-strong {
-  background: var(--aios-glass-bg-strong);
-  backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--aios-glass-blur)) saturate(1.4);
-  border: 1px solid var(--aios-surface-edge-strong);
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge);
+  background: var(--osai-glass-bg-strong);
+  backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--osai-glass-blur)) saturate(1.4);
+  border: 1px solid var(--osai-surface-edge-strong);
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge);
 }
 /* the signature accent halo — active / selected / primary surfaces */
 .glow-accent {
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-glow-accent);
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge), var(--osai-glow-accent);
 }
 /* focus treatment for text-entry surfaces (the composer) — accent edge + halo,
    keeping the glass lip. Replaces .focus-accent on glass surfaces. */
 .glow-focus {
-  transition: box-shadow var(--aios-dur-base) ease, border-color var(--aios-dur-base) ease;
+  transition: box-shadow var(--osai-dur-base) ease, border-color var(--osai-dur-base) ease;
 }
 .glow-focus:focus-within {
   border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
-  box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), var(--aios-glow-accent);
+  box-shadow: inset 0 1px 0 0 var(--osai-glass-edge), var(--osai-glow-accent);
 }
 /* breathing accent glow for LIVE / streaming surfaces */
 .glow-live {
-  animation: aios-glow-breathe 2.4s ease-in-out infinite;
+  animation: osai-glow-breathe 2.4s ease-in-out infinite;
 }
-@keyframes aios-glow-breathe {
-  0%, 100% { box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), 0 0 16px -10px color-mix(in srgb, var(--color-accent) 42%, transparent); }
-  50%      { box-shadow: inset 0 1px 0 0 var(--aios-glass-edge), 0 0 28px -6px color-mix(in srgb, var(--color-accent) 62%, transparent); }
+@keyframes osai-glow-breathe {
+  0%, 100% { box-shadow: inset 0 1px 0 0 var(--osai-glass-edge), 0 0 16px -10px color-mix(in srgb, var(--color-accent) 42%, transparent); }
+  50%      { box-shadow: inset 0 1px 0 0 var(--osai-glass-edge), 0 0 28px -6px color-mix(in srgb, var(--color-accent) 62%, transparent); }
 }
 /* a signature lit hairline — accent fading to transparent (use on an edge) */
 .edge-grad {
@@ -1013,7 +1013,7 @@ select:focus-visible,
 }
 /* Reduced motion: no breathing glow (it settles to a quiet static halo). */
 @media (prefers-reduced-motion: reduce) {
-  .glow-live { animation: none; box-shadow: var(--aios-glow-soft); }
+  .glow-live { animation: none; box-shadow: var(--osai-glow-soft); }
 }
 
 /* --- composer flash levels ---------------------------------------
@@ -1065,7 +1065,7 @@ select:focus-visible,
     ),
     radial-gradient(
       50% 80% at 88% 100%,
-      color-mix(in srgb, var(--aios-accent-2) 24%, transparent),
+      color-mix(in srgb, var(--osai-accent-2) 24%, transparent),
       transparent 72%
     ),
     radial-gradient(
@@ -1089,7 +1089,7 @@ select:focus-visible,
   0%,
   100% {
     box-shadow: 0 0 0 0 transparent;
-    border-color: var(--aios-surface-edge-strong);
+    border-color: var(--osai-surface-edge-strong);
   }
   50% {
     box-shadow: 0 8px 36px -10px color-mix(in srgb, var(--color-accent) 50%, transparent);
@@ -1127,7 +1127,7 @@ select:focus-visible,
     border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
   }
   50% {
-    border-color: color-mix(in srgb, var(--aios-accent-2) 60%, transparent);
+    border-color: color-mix(in srgb, var(--osai-accent-2) 60%, transparent);
   }
 }
 @keyframes flash-halo {
@@ -1136,7 +1136,7 @@ select:focus-visible,
     box-shadow: 0 10px 34px -12px color-mix(in srgb, var(--color-accent) 55%, transparent);
   }
   50% {
-    box-shadow: 0 12px 44px -10px color-mix(in srgb, var(--aios-accent-2) 45%, transparent);
+    box-shadow: 0 12px 44px -10px color-mix(in srgb, var(--osai-accent-2) 45%, transparent);
   }
 }
 
@@ -1158,14 +1158,14 @@ select:focus-visible,
 
 /* FleetView live card — an indeterminate accent sweep along the top edge
    (W4 swarm polish). Master reduce-motion guard squashes it like the rest. */
-.aios-fleet-sweep {
+.osai-fleet-sweep {
   background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
   background-size: 40% 100%;
   background-repeat: no-repeat;
-  animation: aios-fleet-sweep 1.6s ease-in-out infinite;
+  animation: osai-fleet-sweep 1.6s ease-in-out infinite;
   opacity: 0.85;
 }
-@keyframes aios-fleet-sweep {
+@keyframes osai-fleet-sweep {
   0% { background-position: -40% 0; }
   100% { background-position: 140% 0; }
 }
@@ -1174,49 +1174,49 @@ select:focus-visible,
    One SVG rig, steered by data-pose/data-mood from the soul. Squash &
    stretch lives on .pet2-rig (origin = feet); leaf parts animate solo.
    Master reduce-motion guard + the media query still every keyframe. */
-.aios-pet .pet2-rig {
+.osai-pet .pet2-rig {
   animation: pet2-breathe 3.2s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: 50% 100%;
 }
-.aios-pet[data-pose="sleep"] .pet2-rig { animation: pet2-breathe 5.6s ease-in-out infinite; }
-.aios-pet[data-pose="wander"] .pet2-rig { animation: pet2-hop 0.55s ease-in-out infinite; }
-.aios-pet[data-pose="celebrate"] .pet2-rig { animation: pet2-celebrate 0.7s ease-in-out infinite; }
-.aios-pet[data-pose="play"] .pet2-rig { animation: pet2-celebrate 0.6s ease-in-out 4; }
-.aios-pet[data-pose="startled"] .pet2-rig { animation: pet2-startle 0.5s ease-out 2; }
-.aios-pet[data-pose="eat"] .pet2-rig { animation: pet2-chomp 0.45s ease-in-out 3; }
-.aios-pet[data-pose="held"] .pet2-rig {
+.osai-pet[data-pose="sleep"] .pet2-rig { animation: pet2-breathe 5.6s ease-in-out infinite; }
+.osai-pet[data-pose="wander"] .pet2-rig { animation: pet2-hop 0.55s ease-in-out infinite; }
+.osai-pet[data-pose="celebrate"] .pet2-rig { animation: pet2-celebrate 0.7s ease-in-out infinite; }
+.osai-pet[data-pose="play"] .pet2-rig { animation: pet2-celebrate 0.6s ease-in-out 4; }
+.osai-pet[data-pose="startled"] .pet2-rig { animation: pet2-startle 0.5s ease-out 2; }
+.osai-pet[data-pose="eat"] .pet2-rig { animation: pet2-chomp 0.45s ease-in-out 3; }
+.osai-pet[data-pose="held"] .pet2-rig {
   animation: pet2-dangle 1.5s ease-in-out infinite;
   transform-origin: 50% 0%;
 }
-.aios-pet[data-pose="tossed"] .pet2-rig { animation: pet2-spin 0.6s linear infinite; transform-origin: center; }
-.aios-pet[data-pose="land"] .pet2-rig { animation: pet2-land 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 1; }
+.osai-pet[data-pose="tossed"] .pet2-rig { animation: pet2-spin 0.6s linear infinite; transform-origin: center; }
+.osai-pet[data-pose="land"] .pet2-rig { animation: pet2-land 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 1; }
 
-.aios-pet .pet2-core {
+.osai-pet .pet2-core {
   animation: pet2-core 2.8s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
-.aios-pet .pet2-eyes {
+.osai-pet .pet2-eyes {
   animation: pet2-blink 4.6s infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
-.aios-pet[data-mood="sleepy"] .pet2-eyes { animation-duration: 2.8s; }
-.aios-pet .pet2-foot-l,
-.aios-pet .pet2-foot-r { transform-box: fill-box; transform-origin: center; }
-.aios-pet[data-pose="wander"] .pet2-foot-l { animation: pet2-step 0.55s ease-in-out infinite; }
-.aios-pet[data-pose="wander"] .pet2-foot-r { animation: pet2-step 0.55s ease-in-out infinite 0.27s; }
-.aios-pet .pet2-z { opacity: 0; animation: pet2-z 2.6s ease-out infinite; }
-.aios-pet .pet2-z2 { animation-delay: 0.6s; }
-.aios-pet .pet2-z3 { animation-delay: 1.2s; }
-.aios-pet .pet2-cursor { animation: pet2-cursor 1.4s steps(1) infinite; }
-.aios-pet .pet2-halo {
+.osai-pet[data-mood="sleepy"] .pet2-eyes { animation-duration: 2.8s; }
+.osai-pet .pet2-foot-l,
+.osai-pet .pet2-foot-r { transform-box: fill-box; transform-origin: center; }
+.osai-pet[data-pose="wander"] .pet2-foot-l { animation: pet2-step 0.55s ease-in-out infinite; }
+.osai-pet[data-pose="wander"] .pet2-foot-r { animation: pet2-step 0.55s ease-in-out infinite 0.27s; }
+.osai-pet .pet2-z { opacity: 0; animation: pet2-z 2.6s ease-out infinite; }
+.osai-pet .pet2-z2 { animation-delay: 0.6s; }
+.osai-pet .pet2-z3 { animation-delay: 1.2s; }
+.osai-pet .pet2-cursor { animation: pet2-cursor 1.4s steps(1) infinite; }
+.osai-pet .pet2-halo {
   animation: pet2-halo 3.4s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
-.aios-pet .pet2-shadow { transition: opacity 0.25s ease; }
+.osai-pet .pet2-shadow { transition: opacity 0.25s ease; }
 
 @keyframes pet2-breathe {
   0%, 100% { transform: scale(1, 1); }
@@ -1281,10 +1281,10 @@ select:focus-visible,
   50% { transform: translateY(-2px); }
 }
 
-[data-reduce-motion="true"] .aios-pet *,
-[data-reduce-motion="true"] .aios-pet { animation: none !important; }
+[data-reduce-motion="true"] .osai-pet *,
+[data-reduce-motion="true"] .osai-pet { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  .aios-pet *, .aios-pet { animation: none !important; }
+  .osai-pet *, .osai-pet { animation: none !important; }
 }
 
 /* ── the HORIZON lock screen (L1–L3, living-cockpit; owner picked sketch B:
@@ -1296,18 +1296,18 @@ select:focus-visible,
    frame stays clean. */
 
 /* the line itself: warm accent fading to the cold glow across the width */
-.aios-horizon-line {
+.osai-horizon-line {
   background: linear-gradient(
     90deg,
     transparent,
     color-mix(in srgb, var(--color-accent) 55%, transparent) 18%,
-    color-mix(in srgb, var(--aios-accent-2) 45%, transparent) 82%,
+    color-mix(in srgb, var(--osai-accent-2) 45%, transparent) 82%,
     transparent
   );
   box-shadow: 0 0 16px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 /* a slow pulse of light traveling the line, left → right */
-.aios-horizon-flow {
+.osai-horizon-flow {
   background: linear-gradient(
     90deg,
     transparent 42%,
@@ -1316,38 +1316,38 @@ select:focus-visible,
   );
   background-size: 240% 100%;
   background-repeat: no-repeat;
-  animation: aios-horizon-flow 9s ease-in-out infinite;
+  animation: osai-horizon-flow 9s ease-in-out infinite;
   opacity: 0.7;
 }
-@keyframes aios-horizon-flow {
+@keyframes osai-horizon-flow {
   from { background-position: 220% 0; }
   to { background-position: -140% 0; }
 }
 
-.aios-lock-star {
-  animation: aios-lock-twinkle var(--dur, 4.6s) ease-in-out var(--delay, 0s) infinite;
+.osai-lock-star {
+  animation: osai-lock-twinkle var(--dur, 4.6s) ease-in-out var(--delay, 0s) infinite;
   opacity: 0.2;
 }
-@keyframes aios-lock-twinkle {
+@keyframes osai-lock-twinkle {
   0%, 100% { opacity: 0.15; }
   50% { opacity: var(--hi, 0.7); }
 }
 
 /* satellites — a faint dot on a long straight crossing */
-.aios-lock-sat { animation: aios-lock-sat 110s linear infinite; }
-@keyframes aios-lock-sat {
+.osai-lock-sat { animation: osai-lock-sat 110s linear infinite; }
+@keyframes osai-lock-sat {
   from { transform: translateX(-4vw); }
   to { transform: translateX(104vw); }
 }
 
 /* the shooting star — a streak that lives for ~0.8s of a lazy 15s cycle */
-.aios-lock-shoot {
+.osai-lock-shoot {
   background: linear-gradient(90deg, color-mix(in srgb, white 85%, transparent), transparent);
   border-radius: 999px;
   opacity: 0;
-  animation: aios-lock-shoot 15s ease-in 5s infinite;
+  animation: osai-lock-shoot 15s ease-in 5s infinite;
 }
-@keyframes aios-lock-shoot {
+@keyframes osai-lock-shoot {
   0% { transform: translate(0, 0) rotate(16deg) scaleX(0.4); opacity: 0; }
   1% { opacity: 0.9; }
   5% { transform: translate(-34vw, 9.5vw) rotate(16deg) scaleX(1); opacity: 0; }
@@ -1355,11 +1355,11 @@ select:focus-visible,
 }
 
 /* fireflies — sparks of the working world drifting up out of the ground */
-.aios-lock-fly {
-  animation: aios-lock-fly var(--dur, 12s) linear var(--delay, 0s) infinite;
+.osai-lock-fly {
+  animation: osai-lock-fly var(--dur, 12s) linear var(--delay, 0s) infinite;
   opacity: 0;
 }
-@keyframes aios-lock-fly {
+@keyframes osai-lock-fly {
   0% { transform: translate(0, 6px); opacity: 0; }
   10% { opacity: 0.6; }
   55% { opacity: 0.45; }
@@ -1369,13 +1369,13 @@ select:focus-visible,
 /* parallax terrain — two soft ridge glows drifting at different paces.
    Elements are 200% wide with a 50%-repeating background, translating -50%
    per cycle → a seamless loop. */
-.aios-lock-ridge-a,
-.aios-lock-ridge-b {
+.osai-lock-ridge-a,
+.osai-lock-ridge-b {
   background-repeat: repeat-x;
   background-size: 50% 100%;
   will-change: transform;
 }
-.aios-lock-ridge-a {
+.osai-lock-ridge-a {
   background-image: radial-gradient(
       42% 130% at 24% 100%,
       color-mix(in srgb, var(--color-accent) 10%, transparent),
@@ -1383,15 +1383,15 @@ select:focus-visible,
     ),
     radial-gradient(
       36% 110% at 72% 100%,
-      color-mix(in srgb, var(--aios-accent-2) 7%, transparent),
+      color-mix(in srgb, var(--osai-accent-2) 7%, transparent),
       transparent 70%
     );
-  animation: aios-lock-ridge 85s linear infinite;
+  animation: osai-lock-ridge 85s linear infinite;
 }
-.aios-lock-ridge-b {
+.osai-lock-ridge-b {
   background-image: radial-gradient(
       38% 120% at 48% 100%,
-      color-mix(in srgb, var(--aios-accent-2) 6%, transparent),
+      color-mix(in srgb, var(--osai-accent-2) 6%, transparent),
       transparent 72%
     ),
     radial-gradient(
@@ -1399,19 +1399,19 @@ select:focus-visible,
       color-mix(in srgb, var(--color-accent) 7%, transparent),
       transparent 70%
     );
-  animation: aios-lock-ridge 135s linear infinite reverse;
+  animation: osai-lock-ridge 135s linear infinite reverse;
 }
-@keyframes aios-lock-ridge {
+@keyframes osai-lock-ridge {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
 
-[data-reduce-motion="true"] :is(.aios-lock-star, .aios-lock-sat, .aios-lock-shoot, .aios-lock-fly, .aios-lock-ridge-a, .aios-lock-ridge-b, .aios-horizon-flow) {
+[data-reduce-motion="true"] :is(.osai-lock-star, .osai-lock-sat, .osai-lock-shoot, .osai-lock-fly, .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow) {
   animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .aios-lock-star, .aios-lock-sat, .aios-lock-shoot, .aios-lock-fly,
-  .aios-lock-ridge-a, .aios-lock-ridge-b, .aios-horizon-flow {
+  .osai-lock-star, .osai-lock-sat, .osai-lock-shoot, .osai-lock-fly,
+  .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow {
     animation: none !important;
   }
 }

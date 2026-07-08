@@ -1,6 +1,6 @@
-//! AIOS oracle roster + CRUD, and all-tmux discovery.
+//! OSAI oracle roster + CRUD, and all-tmux discovery.
 //!
-//! Oracles are multiplexer sessions named `aios-<identity>` — long-lived agent
+//! Oracles are multiplexer sessions named `osai-<identity>` — long-lived agent
 //! sessions (e.g. a `claude` running in its own tmux/psmux session) that the
 //! cockpit can list, attach, create, rename and delete. They survive the app
 //! closing and are reattachable, exactly like the persistent terminal panes.
@@ -10,8 +10,8 @@
 //! simply returns empty — the graceful path for a fresh box.
 //!
 //! The socket is the same configurable namespace the terminals use (Settings →
-//! "terminal socket", default `aios`), so oracles + terminals share one server;
-//! `aios-term-*` sessions are filtered out of the oracle roster.
+//! "terminal socket", default `osai`), so oracles + terminals share one server;
+//! `osai-term-*` sessions are filtered out of the oracle roster.
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -20,7 +20,7 @@ use crate::pty::{resolve_mux, run_mux_quiet};
 
 /// Default socket when the frontend doesn't pass one (matches the terminal
 /// socket default). Sanitized + overridable per call from the user's setting.
-const DEFAULT_SOCKET: &str = "aios";
+const DEFAULT_SOCKET: &str = "osai";
 
 /// Sanitizes the socket name from the optional frontend setting; falls back to
 /// `DEFAULT_SOCKET`. Rejects shell-unsafe chars (flows into `-L <socket>`).
@@ -36,9 +36,9 @@ fn clean_socket(socket: Option<String>) -> String {
 /// One oracle in the roster, surfaced to the frontend.
 #[derive(Debug, Clone, Serialize)]
 pub struct OracleInfo {
-    /// Identity slug, e.g. `helper` (from session `aios-helper`).
+    /// Identity slug, e.g. `helper` (from session `osai-helper`).
     pub identity: String,
-    /// Full session name, e.g. `aios-helper`.
+    /// Full session name, e.g. `osai-helper`.
     pub session: String,
     /// The socket this session lives on.
     pub socket: String,
@@ -59,15 +59,15 @@ pub struct TmuxSession {
     pub name: String,
     pub attached: bool,
     pub windows: u32,
-    /// True when this session is an AIOS oracle (`aios-*`, not `aios-term-*`).
+    /// True when this session is an OSAI oracle (`osai-*`, not `osai-term-*`).
     pub is_oracle: bool,
     /// Friendly display label = the session's window name (set via `new-session
-    /// -n` / `rename-window`). For `aios-term-*` it's the datetime/renamed label;
+    /// -n` / `rename-window`). For `osai-term-*` it's the datetime/renamed label;
     /// for others it's the running program. Falls back to the name in the UI.
     pub label: String,
 }
 
-/// Shape of an entry in `~/.aios/instances.json` (optional display-name registry).
+/// Shape of an entry in `~/.osai/instances.json` (optional display-name registry).
 #[derive(Debug, Deserialize)]
 struct Instance {
     #[serde(default)]
@@ -102,12 +102,12 @@ fn sanitize_identity(raw: &str) -> String {
         .collect()
 }
 
-/// Reads the optional instance registry (`~/.aios/instances.json`); missing → empty.
+/// Reads the optional instance registry (`~/.osai/instances.json`); missing → empty.
 fn read_instances() -> Vec<Instance> {
     let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
         return Vec::new();
     };
-    let path = std::path::PathBuf::from(home).join(".aios/instances.json");
+    let path = std::path::PathBuf::from(home).join(".osai/instances.json");
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
@@ -136,7 +136,7 @@ fn mux_output(app: &AppHandle, socket: &str, args: &[&str]) -> Result<String, St
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Resolves an `aios-*` session's display name from the instance registry.
+/// Resolves an `osai-*` session's display name from the instance registry.
 fn display_name_for(identity: &str, session: &str, instances: &[Instance]) -> String {
     instances
         .iter()
@@ -151,8 +151,8 @@ fn display_name_for(identity: &str, session: &str, instances: &[Instance]) -> St
         .unwrap_or_else(|| identity.to_string())
 }
 
-/// Lists oracle sessions (`aios-<identity>`, excluding the shell's own
-/// `aios-term-*` panes) on the configured socket. Empty when no server/sessions.
+/// Lists oracle sessions (`osai-<identity>`, excluding the shell's own
+/// `osai-term-*` panes) on the configured socket. Empty when no server/sessions.
 #[tauri::command]
 pub fn list_oracles(app: AppHandle, socket: Option<String>) -> Result<Vec<OracleInfo>, String> {
     let sock = clean_socket(socket);
@@ -169,12 +169,12 @@ pub fn list_oracles(app: AppHandle, socket: Option<String>) -> Result<Vec<Oracle
         let mut parts = line.splitn(2, '|');
         let session = parts.next().unwrap_or("").trim().to_string();
         let attached = parts.next().unwrap_or("0").trim() != "0";
-        // Real oracles are `aios-<identity>`. EXCLUDE `aios-term-*` (persistent
+        // Real oracles are `osai-<identity>`. EXCLUDE `osai-term-*` (persistent
         // terminal panes) — they'd otherwise leak in as cryptic roster entries.
-        if !session.starts_with("aios-") || session.starts_with("aios-term-") {
+        if !session.starts_with("osai-") || session.starts_with("osai-term-") {
             continue;
         }
-        let identity = session.trim_start_matches("aios-").to_string();
+        let identity = session.trim_start_matches("osai-").to_string();
         let display_name = display_name_for(&identity, &session, &instances);
         oracles.push(OracleInfo {
             socket: sock.clone(),
@@ -224,7 +224,7 @@ pub fn list_tmux_sessions(app: AppHandle, socket: Option<String>) -> Result<Vec<
             let windows = p.next().unwrap_or("1").trim().parse().unwrap_or(1);
             let label = p.next().unwrap_or("").trim().to_string();
             let is_oracle =
-                socket == sock && name.starts_with("aios-") && !name.starts_with("aios-term-");
+                socket == sock && name.starts_with("osai-") && !name.starts_with("osai-term-");
             sessions.push(TmuxSession {
                 socket: socket.clone(),
                 name,
@@ -238,7 +238,7 @@ pub fn list_tmux_sessions(app: AppHandle, socket: Option<String>) -> Result<Vec<
     Ok(sessions)
 }
 
-/// Creates a new oracle: a detached session `aios-<identity>` on the socket,
+/// Creates a new oracle: a detached session `osai-<identity>` on the socket,
 /// running `command` (e.g. `claude`) if given, else a login shell. The session
 /// stays alive after the command exits so logs remain and it's reattachable.
 #[tauri::command]
@@ -253,7 +253,7 @@ pub fn create_oracle(
     if id.is_empty() {
         return Err("identity must contain letters or digits".into());
     }
-    let session = format!("aios-{id}");
+    let session = format!("osai-{id}");
     // Refuse if it already exists.
     if run_mux_quiet(
         &resolve_mux(&app).ok_or("no multiplexer found (install psmux/tmux)")?,
@@ -327,8 +327,8 @@ pub fn rename_oracle(
     if to_id.is_empty() {
         return Err("new name must contain letters or digits".into());
     }
-    let from_session = format!("aios-{from_id}");
-    let to_session = format!("aios-{to_id}");
+    let from_session = format!("osai-{from_id}");
+    let to_session = format!("osai-{to_id}");
     if run_mux_quiet(
         &resolve_mux(&app).ok_or("no multiplexer found")?,
         &["-L", &sock, "has-session", "-t", &to_session],
@@ -340,7 +340,7 @@ pub fn rename_oracle(
 }
 
 /// Appshot: captures the screen to a PNG and sends its path into an oracle's
-/// session — the ⌘⌘ "screenshot → aios" flow. macOS only (uses `screencapture`).
+/// session — the ⌘⌘ "screenshot → osai" flow. macOS only (uses `screencapture`).
 /// No Enter is sent, so the user can add context first. Returns the saved path.
 #[tauri::command]
 pub fn appshot(app: AppHandle, identity: Option<String>, socket: Option<String>) -> Result<String, String> {
@@ -361,7 +361,7 @@ pub fn appshot(app: AppHandle, identity: Option<String>, socket: Option<String>)
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let path = format!("/tmp/aios-shot-{ts}.png");
+        let path = format!("/tmp/osai-shot-{ts}.png");
         let status = std::process::Command::new("/usr/sbin/screencapture")
             .args(["-x", &path])
             .status()
@@ -369,7 +369,7 @@ pub fn appshot(app: AppHandle, identity: Option<String>, socket: Option<String>)
         if !status.success() {
             return Err("screencapture returned non-zero".into());
         }
-        let session = format!("aios-{id}");
+        let session = format!("osai-{id}");
         let keys = format!("{path} ");
         let _ = mux_output(&app, &sock, &["send-keys", "-t", &session, "-l", &keys]);
         Ok(path)
@@ -395,7 +395,7 @@ pub fn delete_oracle(
     if id.is_empty() {
         return Err("invalid identity".into());
     }
-    mux_output(&app, &sock, &["kill-session", "-t", &format!("aios-{id}")])?;
+    mux_output(&app, &sock, &["kill-session", "-t", &format!("osai-{id}")])?;
     Ok(())
 }
 

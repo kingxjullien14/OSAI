@@ -90,7 +90,7 @@ import { chord, fmtChord } from "../lib/platform";
 import { DEFAULT_PROFILE, addProfile, loadProfiles } from "../lib/profiles";
 import { rememberUrl } from "../lib/browser-mem";
 import { type NotificationLevel } from "../lib/notifications";
-import { onAiosDrag, onPaneOverlay, onWindowGesture, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
+import { onOsaiDrag, onPaneOverlay, onWindowGesture, openViewerFileInPane, registerPaneDropSink, spawnPane } from "../lib/paneBus";
 import { homeDir } from "../lib/fs";
 import { basename, dirname, toFileUrl } from "../lib/paths.ts";
 import { PaneDropZone } from "./PaneDropZone";
@@ -101,8 +101,8 @@ import { normalizeUrl } from "../lib/urlNormalize";
 // else (a .docx, .xlsx, …) goes to the in-app viewer pane instead.
 const BROWSER_VIEWABLE = /\.(pdf|html?|svg|png|jpe?g|gif|webp|txt|md|json|xml|css|js)$/i;
 
-const ANNOT_SENTINEL = "AIOS_ANNOT:";
-const PAGE_SENTINEL = "AIOS_PAGE:";
+const ANNOT_SENTINEL = "OSAI_ANNOT:";
+const PAGE_SENTINEL = "OSAI_PAGE:";
 const ANNOT_POLL_MS = 700;
 
 const ZOOM_MIN = 50;
@@ -113,7 +113,7 @@ const ZOOM_STEP = 10;
  *  backdrop as a SQUARE that ignores border-radius; same standing rule as
  *  chat/overlays + PaneMenu). One style for every browser menu. */
 const DROP =
-  "absolute top-full z-[70] mt-1 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]";
+  "absolute top-full z-[70] mt-1 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]";
 
 // If a navigation STARTS but no Finished arrives within this window we treat it
 // as a connection failure (dead localhost port / DNS fail). wry/tauri 2.11 has
@@ -260,7 +260,7 @@ export function BrowserPane({
   const dragHideTimer = useRef<number | null>(null);
   useEffect(
     () =>
-      onAiosDrag((armed) => {
+      onOsaiDrag((armed) => {
         if (dragHideTimer.current != null) {
           clearTimeout(dragHideTimer.current);
           dragHideTimer.current = null;
@@ -967,7 +967,7 @@ export function BrowserPane({
   // ⌘F opens find-in-page when THIS browser pane is the active one. App.tsx
   // detects "active pane is a browser" (the native ⌘F menu accelerator + the
   // in-React keydown both route there) and dispatches a window CustomEvent
-  // `aios-browser-find` carrying the target pane label. We match on our label so
+  // `osai-browser-find` carrying the target pane label. We match on our label so
   // only the focused browser pane's find bar opens. This is the R5 reconciliation
   // of the R2a ⌘F→pane-fullscreen binding: browser focused → find; else → fs.
   useEffect(() => {
@@ -977,8 +977,8 @@ export function BrowserPane({
       if (detail?.label && detail.label !== label) return;
       openFind();
     };
-    window.addEventListener("aios-browser-find", onFind as EventListener);
-    return () => window.removeEventListener("aios-browser-find", onFind as EventListener);
+    window.addEventListener("osai-browser-find", onFind as EventListener);
+    return () => window.removeEventListener("osai-browser-find", onFind as EventListener);
   }, [active, label, openFind]);
 
   // Turn a captured annotation/selection into one chat-ready line.
@@ -991,7 +991,7 @@ export function BrowserPane({
     return `annotation on ${a.selector}: "${note}"${text} (${a.url})`;
   }, []);
 
-  // Read the clipboard, and if it carries a FRESH AIOS_ANNOT payload, emit it.
+  // Read the clipboard, and if it carries a FRESH OSAI_ANNOT payload, emit it.
   // Returns true when an annotation was consumed (so the caller can exit mode).
   const consumeAnnotation = useCallback((): Promise<boolean> => {
     return readClipboard()
@@ -1016,7 +1016,7 @@ export function BrowserPane({
     browserExitAnnotate(label).catch((e) => reportDiag("browser.annotate", e, { action: "exit" }));
   }, [label]);
 
-  // "send page to chat": eval the page → clipboard (AIOS_PAGE:), poll it back,
+  // "send page to chat": eval the page → clipboard (OSAI_PAGE:), poll it back,
   // then route the {title,url,text} to the active chat via the same onAnnotate
   // hook the annotator uses. Cross-platform via the clipboard bridge.
   const sendPageToChat = useCallback(async () => {
@@ -1095,7 +1095,7 @@ export function BrowserPane({
       return;
     }
     // Snapshot current clipboard as already-seen so we don't grab a stale
-    // AIOS_ANNOT left over from a previous session as if it were new.
+    // OSAI_ANNOT left over from a previous session as if it were new.
     readClipboard()
       .then((raw) => {
         lastAnnotRef.current = raw && raw.startsWith(ANNOT_SENTINEL) ? raw : null;
@@ -1745,7 +1745,7 @@ export function BrowserPane({
         {annotating && (
           <m.div
             {...toastPop()}
-            className="pointer-events-none absolute left-1/2 top-2 z-50 flex items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-[var(--aios-shadow-pop)]"
+            className="pointer-events-none absolute left-1/2 top-2 z-50 flex items-center gap-1.5 rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel-2)] px-3 py-1 text-[11px] text-[var(--color-accent)] shadow-[var(--osai-shadow-pop)]"
           >
             <Crosshair size={12} />
             annotating… click an element, then describe it

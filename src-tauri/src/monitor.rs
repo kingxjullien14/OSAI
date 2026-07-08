@@ -10,16 +10,16 @@
 //!   * error signal — fresh output contains error/panic/failed/Traceback that
 //!     wasn't in the prior snapshot → "⚠️ <session> hit an error …".
 //!
-//! Each event fires a WhatsApp message through the AIOS bridge `push.js`
+//! Each event fires a WhatsApp message through the OSAI bridge `push.js`
 //! (fire-and-forget, prefixed `[cockpit monitor]`), with anti-spam guards:
 //! at most one "done" per idle period (re-armed only when activity resumes) and
 //! a 60s minimum gap between messages per session.
 //!
 //! MASTER AWARENESS — so the master oracle / bridge always knows what the
 //! cockpit is watching:
-//!   * `~/.aios/state/cockpit-monitors.json` — the live array of monitored
+//!   * `~/.osai/state/cockpit-monitors.json` — the live array of monitored
 //!     sessions, rewritten on every start/stop.
-//!   * `~/.aios/state/cockpit-monitor-events.jsonl` — one line per WA
+//!   * `~/.osai/state/cockpit-monitor-events.jsonl` — one line per WA
 //!     notification, an append-only audit log.
 //!
 //! State lives in a module-level `OnceLock<Mutex<HashMap<…>>>` (no managed Tauri
@@ -79,13 +79,13 @@ fn tmux_bin() -> String {
     "tmux".to_string()
 }
 
-/// Resolves the AIOS bridge `push.js`, probing known locations in order. Returns
+/// Resolves the OSAI bridge `push.js`, probing known locations in order. Returns
 /// the first that exists, or `None` if neither is present.
 fn push_script() -> Option<String> {
     let home = home();
     let candidates = [
-        format!("{home}/Repo/aios/bridge/scripts/push.js"),
-        format!("{home}/Repo/aios-bridge/scripts/push.js"),
+        format!("{home}/Repo/osai/bridge/scripts/push.js"),
+        format!("{home}/Repo/osai-bridge/scripts/push.js"),
     ];
     candidates.into_iter().find(|p| std::path::Path::new(p).exists())
 }
@@ -162,11 +162,11 @@ pub(crate) fn node_bin() -> Option<String> {
     None
 }
 
-/// Appends one event line to `~/.aios/state/cockpit-monitor-events.jsonl`.
+/// Appends one event line to `~/.osai/state/cockpit-monitor-events.jsonl`.
 /// Best-effort — a missing dir / write failure is silently ignored.
 fn log_event(session: &str, kind: &str, message: &str) {
     use std::io::Write;
-    let path = format!("{}/.aios/state/cockpit-monitor-events.jsonl", home());
+    let path = format!("{}/.osai/state/cockpit-monitor-events.jsonl", home());
     let ts = chrono::Utc::now().to_rfc3339();
     let line = json!({
         "ts": ts,
@@ -179,12 +179,12 @@ fn log_event(session: &str, kind: &str, message: &str) {
     }
 }
 
-/// Rewrites `~/.aios/state/cockpit-monitors.json` from the current registry, so
+/// Rewrites `~/.osai/state/cockpit-monitors.json` from the current registry, so
 /// the master oracle / bridge can see what the cockpit is watching. We don't
 /// track per-session socket/started_at in the flag map, so this function takes
 /// the full descriptor list to serialize. Best-effort.
 fn write_registry(entries: &[MonitorEntry]) {
-    let path = format!("{}/.aios/state/cockpit-monitors.json", home());
+    let path = format!("{}/.osai/state/cockpit-monitors.json", home());
     let arr: Vec<_> = entries
         .iter()
         .map(|e| {
@@ -410,7 +410,7 @@ pub fn monitor_start(socket: String, session: String) -> Result<(), String> {
     if session.is_empty() {
         return Err("session must not be empty".into());
     }
-    let socket = if socket.is_empty() { "aios".to_string() } else { socket };
+    let socket = if socket.is_empty() { "osai".to_string() } else { socket };
 
     // Already monitoring → no-op.
     {

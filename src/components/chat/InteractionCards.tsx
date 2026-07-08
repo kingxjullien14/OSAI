@@ -395,7 +395,7 @@ export function PlanProposalCard({
     : undefined;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] shadow-[var(--osai-glow-soft)]">
       <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
           <ListChecks size={14} />
@@ -542,7 +542,7 @@ export function ApprovalCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--aios-glow-soft)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--osai-glow-soft)]">
       <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-2">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
           <ShieldQuestion size={14} />

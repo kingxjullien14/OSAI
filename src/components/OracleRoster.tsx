@@ -1,5 +1,5 @@
 /**
- * The oracle roster — the fleet of long-lived agent sessions (`aios-<identity>`
+ * The oracle roster — the fleet of long-lived agent sessions (`osai-<identity>`
  * multiplexer sessions, e.g. a `claude` running in its own tmux/psmux session),
  * plus an all-sessions attach surface. Full CRUD: create / rename / delete
  * (delete is two-click-to-confirm). Self-polls so spawns/kills elsewhere reflect
@@ -56,9 +56,9 @@ const defaultOracleIdentity = (): string => {
 
 /** The multiplexer socket oracles live on (same configurable namespace as the
  *  persistent terminals — Settings → "terminal socket"). */
-const oracleSocket = (): string => loadSettings().terminalSocket || "aios";
+const oracleSocket = (): string => loadSettings().terminalSocket || "osai";
 
-const HIDDEN_KEY = "aios.hiddenOracles";
+const HIDDEN_KEY = "osai.hiddenOracles";
 const loadHidden = (): Set<string> => {
   try {
     return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]"));
@@ -67,7 +67,7 @@ const loadHidden = (): Set<string> => {
   }
 };
 
-const COLLAPSE_KEY = "aios.agentsCollapsed";
+const COLLAPSE_KEY = "osai.agentsCollapsed";
 
 export function OracleRoster({
   iconsOnly = false,
@@ -135,15 +135,15 @@ export function OracleRoster({
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // Non-oracle sessions, split into AIOS's own persistent terminals (`aios-term-*`
+  // Non-oracle sessions, split into OSAI's own persistent terminals (`osai-term-*`
   // — the reattach surface) and everything else (misc tmux sessions).
   const otherSessions = sessions.filter((s) => !s.is_oracle);
-  const reattachable = otherSessions.filter((s) => s.name.startsWith("aios-term-"));
-  const plainSessions = otherSessions.filter((s) => !s.name.startsWith("aios-term-"));
+  const reattachable = otherSessions.filter((s) => s.name.startsWith("osai-term-"));
+  const plainSessions = otherSessions.filter((s) => !s.name.startsWith("osai-term-"));
   const visibleOracles = oracles.filter((o) => !hidden.has(o.identity));
   const hiddenOracles = oracles.filter((o) => hidden.has(o.identity));
   // Is the default oracle already running? If not, offer a one-tap spawn that
-  // creates `aios-<identity>` running claude, then attaches to it.
+  // creates `osai-<identity>` running claude, then attaches to it.
   const defaultRunning = oracles.some((o) => o.identity === defaultOracleIdentity());
   const spawnDefault = async () => {
     setSpawning(true);
@@ -276,7 +276,7 @@ export function OracleRoster({
               onClick={spawnDefault}
               disabled={spawning}
               className="group flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-all duration-150 hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)] disabled:opacity-60"
-              title={`spawn your oracle (aios-${defaultOracleIdentity()})`}
+              title={`spawn your oracle (osai-${defaultOracleIdentity()})`}
             >
               {/* icon chip — same language as the rail rows (W1.6) */}
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] transition-colors group-hover:bg-[var(--color-accent-soft)]">
@@ -361,7 +361,7 @@ export function OracleRoster({
       </div>
 
       {/* ---- detached terminals (reattach surface) ---- */}
-      {/* AIOS's own `aios-term-*` sessions that have no open pane right now —
+      {/* OSAI's own `osai-term-*` sessions that have no open pane right now —
           close a pane (or the whole app) and its session keeps running here, so
           you can pop it back into a new pane. Shown even in chatpaneAgentsOnly
           (the focused sidebar mode) because reattaching what you closed is a
@@ -397,10 +397,10 @@ export function OracleRoster({
         </div>
       )}
 
-      {/* ---- other (non-AIOS) tmux sessions ---- */}
-      {/* S3: "show non-aios sessions" now actually gates this block (the
+      {/* ---- other (non-OSAI) tmux sessions ---- */}
+      {/* S3: "show non-osai sessions" now actually gates this block (the
           toggle existed but everything always showed). */}
-      {!collapsed && plainSessions.length > 0 && !chatpaneAgentsOnly && loadSettings().showNonAiosSessions && (
+      {!collapsed && plainSessions.length > 0 && !chatpaneAgentsOnly && loadSettings().showNonOsaiSessions && (
         <div className="flex flex-col gap-1">
           <button
             onClick={() => setShowAll((v) => !v)}
@@ -700,7 +700,7 @@ function CreateOracleForm({
       className="flex flex-col gap-2 rounded-xl border border-[var(--color-accent)]/35 bg-[color-mix(in_srgb,var(--color-panel-2)_60%,transparent)] p-2.5 backdrop-blur-md"
     >
       <div className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_70%,transparent)] px-2 py-1.5 transition-colors focus-within:border-[var(--color-accent)]/60">
-        <span className="font-mono text-[11px] text-[var(--color-faint)]">aios-</span>
+        <span className="font-mono text-[11px] text-[var(--color-faint)]">osai-</span>
         <input
           ref={ref}
           value={name}

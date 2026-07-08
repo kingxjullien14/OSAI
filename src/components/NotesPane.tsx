@@ -185,7 +185,7 @@ function ConnectCard({
         {/* top filament — the deck's signature edge */}
         <div
           aria-hidden
-          className="absolute inset-x-6 top-0 h-[2px] rounded-full bg-[linear-gradient(90deg,transparent,var(--color-accent),var(--aios-accent-2),transparent)] opacity-70"
+          className="absolute inset-x-6 top-0 h-[2px] rounded-full bg-[linear-gradient(90deg,transparent,var(--color-accent),var(--osai-accent-2),transparent)] opacity-70"
         />
         <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)]">
           <Sparkles size={11} className="text-[var(--color-accent)]" />
@@ -1197,7 +1197,7 @@ export function NotesPane({
                     {active && (
                       <span
                         aria-hidden
-                        className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                        className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] shadow-[var(--osai-glow-soft)]"
                       />
                     )}
                     <span className="flex items-center gap-1.5">
@@ -1210,7 +1210,7 @@ export function NotesPane({
                       {isLocalId(n.id) ? (
                         <span
                           className="shrink-0 rounded-full border px-1.5 text-[9px]"
-                          style={{ color: "var(--aios-accent-2)", borderColor: "color-mix(in srgb, var(--aios-accent-2) 40%, transparent)" }}
+                          style={{ color: "var(--osai-accent-2)", borderColor: "color-mix(in srgb, var(--osai-accent-2) 40%, transparent)" }}
                           title="created offline — posts to stone & chisel when the connection returns"
                         >
                           local
@@ -1363,7 +1363,7 @@ export function NotesPane({
                         }
                       >
                         <span className="flex min-w-0 items-center gap-1">
-                          <span style={{ color: "var(--aios-accent-2)" }}>#</span>
+                          <span style={{ color: "var(--osai-accent-2)" }}>#</span>
                           <span className="min-w-0 flex-1 truncate">{t}</span>
                         </span>
                       </MenuItem>
@@ -1490,7 +1490,7 @@ export function NotesPane({
             {mergeNotice && !conflict && (
               <div
                 className="border-b border-[var(--color-border)] px-3 py-1 text-[10.5px]"
-                style={{ color: "var(--aios-accent-2)" }}
+                style={{ color: "var(--osai-accent-2)" }}
               >
                 ✓ {mergeNotice}
               </div>
@@ -1545,7 +1545,7 @@ export function NotesPane({
                   }`}
                   style={
                     saveState === "saved" || saveState === "idle"
-                      ? { background: "var(--aios-accent-2)" }
+                      ? { background: "var(--osai-accent-2)" }
                       : undefined
                   }
                 />

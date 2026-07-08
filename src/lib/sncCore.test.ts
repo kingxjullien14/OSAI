@@ -29,7 +29,7 @@ test("listQuery: default sort 'updated' is omitted, others sent", () => {
 test("listQuery: q/tag are trimmed and skipped when blank", () => {
   assert.equal(listQuery({ q: "  beacon notes  " }), "?q=beacon+notes");
   assert.equal(listQuery({ q: "   " }), "");
-  assert.equal(listQuery({ tag: " aios " }), "?tag=aios");
+  assert.equal(listQuery({ tag: " osai " }), "?tag=osai");
   assert.equal(listQuery({ tag: "" }), "");
 });
 
@@ -103,12 +103,12 @@ test("toError: other statuses → SncHttpError with the API message", () => {
 
 test("collectTags: most-used first, alphabetical tie-break, deduped", () => {
   const docs = [
-    { tags: ["work", "aios"] },
-    { tags: ["aios"] },
+    { tags: ["work", "osai"] },
+    { tags: ["osai"] },
     { tags: ["zeta", "work"] },
-    { tags: ["aios"] },
+    { tags: ["osai"] },
   ];
-  assert.deepEqual(collectTags(docs), ["aios", "work", "zeta"]);
+  assert.deepEqual(collectTags(docs), ["osai", "work", "zeta"]);
 });
 
 test("collectTags: empty input → empty list", () => {

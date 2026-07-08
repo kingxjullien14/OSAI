@@ -1,0 +1,13 @@
+{
+  "name": "osai-control",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server: drive the running OSAI app (open panes, run terminals, read its state) via the localhost control plane (src-tauri/src/control.rs).",
+  "bin": { "osai-control": "index.js" },
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": { "node": ">=18" }
+}

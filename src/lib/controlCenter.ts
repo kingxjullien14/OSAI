@@ -1,4 +1,4 @@
-import type { AiosNotification } from "./notifications";
+import type { OsaiNotification } from "./notifications";
 import type { ScheduledAgentSummary } from "./scheduledAgents";
 import type { MemoryFocus } from "./dashboard";
 
@@ -13,7 +13,7 @@ export interface AgentFleetSummary {
 export interface NotificationSummary {
   unreadCount: number;
   importantCount: number;
-  items: AiosNotification[];
+  items: OsaiNotification[];
 }
 
 export interface JarvisBriefing {
@@ -67,8 +67,8 @@ export function summarizeAgentFleet(agents: ScheduledAgentSummary[]): AgentFleet
   };
 }
 
-export function summarizeNotifications(notifications: AiosNotification[]): NotificationSummary {
-  const important = (item: AiosNotification) => item.level === "warning" || item.level === "error";
+export function summarizeNotifications(notifications: OsaiNotification[]): NotificationSummary {
+  const important = (item: OsaiNotification) => item.level === "warning" || item.level === "error";
   const items = [...notifications]
     .filter((item) => !item.read)
     .sort((a, b) => {
@@ -90,19 +90,19 @@ export function buildJarvisBriefing({
   focus,
 }: {
   agents: ScheduledAgentSummary[];
-  notifications: AiosNotification[];
+  notifications: OsaiNotification[];
   focus: MemoryFocus | { title?: string; detail?: string } | null;
 }): JarvisBriefing {
   const notificationSummary = summarizeNotifications(notifications);
   const fleet = summarizeAgentFleet(agents);
   const top = notificationSummary.items[0];
-  const primaryPrompt = top?.title ?? (fleet.needsControl > 0 ? fleet.headline : focus?.title ?? "aios is monitoring");
+  const primaryPrompt = top?.title ?? (fleet.needsControl > 0 ? fleet.headline : focus?.title ?? "osai is monitoring");
   const body = top?.body ? `\n\ncontext:\n${top.body}` : "";
   const source = top ? `\n\nsource: ${top.sourceLabel ?? top.kind}` : "";
 
   return {
     primaryPrompt,
-    talkPrompt: `help me handle this aios control-center item:\n\n${primaryPrompt}${body}${source}`,
+    talkPrompt: `help me handle this osai control-center item:\n\n${primaryPrompt}${body}${source}`,
     unreadCount: notificationSummary.unreadCount,
     controlCount: fleet.needsControl + notificationSummary.importantCount,
   };

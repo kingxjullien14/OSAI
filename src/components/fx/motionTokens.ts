@@ -1,6 +1,6 @@
 /** The Wave-5 motion vocabulary — JS choreography on the SAME clock as CSS
- *  (contract rule 6): durations/eases are read off `:root`'s `--aios-dur-*` /
- *  `--aios-ease-*` custom props once and memoized, so Framer Motion springs
+ *  (contract rule 6): durations/eases are read off `:root`'s `--osai-dur-*` /
+ *  `--osai-ease-*` custom props once and memoized, so Framer Motion springs
  *  and CSS transitions stay in one timing family. Each helper returns the
  *  full `{ initial, animate, exit }` bundle for spreading onto an `m.` element
  *  inside `<AnimatePresence>`, and reads reduce-motion AT CALL TIME (render),
@@ -50,18 +50,18 @@ function clocks(): Clocks {
     return p.length === 4 && p.every(Number.isFinite) ? (p as Ease) : fb;
   };
   cache = {
-    durFast: dur("--aios-dur-fast", FALLBACK.durFast),
-    durBase: dur("--aios-dur-base", FALLBACK.durBase),
-    durSlow: dur("--aios-dur-slow", FALLBACK.durSlow),
-    easeOut: bez("--aios-ease-out", FALLBACK.easeOut),
-    easeIn: bez("--aios-ease-in", FALLBACK.easeIn),
-    easeSpring: bez("--aios-ease-spring", FALLBACK.easeSpring),
+    durFast: dur("--osai-dur-fast", FALLBACK.durFast),
+    durBase: dur("--osai-dur-base", FALLBACK.durBase),
+    durSlow: dur("--osai-dur-slow", FALLBACK.durSlow),
+    easeOut: bez("--osai-ease-out", FALLBACK.easeOut),
+    easeIn: bez("--osai-ease-in", FALLBACK.easeIn),
+    easeSpring: bez("--osai-ease-spring", FALLBACK.easeSpring),
   };
   return cache;
 }
 
 /** The default spring for interactive choreography (tuned to FEEL like
- *  --aios-ease-out per the plan) — later waves' dock/magnet/layout work. */
+ *  --osai-ease-out per the plan) — later waves' dock/magnet/layout work. */
 export const SPRING = { type: "spring", stiffness: 380, damping: 32 } as const;
 
 /** Overlay BACKDROP: plain fade in, faster ease-in fade out. Replaces the
@@ -81,7 +81,7 @@ export function overlayFade() {
   };
 }
 
-/** Overlay PANEL: the `.modal-in` / `aios-modal-out` gesture (rise + settle,
+/** Overlay PANEL: the `.modal-in` / `osai-modal-out` gesture (rise + settle,
  *  faster dip-out) as interruption-safe motion props. Reduce-motion keeps a
  *  zero-duration opacity cut only. */
 export function modalPop() {

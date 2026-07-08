@@ -26,7 +26,7 @@
  *
  * Everything moves, nothing scrolls: the layout is proportional (absolute
  * bands), so it fits any viewport without the old fit-scale hack. All motion
- * is transform/opacity-only CSS (aios-lock-* keyframes in App.css), stilled
+ * is transform/opacity-only CSS (osai-lock-* keyframes in App.css), stilled
  * by the reduce-motion guards.
  *
  * TDZ note (this caused a black idle screen historically): every derived
@@ -60,7 +60,7 @@ import type { IdleRate, MemoryFocus } from "../lib/dashboard";
 import type { RepoPulse } from "../lib/fs";
 import { loadSettings } from "../lib/settings";
 import type { ScheduledAgentSummary } from "../lib/scheduledAgents";
-import type { AiosNotification } from "../lib/notifications";
+import type { OsaiNotification } from "../lib/notifications";
 import type { ProjectInfo } from "../lib/run";
 import type { SidebarItem, SidebarState } from "../lib/sidebar";
 import type { UsageExtras } from "../lib/stats";
@@ -136,7 +136,7 @@ export function IdleControlCenter({
   focus: MemoryFocus | null;
   pulse: RepoPulse[];
   scheduledAgents: ScheduledAgentSummary[];
-  notifications: AiosNotification[];
+  notifications: OsaiNotification[];
   onSpawn: (kind: AppDef["kind"], label: string) => void;
   onOpenProject: (p: ProjectInfo) => void;
   onOpenSidebarItem: (item: SidebarItem) => void;
@@ -208,8 +208,8 @@ export function IdleControlCenter({
   const streak = extras?.currentStreak ?? 0;
 
   return (
-    // .aios-stage = the same animated aurora ground the chat pane uses.
-    <div className="aios-stage relative flex h-full flex-col overflow-hidden">
+    // .osai-stage = the same animated aurora ground the chat pane uses.
+    <div className="osai-stage relative flex h-full flex-col overflow-hidden">
       {/* one-shot accent spotlight sweep on arrival */}
       <Spotlight />
 
@@ -219,12 +219,12 @@ export function IdleControlCenter({
         style={{ opacity: 0.6 + liveness * 0.4, transition: "opacity 2s ease-in-out" }}
       >
         <div
-          className="aios-drift-a absolute h-[52vh] w-[52vh] rounded-full blur-[120px]"
+          className="osai-drift-a absolute h-[52vh] w-[52vh] rounded-full blur-[120px]"
           style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 70%)" }}
         />
         <div
-          className="aios-drift-b absolute right-[-8%] top-[6%] h-[44vh] w-[44vh] rounded-full blur-[120px]"
-          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--aios-accent-2) 14%, transparent), transparent 70%)" }}
+          className="osai-drift-b absolute right-[-8%] top-[6%] h-[44vh] w-[44vh] rounded-full blur-[120px]"
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--osai-accent-2) 14%, transparent), transparent 70%)" }}
         />
       </div>
 
@@ -273,7 +273,7 @@ export function IdleControlCenter({
             title="open pulse"
             className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)]/55 px-2.5 py-1 font-mono text-[10.5px] text-[var(--color-text-2)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
           >
-            <span className="h-1.5 w-1.5 rotate-45 rounded-[1px] bg-[var(--aios-accent-2)] shadow-[0_0_7px_color-mix(in_srgb,var(--aios-accent-2)_70%,transparent)]" />
+            <span className="h-1.5 w-1.5 rotate-45 rounded-[1px] bg-[var(--osai-accent-2)] shadow-[0_0_7px_color-mix(in_srgb,var(--osai-accent-2)_70%,transparent)]" />
             {streak}-day streak
           </button>
         )}
@@ -295,8 +295,8 @@ export function IdleControlCenter({
       {/* ── the working world (ground band) ── */}
       <div className="absolute inset-x-0 bottom-0 z-[9] overflow-hidden" style={{ top: `${HORIZON}%` }}>
         {/* the horizon line + the light traveling along it */}
-        <div className="aios-horizon-line absolute inset-x-0 top-0 h-px" />
-        <div className="aios-horizon-flow absolute inset-x-0 top-0 h-[2px]" />
+        <div className="osai-horizon-line absolute inset-x-0 top-0 h-px" />
+        <div className="osai-horizon-flow absolute inset-x-0 top-0 h-[2px]" />
 
         {/* ground wash — the world below is a shade more solid than the sky */}
         <div
@@ -308,21 +308,21 @@ export function IdleControlCenter({
         />
 
         {/* parallax ridge glows — two soft terrain bands drifting at different speeds */}
-        <div className="aios-lock-ridge-a pointer-events-none absolute -bottom-8 left-0 h-28 w-[200%]" />
-        <div className="aios-lock-ridge-b pointer-events-none absolute -bottom-12 left-0 h-32 w-[200%]" />
+        <div className="osai-lock-ridge-a pointer-events-none absolute -bottom-8 left-0 h-28 w-[200%]" />
+        <div className="osai-lock-ridge-b pointer-events-none absolute -bottom-12 left-0 h-32 w-[200%]" />
 
         {/* fireflies — tiny sparks rising out of the working world */}
         {FLIES.map((f, i) => (
           <span
             key={i}
             aria-hidden
-            className="aios-lock-fly pointer-events-none absolute bottom-0 rounded-full"
+            className="osai-lock-fly pointer-events-none absolute bottom-0 rounded-full"
             style={{
               left: `${f.x}%`,
               width: f.s,
               height: f.s,
-              background: f.c === "a" ? "var(--color-accent)" : "var(--aios-accent-2)",
-              boxShadow: `0 0 6px ${f.c === "a" ? "color-mix(in srgb, var(--color-accent) 80%, transparent)" : "color-mix(in srgb, var(--aios-accent-2) 80%, transparent)"}`,
+              background: f.c === "a" ? "var(--color-accent)" : "var(--osai-accent-2)",
+              boxShadow: `0 0 6px ${f.c === "a" ? "color-mix(in srgb, var(--color-accent) 80%, transparent)" : "color-mix(in srgb, var(--osai-accent-2) 80%, transparent)"}`,
               ["--delay" as string]: `${f.delay}s`,
               ["--dur" as string]: `${f.dur}s`,
               ["--sway" as string]: `${f.sway}px`,
@@ -409,14 +409,14 @@ function SkyField() {
       {STARS.map((st, i) => (
         <span
           key={i}
-          className="aios-lock-star absolute rounded-full"
+          className="osai-lock-star absolute rounded-full"
           style={{
             left: `${st.x}%`,
             top: `${st.y}%`,
             width: st.s,
             height: st.s,
-            background: "color-mix(in srgb, var(--color-text) 85%, var(--aios-accent-2))",
-            boxShadow: st.glow ? "0 0 8px color-mix(in srgb, var(--aios-accent-2) 70%, transparent)" : undefined,
+            background: "color-mix(in srgb, var(--color-text) 85%, var(--osai-accent-2))",
+            boxShadow: st.glow ? "0 0 8px color-mix(in srgb, var(--osai-accent-2) 70%, transparent)" : undefined,
             ["--delay" as string]: `${st.d}s`,
             ["--dur" as string]: `${st.dur}s`,
             ["--hi" as string]: st.hi,
@@ -424,13 +424,13 @@ function SkyField() {
         />
       ))}
       {/* satellites — slow, straight, faint */}
-      <span className="aios-lock-sat absolute left-0 top-[10%] h-[2px] w-[2px] rounded-full bg-[var(--color-text)] opacity-40" />
+      <span className="osai-lock-sat absolute left-0 top-[10%] h-[2px] w-[2px] rounded-full bg-[var(--color-text)] opacity-40" />
       <span
-        className="aios-lock-sat absolute left-0 top-[24%] h-[2px] w-[2px] rounded-full bg-[var(--aios-accent-2)] opacity-30"
+        className="osai-lock-sat absolute left-0 top-[24%] h-[2px] w-[2px] rounded-full bg-[var(--osai-accent-2)] opacity-30"
         style={{ animationDuration: "150s", animationDelay: "38s" }}
       />
       {/* one shooting star, top-right, on a lazy cycle */}
-      <span className="aios-lock-shoot absolute right-[8%] top-[9%] h-px w-24" />
+      <span className="osai-lock-shoot absolute right-[8%] top-[9%] h-px w-24" />
     </div>
   );
 }
@@ -452,7 +452,7 @@ function ClockBlock() {
   const partWords = part.split(" ");
   const words: ReactNode[] = [
     ...partWords.map((w, i) => (i === partWords.length - 1 ? `${w},` : w)),
-    <span key="name" className="aios-greet-name">
+    <span key="name" className="osai-greet-name">
       {name}
     </span>,
   ];
@@ -461,7 +461,7 @@ function ClockBlock() {
 
   return (
     <div
-      className="aios-fade-in pointer-events-none absolute z-[11] flex flex-col gap-1"
+      className="osai-fade-in pointer-events-none absolute z-[11] flex flex-col gap-1"
       style={{ left: "4.5%", bottom: `${100 - HORIZON + 2.2}%` }}
     >
       <span className="font-mono text-[11px] uppercase tracking-[0.32em] text-[var(--color-muted)]">
@@ -619,7 +619,7 @@ function HorizonPet({
       >
         {showRipple && <Ripple />}
         {needsYou && (
-          <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-2 py-0.5 font-mono text-[9px] text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)]">
+          <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-2 py-0.5 font-mono text-[9px] text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)]">
             needs you
           </span>
         )}
@@ -658,7 +658,7 @@ const FLIES: Array<{ x: number; s: number; delay: number; dur: number; sway: num
  *  dock, shelf and composer read as one scale (owner: "the different sizes
  *  feel weird"). */
 const GROUND_PILL =
-  "aios-spotlight press group flex items-center gap-2.5 rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-150 hover:-translate-y-0.5 hover:text-[var(--color-text)]";
+  "osai-spotlight press group flex items-center gap-2.5 rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 shadow-[var(--osai-shadow-pop)] backdrop-blur transition-all duration-150 hover:-translate-y-0.5 hover:text-[var(--color-text)]";
 
 /** The quick-start dock — exactly the three the owner asked for, cut from
  *  the command bar's cloth (same height, same material). */
@@ -733,7 +733,7 @@ function ContinueShelf({
           title={resumeLayout.labels.join(" · ")}
           className={`${GROUND_PILL} px-4 py-2.5`}
         >
-          <History size={15} className="shrink-0 text-[var(--aios-accent-2)]" />
+          <History size={15} className="shrink-0 text-[var(--osai-accent-2)]" />
           <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-text)]">
             pick up where you left off
           </span>
@@ -856,7 +856,7 @@ function ContinueShelf({
 // ── command line — composer-grade seed-a-chat input ───────────────────────────
 
 /** Last launched seed (↑ recall in the empty command line, depth 1). */
-const LAST_SEED_KEY = "aios.home.lastSeed";
+const LAST_SEED_KEY = "osai.home.lastSeed";
 
 /** Rotating placeholder carousel — the line teaches its own grammar. */
 const PHRASES = [
@@ -1005,7 +1005,7 @@ function CommandLine({
 
   return (
     <form
-      className="aios-fade-in w-full"
+      className="osai-fade-in w-full"
       style={{ animationDelay: "80ms" }}
       onSubmit={(e) => {
         e.preventDefault();
@@ -1014,7 +1014,7 @@ function CommandLine({
     >
       <div
         ref={surfaceRef}
-        className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-[var(--aios-shadow-pop)] backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
+        className="group/cmd relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[var(--color-panel-2)]/80 to-[var(--color-panel-2)]/55 px-4 py-3 shadow-[var(--osai-shadow-pop)] backdrop-blur transition-all duration-300 focus-within:border-[var(--color-accent)]/60 focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_50%,transparent),0_18px_50px_-12px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
       >
         {/* accent sheen sweeping the top edge when focused — mirrors the composer */}
         <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-[var(--color-accent)] to-transparent opacity-0 transition-opacity duration-500 group-focus-within/cmd:opacity-80" />
@@ -1051,7 +1051,7 @@ function CommandLine({
               <m.span
                 key={ph.index}
                 aria-hidden
-                className="aios-cmd-ph absolute inset-y-0 left-0 flex items-center font-sans text-[15px] leading-relaxed text-[var(--color-faint)]"
+                className="osai-cmd-ph absolute inset-y-0 left-0 flex items-center font-sans text-[15px] leading-relaxed text-[var(--color-faint)]"
                 initial={{ opacity: 0, y: "0.6em" }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: "-0.6em" }}
@@ -1064,7 +1064,7 @@ function CommandLine({
           {/* vanish canvas — dissolving text on submit; sized to the input */}
           <canvas
             ref={canvasRef}
-            className="aios-cmd-vanish absolute left-0 top-0"
+            className="osai-cmd-vanish absolute left-0 top-0"
             style={{ opacity: vanishing ? 1 : 0 }}
           />
         </div>
@@ -1091,7 +1091,7 @@ function CommandLine({
               type="button"
               onClick={it.run}
               title={it.hint}
-              className="pill press aios-fade-in flex items-center gap-1.5"
+              className="pill press osai-fade-in flex items-center gap-1.5"
             >
               {it.icon}
               <span className="max-w-[260px] truncate">{it.label}</span>
@@ -1131,7 +1131,7 @@ function ago(ts: number): string {
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-0.5">
-      <span className="h-[5px] w-[5px] shrink-0 rounded-[1px] bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+      <span className="h-[5px] w-[5px] shrink-0 rounded-[1px] bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)]" />
       <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-faint)]">{children}</span>
       <span className="h-px flex-1 bg-[linear-gradient(90deg,var(--color-border),transparent)]" />
     </div>

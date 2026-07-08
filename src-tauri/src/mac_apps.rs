@@ -1,4 +1,4 @@
-//! Running mac apps as AIOS attach targets.
+//! Running mac apps as OSAI attach targets.
 //!
 //! This is intentionally conservative. macOS does not support reliably
 //! reparenting arbitrary native app windows into a Tauri webview. The useful
@@ -123,7 +123,7 @@ pub fn mac_capture_app(name: String, bundle_id: Option<String>) -> Result<String
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_millis();
-        let path = format!("/tmp/aios-app-capture-{epoch}.png");
+        let path = format!("/tmp/osai-app-capture-{epoch}.png");
         let status = Command::new("/usr/sbin/screencapture")
             .arg("-x")
             .arg(&path)

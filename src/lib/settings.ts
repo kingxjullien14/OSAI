@@ -1,11 +1,11 @@
-/** Typed, localStorage-backed settings store for the AIOS cockpit.
+/** Typed, localStorage-backed settings store for the OSAI cockpit.
  *  Framework-light: plain load/save/get helpers + a tiny subscribe/notify
  *  emitter so panes can react to changes without pulling in a state lib.
  *  Persisted as JSON under a single key. */
 
 import { scheduleUiMirrorSave } from "./uiMirror";
 
-const STORAGE_KEY = "aios.settings";
+const STORAGE_KEY = "osai.settings";
 
 export type PaneType = "terminal" | "files" | "browser";
 export type SidebarMode = "full" | "icons";
@@ -18,9 +18,9 @@ export interface AppSettings {
   reopenLastLayout: boolean;
   confirmCloseOraclePane: boolean;
   defaultPaneType: PaneType;
-  // Multiplexer socket name for AIOS's own persistent terminal sessions
-  // (tmux/psmux `-L <socket>`). A private namespace for the app's `aios-term-*`
-  // sessions; change it to isolate from other tmux servers. Default "aios".
+  // Multiplexer socket name for OSAI's own persistent terminal sessions
+  // (tmux/psmux `-L <socket>`). A private namespace for the app's `osai-term-*`
+  // sessions; change it to isolate from other tmux servers. Default "osai".
   terminalSocket: string;
 
   // appearance
@@ -44,8 +44,8 @@ export interface AppSettings {
 
   // oracles
   autoRefreshSeconds: number;
-  showNonAiosSessions: boolean;
-  // Default identity for the one-tap "spawn an oracle" shortcut (`aios-<id>`
+  showNonOsaiSessions: boolean;
+  // Default identity for the one-tap "spawn an oracle" shortcut (`osai-<id>`
   // session). Empty → the roster slugs the user's name, else "agent".
   primaryOracleId: string;
 
@@ -79,7 +79,7 @@ export interface AppSettings {
   // and being carried silence it regardless. ON by default.
   petVoice: boolean;
 
-  // minimizeToTray — when ON, closing the window (X) hides AIOS to the system
+  // minimizeToTray — when ON, closing the window (X) hides OSAI to the system
   // tray and keeps it running (the tray icon's Show/Quit bring it back or
   // exit) instead of quitting. OFF by default → X quits. macOS keeps its dock
   // behavior regardless. Windows/Linux only.
@@ -95,7 +95,7 @@ export interface AppSettings {
   showCodexUsage: boolean;
 
   // projects — when ON, a workspace's CLAUDE.md/AGENTS.md context is kept fresh on
-  // rescan for workspaces that already have an aios.workspace.json (ones you've
+  // rescan for workspaces that already have an osai.workspace.json (ones you've
   // opted into). OFF by default — generation is otherwise an explicit, consent-first
   // action per workspace in Settings → projects.
   regenerateContextOnChange: boolean;
@@ -162,7 +162,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reopenLastLayout: true,
   confirmCloseOraclePane: true,
   defaultPaneType: "terminal",
-  terminalSocket: "aios",
+  terminalSocket: "osai",
 
   terminalFontSize: 13,
   splashOnLaunch: true,
@@ -185,7 +185,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showCodexUsage: true,
   regenerateContextOnChange: false,
   autoRefreshSeconds: 15,
-  showNonAiosSessions: false,
+  showNonOsaiSessions: false,
 
   chatProvider: "codex-cli",
   chatModel: null,

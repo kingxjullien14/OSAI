@@ -43,7 +43,7 @@ function barColor(pct: number): string {
 function barFill(pct: number): string {
   if (pct >= 85) return "var(--color-danger)";
   if (pct >= 65) return "var(--color-warning)";
-  return "linear-gradient(90deg, var(--color-accent), var(--aios-accent-2))";
+  return "linear-gradient(90deg, var(--color-accent), var(--osai-accent-2))";
 }
 
 function UsageBar({
@@ -274,11 +274,11 @@ export function UsageGlance({ bare = false }: { bare?: boolean } = {}) {
   if (!hasClaude && !hasCodex)
     // never silently hide — say WHY there's nothing (user-reported: "I can't
     // see my usage limits"). claude's 5h/7d only exist once its statusline
-    // hook writes ~/.aios/state/usage.json; codex once its CLI reports.
+    // hook writes ~/.osai/state/usage.json; codex once its CLI reports.
     return (
       <div
         className={`flex flex-col gap-1 ${bare ? "" : "border-t border-[var(--color-border)] pt-3"}`}
-        title={"the 5h/7d windows appear after the engine's first usage report:\nclaude — the aios statusline hook writes ~/.aios/state/usage.json on each tick\ncodex — the CLI pushes its ChatGPT-sub windows"}
+        title={"the 5h/7d windows appear after the engine's first usage report:\nclaude — the osai statusline hook writes ~/.osai/state/usage.json on each tick\ncodex — the CLI pushes its ChatGPT-sub windows"}
       >
         {!bare && (
           <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--color-muted)]">usage</span>
@@ -307,7 +307,7 @@ export function UsageGlance({ bare = false }: { bare?: boolean } = {}) {
         // (user-reported) — say explicitly why claude has no bars yet.
         <div
           className="flex flex-col gap-0.5"
-          title={"claude reports its 5h/7d windows through the aios statusline hook,\nwhich writes ~/.aios/state/usage.json on every claude-code tick.\nsnapshots older than 3h are ignored — run an interactive claude\nsession (e.g. the claude code terminal pane) to refresh."}
+          title={"claude reports its 5h/7d windows through the osai statusline hook,\nwhich writes ~/.osai/state/usage.json on every claude-code tick.\nsnapshots older than 3h are ignored — run an interactive claude\nsession (e.g. the claude code terminal pane) to refresh."}
         >
           <span className="text-[10px] font-medium lowercase tracking-wide text-[var(--color-text-2)]">claude</span>
           <span className="text-[10.5px] leading-snug text-[var(--color-faint)]">

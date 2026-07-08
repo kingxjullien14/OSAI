@@ -244,7 +244,7 @@ import {
   markNotificationRead,
   pushNotification,
   subscribeNotifications,
-  type AiosNotification,
+  type OsaiNotification,
   type NotificationTarget,
 } from "./lib/notifications";
 
@@ -382,7 +382,7 @@ function reserveKeySeq(key: string) {
   }
 }
 
-/** Derives the `aios-term-<name>` session SUFFIX from a pane key — MUST match
+/** Derives the `osai-term-<name>` session SUFFIX from a pane key — MUST match
  *  `termSessionName` in TerminalRuntime.tsx (kept inline here so the reaper
  *  doesn't pull xterm into the main bundle). Used to build the keep-set for the
  *  startup GC (B2) so a live pane's session is never reaped. */
@@ -400,14 +400,14 @@ function termSessionSuffix(paneKey: string): string {
 // left up. Only kinds that can be cleanly re-spawned are persisted; transient
 // one-shot fields (chat seed/resume/reattach) are stripped so a restored chat
 // doesn't re-fire its launcher prompt or try to reattach a dead backend id.
-const LAYOUT_KEY = "aios.layout";
-const GRID_TRACK_KEY = "aios.grid.tracks";
+const LAYOUT_KEY = "osai.layout";
+const GRID_TRACK_KEY = "osai.grid.tracks";
 // windowed-workspace geometry (PLAN-odysseus-feel.md W1) — one global layout
 // keyed by pane key; named-workspace snapshots still only carry grid tracks.
-const WINDOW_LAYOUT_KEY = "aios.windows.layout";
+const WINDOW_LAYOUT_KEY = "osai.windows.layout";
 // rail items hidden in windowed mode — the chat tab strip owns "new chat".
 const WINDOWED_HIDDEN_APPS: ReadonlySet<string> = new Set(["chat"]);
-const AGENT_AUDIT_KEY = "aios.agent.audit.v1";
+const AGENT_AUDIT_KEY = "osai.agent.audit.v1";
 const AGENT_AUDIT_LIMIT = 200;
 
 function recordAgentAudit(entry: AgentAuditEntry) {
@@ -459,7 +459,7 @@ function persistableKind(kind: PaneContent): PaneContent | null {
 function hydrateSavedPanes(saved: { key?: string; label: string; kind: PaneContent }[]): Pane[] {
   return saved.map((p) => {
     // B1: REUSE the persisted key so a restored terminal pane keeps its
-    // original pane key → `termSessionName` derives the SAME `aios-term-<name>`
+    // original pane key → `termSessionName` derives the SAME `osai-term-<name>`
     // and reattaches to the session its claude/codex was running in. Minting a
     // fresh key here (the old bug) computed a brand-new name → `new-session -A`
     // created an empty session and orphaned the real one. Reserve `seq` past
@@ -512,7 +512,7 @@ function saveLayout(panes: Pane[]) {
 // Generalizes the old single `lastOpenPath` ref into a persisted most-recently-
 // used list so the fuzzy finder can show "recent files" before you type. Newest
 // first, de-duped, capped.
-const MRU_KEY = "aios.files.mru";
+const MRU_KEY = "osai.files.mru";
 const MRU_LIMIT = 40;
 
 function loadMru(): string[] {
@@ -571,7 +571,7 @@ function App() {
   const [splashFading, setSplashFading] = useState(false);
   // first-run onboarding — only an empty localStorage (no onboardingComplete)
   // opens it; veterans are back-filled true in loadSettings. Replayable from
-  // Settings via the "aios:replay-onboarding" event.
+  // Settings via the "osai:replay-onboarding" event.
   const [onboardingOpen, setOnboardingOpen] = useState(
     () => !loadSettings().onboardingComplete,
   );
@@ -580,8 +580,8 @@ function App() {
       setSettingsOpen(false);
       setOnboardingOpen(true);
     };
-    window.addEventListener("aios:replay-onboarding", replay);
-    return () => window.removeEventListener("aios:replay-onboarding", replay);
+    window.addEventListener("osai:replay-onboarding", replay);
+    return () => window.removeEventListener("osai:replay-onboarding", replay);
   }, []);
   // Kill the OS WebView right-click menu (Back/Reload/Save as/Print/Inspect) app-
   // wide so our own pane menus own the gesture — EXCEPT over editable text, where
@@ -613,7 +613,7 @@ function App() {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   // Recent-files MRU (⌘P empty-query list); kept in state so opens repaint it.
   const [mru, setMru] = useState<string[]>(loadMru);
-  const [notifications, setNotifications] = useState<AiosNotification[]>(listNotifications);
+  const [notifications, setNotifications] = useState<OsaiNotification[]>(listNotifications);
   const [remoteMirrorSnapshot, setRemoteMirrorSnapshot] = useState<MirrorSnapshot | null>(null);
   const [mirrorStatus, setMirrorStatus] = useState<MirrorConnectionStatus>("off");
   const [mirrorPresence, setMirrorPresence] = useState<MirrorPresence | null>(null);
@@ -645,7 +645,7 @@ function App() {
   // reporting + the "lifted" visual. We deliberately DON'T deactivate panes during
   // a reorder (that blanked native webviews → the flicker/"offline" feel); the
   // drag is pure DOM layered over still-live webviews, tracked via each pane's own
-  // pointer-enter over its HTML title strip (the original AIOS approach).
+  // pointer-enter over its HTML title strip (the original OSAI approach).
   const [dragActiveKey, setDragActiveKey] = useState<string | null>(null);
   // snap zone within the hovered target: pointer in the left ~30% → place
   // BEFORE it, right ~30% → AFTER it, middle → swap (the original gesture).
@@ -919,7 +919,7 @@ function App() {
       panes.find((p) => p.key === sel) ?? (panes.length === 1 ? panes[0] : null);
     if (target?.kind.type === "browser") {
       window.dispatchEvent(
-        new CustomEvent("aios-browser-find", { detail: { label: target.key } }),
+        new CustomEvent("osai-browser-find", { detail: { label: target.key } }),
       );
       return true;
     }
@@ -927,7 +927,7 @@ function App() {
       // find-in-chat (ChatPane listens, matches its own pane key) — before this,
       // ⌘F on a chat pane fell through to fullscreen, of all things.
       window.dispatchEvent(
-        new CustomEvent("aios-chat-find", { detail: { key: target.key } }),
+        new CustomEvent("osai-chat-find", { detail: { key: target.key } }),
       );
       return true;
     }
@@ -1065,7 +1065,7 @@ function App() {
     applyAppearance(); // font-scale + density + reduce-motion at boot (not just when Settings mounts)
     // localStorage isn't durable (WebView2 profile resets; dev vs installed
     // builds are different origins) — restore any UI prefs missing from it
-    // out of the ~/.aios disk mirror, then re-apply. No-op when intact.
+    // out of the ~/.osai disk mirror, then re-apply. No-op when intact.
     void hydrateUiMirror()
       .then((snap) => {
         if (!snap) return;
@@ -1078,7 +1078,7 @@ function App() {
         // The pet soul can't ride the restore-if-missing path: a pane mints a
         // fresh soul during render (before this runs) and writes it to
         // localStorage, so the key is never "missing". Reconcile by bond instead.
-        reconcileSoulFromMirror(snap["aios.pet.soul.v1"]);
+        reconcileSoulFromMirror(snap["osai.pet.soul.v1"]);
       })
       .catch((e) => reportDiag("app.uiMirror", e, { action: "hydrate" }));
     return teardown;
@@ -1119,9 +1119,9 @@ function App() {
     });
   }, []);
 
-  // Startup GC (B2): reap orphaned `aios-term-*` tmux sessions with no restored
+  // Startup GC (B2): reap orphaned `osai-term-*` tmux sessions with no restored
   // pane. Build the keep-set from the panes present at mount (the restored
-  // layout) — only shell-type terminal panes back a persistent `aios-term-*`
+  // layout) — only shell-type terminal panes back a persistent `osai-term-*`
   // session, so those are the only suffixes we preserve. Mount-once; reads the
   // initial `panes` closure (== the restored layout). Conservative: the backend
   // kills only sessions outside the keep-set.
@@ -1131,8 +1131,8 @@ function App() {
       .filter((p) => p.kind.type === "shell")
       .map((p) => termSessionSuffix(p.key))
       .filter(Boolean);
-    reapTerminals(keep, loadSettings().terminalSocket || "aios").catch(() => {
-      /* no tmux server / non-AIOS box → nothing to reap */
+    reapTerminals(keep, loadSettings().terminalSocket || "osai").catch(() => {
+      /* no tmux server / non-OSAI box → nothing to reap */
     });
     // mount-once: the restored layout is fixed at boot; later pane churn is
     // handled by detach/close, not the startup reaper.
@@ -1183,7 +1183,7 @@ function App() {
         event.preventDefault();
         // The flash toast above is the only signal needed here — a backgrounded
         // chat fires a clickable `chat.done` notification when it actually
-        // finishes (see the "aios-notify" listener), so this is not a notification.
+        // finishes (see the "osai-notify" listener), so this is not a notification.
         flash(
           detachedNow > 0
             ? `kept ${detachedNow} chat${detachedNow === 1 ? "" : "s"} running in background`
@@ -1357,7 +1357,7 @@ function App() {
     };
   }, []);
 
-  // Backend → in-app notification bridge. The chat backend emits `aios-notify`
+  // Backend → in-app notification bridge. The chat backend emits `osai-notify`
   // when a BACKGROUNDED chat finishes its turn (chat.rs notify_done). We turn it
   // into a clickable `chat.done` notification whose target reattaches that exact
   // session — the user's #1 ask. (The OS toast still fires from the backend; this is
@@ -1366,7 +1366,7 @@ function App() {
     if (!isTauriRuntime()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<{ kind: string; session_id: number; title?: string; claude_id?: string | null }>("aios-notify", ({ payload }) => {
+    void listen<{ kind: string; session_id: number; title?: string; claude_id?: string | null }>("osai-notify", ({ payload }) => {
       if (!payload || typeof payload.session_id !== "number") return;
       const title = payload.title || "chat";
       if (payload.kind === "chat.done") {
@@ -1387,7 +1387,7 @@ function App() {
         if (disposed) stop();
         else unlisten = stop;
       })
-      .catch((e) => reportDiag("app.listen", e, { action: "aiosNotify" }));
+      .catch((e) => reportDiag("app.listen", e, { action: "osaiNotify" }));
     return () => {
       disposed = true;
       unlisten?.();
@@ -1706,7 +1706,7 @@ function App() {
   useEffect(() => {
     let alive = true;
     const load = () => {
-      listOracles(loadSettings().terminalSocket || "aios").then((v) => alive && setOracles(v)).catch((e) => reportDiag("app.load", e, { action: "oracles" }));
+      listOracles(loadSettings().terminalSocket || "osai").then((v) => alive && setOracles(v)).catch((e) => reportDiag("app.load", e, { action: "oracles" }));
       listChatSessions(12).then((v) => alive && setChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatSessions" }));
       listChatLive().then((v) => alive && setLiveChats(v)).catch((e) => reportDiag("app.load", e, { action: "chatLive" }));
       if (alive) setScheduledAgentSessionVersion(Date.now());
@@ -1788,7 +1788,7 @@ function App() {
 
   const fireAppshot = useCallback(async () => {
     try {
-      const path = await appshot(undefined, loadSettings().terminalSocket || "aios");
+      const path = await appshot(undefined, loadSettings().terminalSocket || "osai");
       flash(`appshot → oracle · ${pathBasename(path)}`);
     } catch (e) {
       flash(`appshot failed: ${e}`);
@@ -2217,7 +2217,7 @@ function App() {
   // Native OS drag-drop (Finder files/folders, e.g. a screenshot) → route to the
   // targeted pane. Because `dragDropEnabled` is true, macOS intercepts file drops
   // natively and the webview's HTML5 drag events never fire — so this Tauri
-  // handler is the ONLY path for OS files (the in-app `application/x-aios-path`
+  // handler is the ONLY path for OS files (the in-app `application/x-osai-path`
   // handler on the panes covers Files-pane drags).
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -2486,7 +2486,7 @@ function App() {
 
   // ── Control plane (Tier 2) ───────────────────────────────────────────────────
   // ONE dispatcher mapping control commands → the SAME closures the UI calls, so an
-  // external agent (via the aios-control MCP → a localhost HTTP server in Rust →
+  // external agent (via the osai-control MCP → a localhost HTTP server in Rust →
   // emit/listen, landing in the next batch) drives the app identically to a human.
   // The command vocabulary + pure routing live in lib/control.ts; here we supply
   // the handlers. The listener below is INERT until the Rust transport emits.
@@ -2570,7 +2570,7 @@ function App() {
         oracleSpawn: (id) => addOracle(id),
         oracleKill: (id, force) => {
           if (!oracles.some((o) => o.identity === id)) return false;
-          void deleteOracle(id, force, loadSettings().terminalSocket || "aios").catch((e) =>
+          void deleteOracle(id, force, loadSettings().terminalSocket || "osai").catch((e) =>
             reportDiag("oracle.delete", e, { action: "kill" }),
           );
           return true;
@@ -2595,7 +2595,7 @@ function App() {
         notesCreate: async (seed) => {
           const d = await sncSaveToNotes(seed.content, {
             title: seed.title,
-            tags: seed.tags ?? ["from-aios", "agent"],
+            tags: seed.tags ?? ["from-osai", "agent"],
           });
           return { id: d.id, title: d.title, updatedAt: d.updatedAt };
         },
@@ -2626,11 +2626,11 @@ function App() {
     if (!isTauriRuntime()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<ControlEnvelope>("aios://control", ({ payload }) => {
+    void listen<ControlEnvelope>("osai://control", ({ payload }) => {
       // notes verbs resolve async (network) — await before replying so the
       // agent gets data, not a race. routeControl promises never reject.
       void Promise.resolve(dispatchControlRef.current(payload)).then((res) =>
-        emit("aios://control-reply", { id: payload?.id, ...res }).catch(() => {}),
+        emit("osai://control-reply", { id: payload?.id, ...res }).catch(() => {}),
       );
     })
       .then((stop) => {
@@ -2731,11 +2731,11 @@ function App() {
   useEffect(() => {
     const dispatchAgentAction = (input: AgentDispatchInput) => agentController.dispatch(input);
     (window as typeof window & {
-      __aiosAgentControl?: (
+      __osaiAgentControl?: (
         action: unknown,
         options?: { source?: AgentDispatchInput["source"]; confirmed?: boolean },
       ) => Promise<AgentDispatchResult>;
-    }).__aiosAgentControl = (action, options = {}) =>
+    }).__osaiAgentControl = (action, options = {}) =>
       dispatchAgentAction({
         source: options.source ?? "codex",
         action,
@@ -2752,14 +2752,14 @@ function App() {
         action: detail?.action,
         confirmed: detail?.confirmed,
       }).then((result) => {
-        window.dispatchEvent(new CustomEvent("aios-agent-action-result", { detail: { requestId, result } }));
+        window.dispatchEvent(new CustomEvent("osai-agent-action-result", { detail: { requestId, result } }));
       });
     };
 
-    window.addEventListener("aios-agent-action", onAgentAction);
+    window.addEventListener("osai-agent-action", onAgentAction);
     return () => {
-      window.removeEventListener("aios-agent-action", onAgentAction);
-      delete (window as typeof window & { __aiosAgentControl?: unknown }).__aiosAgentControl;
+      window.removeEventListener("osai-agent-action", onAgentAction);
+      delete (window as typeof window & { __osaiAgentControl?: unknown }).__osaiAgentControl;
     };
   }, [agentController]);
 
@@ -2779,13 +2779,13 @@ function App() {
 
   useEffect(() => {
     const w = window as typeof window & {
-      __aiosMirrorSnapshot?: () => MirrorSnapshot;
+      __osaiMirrorSnapshot?: () => MirrorSnapshot;
     };
-    w.__aiosMirrorSnapshot = () => mirrorSnapshot;
+    w.__osaiMirrorSnapshot = () => mirrorSnapshot;
 
     const emit = (requestId?: string) => {
       window.dispatchEvent(
-        new CustomEvent("aios-mirror-snapshot", {
+        new CustomEvent("osai-mirror-snapshot", {
           detail: { requestId, snapshot: mirrorSnapshot },
         }),
       );
@@ -2795,11 +2795,11 @@ function App() {
       emit(detail?.requestId);
     };
 
-    window.addEventListener("aios-mirror-request", onRequest);
+    window.addEventListener("osai-mirror-request", onRequest);
     emit();
     return () => {
-      window.removeEventListener("aios-mirror-request", onRequest);
-      delete w.__aiosMirrorSnapshot;
+      window.removeEventListener("osai-mirror-request", onRequest);
+      delete w.__osaiMirrorSnapshot;
     };
   }, [mirrorSnapshot]);
 
@@ -2818,7 +2818,7 @@ function App() {
       if (disposed) return;
       const wsUrl = mirrorWebSocketUrl(mirrorPairing);
       if (!wsUrl) {
-        // No mirror endpoint configured (VITE_AIOS_MIRROR_URL unset) — the
+        // No mirror endpoint configured (VITE_OSAI_MIRROR_URL unset) — the
         // feature is opt-in, so stay dormant instead of crashing on mount.
         setMirrorStatus("off");
         return;
@@ -2912,7 +2912,7 @@ function App() {
     }
     spawn({ type: "notifications" }, "notifications");
   }, [panes, focusPane, spawn]);
-  const openNotificationTarget = useCallback((item: AiosNotification) => {
+  const openNotificationTarget = useCallback((item: OsaiNotification) => {
     markNotificationRead(item.id);
     const t = item.target;
     if (!t) return;
@@ -3254,7 +3254,7 @@ function App() {
   const deepSearchFromPalette = useCallback((query: string) => {
     spawn({
       type: "chat",
-      seed: `search the aios shell context for this and answer with the most useful result. use available tools, memory, files, and current panes when relevant.\n\nquery: ${query}`,
+      seed: `search the osai shell context for this and answer with the most useful result. use available tools, memory, files, and current panes when relevant.\n\nquery: ${query}`,
     }, "search");
   }, [spawn]);
   const topBarHidden = topBarMode === "hidden";
@@ -3406,7 +3406,7 @@ function App() {
   );
 
   return (
-    <div className="aios-stage relative flex h-screen w-screen flex-col overflow-hidden text-[var(--color-text)]">
+    <div className="osai-stage relative flex h-screen w-screen flex-col overflow-hidden text-[var(--color-text)]">
       {splash && <Splash fading={splashFading} />}
       {!splash && onboardingOpen && (
         <Onboarding onClose={() => setOnboardingOpen(false)} />
@@ -3511,8 +3511,8 @@ function App() {
                 }`}
               >
                 {/* glowing brand diamond — also the way home */}
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
-                  <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shadow-[var(--osai-glow-soft)] transition-transform group-hover:scale-105">
+                  <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))] shadow-[0_0_7px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
                 </span>
                 {!iconsOnly && (
                   <span className="font-mono text-[11px] tracking-[0.16em] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)]">
@@ -3615,7 +3615,7 @@ function App() {
         {!sidebarOpen && !compactWebLayout && !webMirrorMode && (
           <div
             data-no-window-drag
-            className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-1.5 py-1 shadow-[var(--aios-shadow-pop)] backdrop-blur"
+            className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-1.5 py-1 shadow-[var(--osai-shadow-pop)] backdrop-blur"
           >
             <IconBtn title={`Command palette (${chord("K")})`} onClick={() => setPaletteOpen(true)}>
               <Search size={14} />
@@ -3867,7 +3867,7 @@ function App() {
                               setActiveKey(pane.key);
                             }}
                             title={`Restore ${pane.label}`}
-                            className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2.5 py-1 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
+                            className="press flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-2.5 py-1 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--osai-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
                           >
                             <span className={`status-dot ${DOT[pane.kind.type] ?? "status-dot--cold"}`} />
                             <span className="max-w-36 truncate">{pane.label}</span>
@@ -3885,7 +3885,7 @@ function App() {
                         onClick={() => setArrangeNonce((n) => n + 1)}
                         title="Arrange windows into a grid"
                         style={{ right: 8 + dockInsets.right }}
-                        className="press absolute top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-[color,right] duration-200 hover:text-[var(--color-accent)]"
+                        className="press absolute top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 text-[var(--color-muted)] shadow-[var(--osai-shadow-pop)] backdrop-blur transition-[color,right] duration-200 hover:text-[var(--color-accent)]"
                       >
                         <LayoutGrid size={16} />
                       </button>
@@ -4045,7 +4045,7 @@ function App() {
               type="button"
               onClick={() => setHomeOverlay(false)}
               title="Enter workspace (Esc)"
-              className="press absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-3 py-1.5 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--aios-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
+              className="press absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-3 py-1.5 font-mono text-[11px] text-[var(--color-muted)] shadow-[var(--osai-shadow-pop)] backdrop-blur transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronUp size={13} />
               enter workspace
@@ -4060,7 +4060,7 @@ function App() {
         <div
           ref={usagePopRef}
           style={{ left: usageOpen.left, bottom: usageOpen.bottom }}
-          className="fade-in-up fixed z-[70] w-[360px] max-w-[85vw] rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-4 shadow-[var(--aios-shadow-pop)] backdrop-blur-xl"
+          className="fade-in-up fixed z-[70] w-[360px] max-w-[85vw] rounded-xl border border-[var(--color-border-strong)] bg-[var(--osai-glass-bg-strong)] p-4 shadow-[var(--osai-shadow-pop)] backdrop-blur-xl"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] text-[var(--color-muted)] uppercase">
@@ -4101,7 +4101,7 @@ function App() {
       {/* conductor pill — listening / executing state, top-center */}
       <AnimatePresence>
       {conductorState !== "idle" && (
-        <m.div {...toastPop()} className="absolute left-1/2 top-4 z-50 flex items-center gap-2 overflow-hidden rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--aios-shadow-pop)] backdrop-blur">
+        <m.div {...toastPop()} className="absolute left-1/2 top-4 z-50 flex items-center gap-2 overflow-hidden rounded-full border border-[var(--color-accent)]/40 bg-[var(--color-panel)]/95 px-3.5 py-1.5 shadow-[var(--osai-shadow-pop)] backdrop-blur">
           {/* the beam laps the pill while the conductor listens/executes */}
           <BorderBeam duration={4} size={40} />
           <Mic
@@ -4129,7 +4129,7 @@ function App() {
         <m.div
           key={toast}
           {...toastPop()}
-          className="glass absolute bottom-4 left-1/2 z-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
+          className="glass absolute bottom-4 left-1/2 z-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/90 px-3 py-2 text-[12px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]"
         >
           {toast}
         </m.div>
@@ -4157,7 +4157,7 @@ function App() {
               }
               trapTab(e, e.currentTarget);
             }}
-            className="w-[400px] rounded-lg border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-4 shadow-[var(--aios-shadow-pop)] backdrop-blur-md"
+            className="w-[400px] rounded-lg border border-[var(--color-border-strong)] bg-[var(--osai-glass-bg-strong)] p-4 shadow-[var(--osai-shadow-pop)] backdrop-blur-md"
           >
             <div className="text-[13px] font-medium text-[var(--color-text)]">this chat is still working</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
@@ -4434,9 +4434,9 @@ function NotificationCenter({
   onClear,
   onClearAll,
 }: {
-  notifications: AiosNotification[];
+  notifications: OsaiNotification[];
   onMarkRead: (id: string) => void;
-  onOpenTarget: (item: AiosNotification) => void;
+  onOpenTarget: (item: OsaiNotification) => void;
   onMarkAllRead: () => void;
   onClear: (id: string) => void;
   onClearAll: () => void;
@@ -4481,7 +4481,7 @@ function NotificationCenter({
               <span
                 aria-hidden
                 className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg)]"
-                style={{ background: "var(--aios-accent-2)" }}
+                style={{ background: "var(--osai-accent-2)" }}
               />
             </span>
             <span className="text-[12.5px] text-[var(--color-muted)]">all quiet</span>
@@ -4507,7 +4507,7 @@ function NotificationCenter({
               {!item.read && (
                 <span
                   aria-hidden
-                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] shadow-[var(--osai-glow-soft)]"
                 />
               )}
               <span
@@ -4518,7 +4518,7 @@ function NotificationCenter({
                       ? "bg-[var(--color-warning)] shadow-[0_0_7px_var(--color-warning)]"
                       : item.level === "success"
                         ? "bg-[var(--color-success)] shadow-[0_0_7px_var(--color-success-glow)]"
-                        : "bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
+                        : "bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)]"
                 }`}
               />
               <button
@@ -4640,7 +4640,7 @@ function SpaceHeader({
             <EllipsisVertical size={12} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+            <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]">
               <RowMenuItem
                 icon={<Trash2 size={13} />}
                 label="delete space"
@@ -4936,7 +4936,7 @@ function SidebarRow({
         dragging ? "opacity-40" : ""
       } ${
         over
-          ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+          ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--osai-glow-soft)]"
           : "hover:translate-x-0.5 hover:bg-[color-mix(in_srgb,var(--color-panel-2)_80%,transparent)]"
       }`}
     >
@@ -4945,7 +4945,7 @@ function SidebarRow({
       <button
         onClick={onSpawn}
         className={`flex min-w-0 flex-1 items-center text-[13px] text-[var(--color-text-2)] transition-colors group-hover:text-[var(--color-text)] ${
-          iconsOnly ? "aios-dock-icon min-h-11 justify-center px-0 py-2" : "gap-2 py-1 pr-1 pl-1.5 text-left"
+          iconsOnly ? "osai-dock-icon min-h-11 justify-center px-0 py-2" : "gap-2 py-1 pr-1 pl-1.5 text-left"
         }`}
       >
         {/* icon chip — the row's anchor; warms to the accent on hover */}
@@ -4986,7 +4986,7 @@ function SidebarRow({
           <EllipsisVertical size={13} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+          <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-panel)] py-1 text-[12px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]">
             <RowMenuItem
               icon={<Pencil size={13} />}
               label="rename"
@@ -5160,7 +5160,7 @@ function PinSiteModal({ spaceId, onClose }: { spaceId: string | null; onClose: (
         role="dialog"
         aria-modal="true"
         aria-label="pin a site"
-        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--osai-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -5251,7 +5251,7 @@ function SaveSessionModal({
             role="dialog"
             aria-modal="true"
             aria-label="save work session"
-            className="glass w-[420px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+            className="glass w-[420px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--osai-shadow-pop)]"
             onMouseDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => trapTab(e, e.currentTarget)}
           >
@@ -5351,7 +5351,7 @@ function SaveWorkspaceModal({
         role="dialog"
         aria-modal="true"
         aria-label="save workspace"
-        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[380px] rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 p-4 shadow-[var(--osai-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -5581,7 +5581,7 @@ function PaneOverview({
                   onMouseMove={spotlightMove}
                   onMouseDown={(e) => { e.stopPropagation(); onPick(p.key); }}
                   style={{ width: cardW }}
-                  className={`aios-spotlight group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[color-mix(in_srgb,var(--color-pane)_62%,transparent)] text-left shadow-[var(--aios-shadow-pop)] backdrop-blur-md transition-all duration-150 hover:-translate-y-1 ${
+                  className={`osai-spotlight group relative flex aspect-[16/10] flex-col overflow-hidden rounded-xl border bg-[color-mix(in_srgb,var(--color-pane)_62%,transparent)] text-left shadow-[var(--osai-shadow-pop)] backdrop-blur-md transition-all duration-150 hover:-translate-y-1 ${
                     isSel
                       ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/60 scale-[1.02] shadow-[0_26px_60px_-22px_color-mix(in_srgb,var(--color-accent)_60%,transparent)]"
                       : "border-[var(--color-border-strong)] hover:border-[var(--color-accent)]/40"
@@ -5612,7 +5612,7 @@ function PaneOverview({
                   {/* body — big type glyph on a faint gradient "screen" */}
                   <div className="relative flex min-h-0 flex-1 items-center justify-center bg-gradient-to-br from-[var(--color-pane)] to-[var(--color-bg)]">
                     <div className="flex max-w-[88%] flex-col items-center gap-2.5">
-                      <span className="grid h-14 w-14 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)] transition-transform group-hover:scale-105">
+                      <span className="grid h-14 w-14 place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] shadow-[var(--osai-glow-soft)] transition-transform group-hover:scale-105">
                         <Glyph size={26} />
                       </span>
                       <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-faint)]">
@@ -5762,7 +5762,7 @@ function OpenPanesList({
             key={p.key}
             className={`group relative flex items-center rounded-md border transition-all ${
               active
-                ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+                ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--osai-glow-soft)]"
                 : "border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]"
             }`}
           >
@@ -5911,9 +5911,9 @@ function PaneCard({
   onRevealFile: (path: string, name: string) => void;
   onDuplicate: () => void;
   onOpenUrl?: (url: string) => void;
-  notifications: AiosNotification[];
+  notifications: OsaiNotification[];
   onMarkNotificationRead: (id: string) => void;
-  onOpenNotificationTarget: (item: AiosNotification) => void;
+  onOpenNotificationTarget: (item: OsaiNotification) => void;
   onMarkAllNotificationsRead: () => void;
   onClearNotification: (id: string) => void;
   onClearAllNotifications: () => void;
@@ -6008,7 +6008,7 @@ function PaneCard({
   // watcher capture-panes them and reports out.
   const monTarget =
     pane.kind.type === "oracle"
-      ? { socket: loadSettings().terminalSocket || "aios", session: `aios-${pane.kind.identity}` }
+      ? { socket: loadSettings().terminalSocket || "osai", session: `osai-${pane.kind.identity}` }
       : pane.kind.type === "tmux"
         ? { socket: pane.kind.socket, session: pane.kind.session }
         : null;
@@ -6154,7 +6154,7 @@ function PaneCard({
           rounded border to ride). */}
       {busy && !maximized && !frameless && <BorderBeam className="z-30" duration={7} />}
       {!frameless && (
-      <div className="relative flex h-[var(--aios-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-2.5 backdrop-blur-md">
+      <div className="relative flex h-[var(--osai-h-chrome)] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-2.5 backdrop-blur-md">
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
           onPointerDown={(e) => {
@@ -6360,7 +6360,7 @@ function PaneCard({
             <div className="absolute inset-0 bg-[var(--color-accent)]/[0.06]" />
           )}
           <div className="absolute inset-0 grid place-items-center">
-            <span className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 font-mono text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+            <span className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 font-mono text-[11px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]">
               {dropZone === "before"
                 ? "release to place before"
                 : dropZone === "after"
@@ -6380,14 +6380,14 @@ function Splash({ fading = false }: { fading?: boolean }) {
       className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]"
       style={{
         opacity: fading ? 0 : 1,
-        transition: "opacity var(--aios-dur-slow) var(--aios-ease-out)",
+        transition: "opacity var(--osai-dur-slow) var(--osai-ease-out)",
       }}
     >
       {/* the brand DIAMOND is the mascot now (OSAI rebrand) — the same mark
           as the sidebar tile + the app icon, breathing its glow. */}
       <div className="brand-logo--splash flex flex-col items-center gap-5">
         <span
-          className="block h-14 w-14 rotate-45 rounded-[14px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]"
+          className="block h-14 w-14 rotate-45 rounded-[14px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))]"
           style={{
             boxShadow:
               "0 0 34px color-mix(in srgb, var(--color-accent) 65%, transparent), 0 0 90px color-mix(in srgb, var(--color-accent) 35%, transparent)",

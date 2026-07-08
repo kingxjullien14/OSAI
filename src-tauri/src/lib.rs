@@ -1,4 +1,4 @@
-//! AIOS — desktop cockpit. Lean Tauri shell: multi-pane PTY terminals + the
+//! OSAI — desktop cockpit. Lean Tauri shell: multi-pane PTY terminals + the
 //! oracle roster (attach to bridge-managed tmux sessions). No IDE cruft.
 
 mod appcast;
@@ -207,7 +207,7 @@ fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
 
 #[tauri::command]
 fn startup_open_pane() -> Option<String> {
-    std::env::var("AIOS_OPEN_PANE")
+    std::env::var("OSAI_OPEN_PANE")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -283,7 +283,7 @@ pub fn run() {
 
             // Boot the local-first diagnostics store (Phase 0+1): resolve the
             // per-bundle app-data dir (portable — a fork gets its own dir, no
-            // dependency on the user's ~/.aios), seed the anon install id, and
+            // dependency on the user's ~/.osai), seed the anon install id, and
             // install the Rust panic hook so backend panics persist as
             // DiagEvents instead of dying silently. Soft-fail: if the dir can't
             // resolve we just skip diag (never block startup).
@@ -298,18 +298,18 @@ pub fn run() {
 
             // Control plane (Tier 2): a localhost HTTP server that lets an external
             // agent drive the app (emit → App.tsx dispatchControl). No-op unless
-            // AIOS_CONTROL=1 — off by default, token-gated, 127.0.0.1 only.
+            // OSAI_CONTROL=1 — off by default, token-gated, 127.0.0.1 only.
             control::start_control_server(app.handle().clone());
 
             // Install the native menu so cockpit accelerators (⌘F/⌘W/⌘1-9/…)
             // fire even when a child webview holds focus (R2a urgent fix).
             // macOS ONLY: there the menu lives in the system menu bar for free;
-            // on Windows it rendered as an in-window "AIOS Edit Pane" strip that
+            // on Windows it rendered as an in-window "OSAI Edit Pane" strip that
             // ate a row of chrome (user-reported). The in-React keydown handler
             // covers every chord when the main webview has focus.
             #[cfg(target_os = "macos")]
             if let Err(e) = build_app_menu(app.handle()) {
-                eprintln!("[aios menu] failed to install app menu: {e}");
+                eprintln!("[osai menu] failed to install app menu: {e}");
             }
 
             // System tray: a Show / Quit menu + left-click-to-show, so a window
@@ -322,7 +322,7 @@ pub fn run() {
                 .item(&PredefinedMenuItem::separator(app.handle())?)
                 .item(&MenuItemBuilder::with_id("tray_quit", "Quit OSAI").build(app.handle())?)
                 .build()?;
-            let mut tray = TrayIconBuilder::with_id("aios-tray")
+            let mut tray = TrayIconBuilder::with_id("osai-tray")
                 .tooltip("OSAI")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
@@ -346,7 +346,7 @@ pub fn run() {
                 tray = tray.icon(icon);
             }
             if let Err(e) = tray.build(app.handle()) {
-                eprintln!("[aios tray] failed to build tray icon: {e}");
+                eprintln!("[osai tray] failed to build tray icon: {e}");
             }
             Ok(())
         })
@@ -378,12 +378,12 @@ pub fn run() {
             lsp::lsp_status,
             lsp::lsp_find_root,
             set_close_to_tray,
-            control::aios_control_status,
-            control::aios_set_control,
-            apikeys::aios_set_api_key,
-            apikeys::aios_delete_api_key,
-            apikeys::aios_has_api_key,
-            apikeys::aios_list_api_keys,
+            control::osai_control_status,
+            control::osai_set_control,
+            apikeys::osai_set_api_key,
+            apikeys::osai_delete_api_key,
+            apikeys::osai_has_api_key,
+            apikeys::osai_list_api_keys,
             snc::snc_status,
             snc::snc_configure,
             snc::snc_disconnect,

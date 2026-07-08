@@ -7,19 +7,19 @@ import type { ApiProviderId } from "./providers";
 
 /** Store (or replace) a provider's API key in the OS keychain. */
 export async function setApiKey(provider: ApiProviderId, key: string): Promise<void> {
-  await invoke("aios_set_api_key", { provider, key });
+  await invoke("osai_set_api_key", { provider, key });
 }
 
 /** Remove a provider's stored key (idempotent). */
 export async function deleteApiKey(provider: ApiProviderId): Promise<void> {
-  await invoke("aios_delete_api_key", { provider });
+  await invoke("osai_delete_api_key", { provider });
 }
 
 /** Whether a provider has a usable key (keychain or env fallback). */
 export async function hasApiKey(provider: ApiProviderId): Promise<boolean> {
   if (!isTauriRuntime()) return false;
   try {
-    return await invoke<boolean>("aios_has_api_key", { provider });
+    return await invoke<boolean>("osai_has_api_key", { provider });
   } catch {
     return false;
   }
@@ -30,7 +30,7 @@ export async function hasApiKey(provider: ApiProviderId): Promise<boolean> {
 export async function listConfiguredProviders(): Promise<Set<string>> {
   if (!isTauriRuntime()) return new Set();
   try {
-    return new Set(await invoke<string[]>("aios_list_api_keys"));
+    return new Set(await invoke<string[]>("osai_list_api_keys"));
   } catch {
     return new Set();
   }

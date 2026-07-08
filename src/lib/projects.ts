@@ -7,8 +7,8 @@
  *  on change (mirrors lib/sidebar's subscribe pattern). */
 import type { ProjectInfo, RunCommand } from "./run";
 
-const KEY = "aios.projects";
-const EVENT = "aios:projects";
+const KEY = "osai.projects";
+const EVENT = "osai:projects";
 
 export interface ProjectsStore {
   /** User-added projects (not discovered by the scanner). */

@@ -1,6 +1,6 @@
 import { loadSettings } from "./settings";
 
-const STORAGE_KEY = "aios.notifications";
+const STORAGE_KEY = "osai.notifications";
 const MAX_NOTIFICATIONS = 200;
 
 export type NotificationLevel = "info" | "success" | "warning" | "error";
@@ -47,7 +47,7 @@ export type NotificationTarget =
   // open a url in an in-app browser pane
   | { type: "url"; url: string; label?: string };
 
-export interface AiosNotification {
+export interface OsaiNotification {
   id: string;
   kind: NotificationKind;
   title: string;
@@ -63,15 +63,15 @@ export interface AiosNotification {
   sourceLabel?: string;
 }
 
-export type NotificationInput = Omit<AiosNotification, "id" | "read" | "ts" | "level"> & {
+export type NotificationInput = Omit<OsaiNotification, "id" | "read" | "ts" | "level"> & {
   level?: NotificationLevel;
   read?: boolean;
 };
 
-type Listener = (items: AiosNotification[]) => void;
+type Listener = (items: OsaiNotification[]) => void;
 
 const listeners = new Set<Listener>();
-let cache: AiosNotification[] | null = null;
+let cache: OsaiNotification[] | null = null;
 let seq = 0;
 
 function nowId(now: number): string {
@@ -117,15 +117,15 @@ function sanitizeTarget(raw: unknown): NotificationTarget | undefined {
   }
 }
 
-function sanitize(items: unknown): AiosNotification[] {
+function sanitize(items: unknown): OsaiNotification[] {
   if (!Array.isArray(items)) return [];
   return items
     .filter(
-      (item): item is Partial<AiosNotification> & { title: string } & Record<string, unknown> =>
+      (item): item is Partial<OsaiNotification> & { title: string } & Record<string, unknown> =>
         item != null && typeof item === "object" && typeof (item as { title?: unknown }).title === "string",
     )
     .map((raw) => {
-      const item = raw as Partial<AiosNotification> & Record<string, unknown>;
+      const item = raw as Partial<OsaiNotification> & Record<string, unknown>;
       // back-compat: old persisted items used `at` and `sourceId`(pane key)/`source`.
       const ts =
         typeof item.ts === "number"
@@ -160,13 +160,13 @@ function sanitize(items: unknown): AiosNotification[] {
             : typeof item.source === "string"
               ? (item.source as string)
               : undefined,
-      } satisfies AiosNotification;
+      } satisfies OsaiNotification;
     })
     .sort((a, b) => b.ts - a.ts)
     .slice(0, MAX_NOTIFICATIONS);
 }
 
-function persist(items: AiosNotification[]): void {
+function persist(items: OsaiNotification[]): void {
   cache = items.slice(0, MAX_NOTIFICATIONS);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
@@ -176,7 +176,7 @@ function persist(items: AiosNotification[]): void {
   listeners.forEach((fn) => fn(cache ?? []));
 }
 
-export function listNotifications(): AiosNotification[] {
+export function listNotifications(): OsaiNotification[] {
   if (cache) return cache;
   try {
     cache = sanitize(JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"));
@@ -193,9 +193,9 @@ export function unreadNotificationCount(): number {
 export function pushNotification(
   input: NotificationInput,
   opts: { now?: number } = {},
-): AiosNotification {
+): OsaiNotification {
   const ts = opts.now ?? Date.now();
-  const item: AiosNotification = {
+  const item: OsaiNotification = {
     ...input,
     id: nowId(ts),
     level: input.level ?? "info",
@@ -231,7 +231,7 @@ export function pushNotification(
  *  (in-app, the bell + pane strips already carry it), via the WebView's
  *  standard Notification API. Best-effort: permission denied / unsupported
  *  runtimes silently fall back to in-app only. */
-function maybeNativeAlert(item: AiosNotification): void {
+function maybeNativeAlert(item: OsaiNotification): void {
   try {
     if (typeof Notification === "undefined" || typeof document === "undefined") return;
     const s = loadSettings();
@@ -265,7 +265,7 @@ export function emitPaneNotification(
     level?: NotificationLevel;
   },
   opts: { now?: number } = {},
-): AiosNotification {
+): OsaiNotification {
   return pushNotification(
     {
       kind: "pane",

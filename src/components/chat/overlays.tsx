@@ -201,7 +201,7 @@ export function CwdPicker({
           type="button"
           disabled={!path || path === cwd}
           onClick={() => path && onPick(path)}
-          className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] enabled:shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
+          className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[12px] font-medium text-[var(--color-accent-fg)] transition-all enabled:bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--osai-accent-2)))] enabled:shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)]"
         >
           <Check size={13} />
           {path === cwd ? "current folder" : "use this folder"}
@@ -240,7 +240,7 @@ export function ImagePreview({
         src={image.url}
         alt="attachment preview"
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
+        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--osai-shadow-pop)]"
       />
       <div
         onClick={(e) => e.stopPropagation()}
@@ -329,14 +329,14 @@ export function GoalEditorOverlay({
           rows={2}
           placeholder="describe a goal — kept as context across turns until cleared"
           spellCheck={false}
-          className="block w-full resize-none rounded-[var(--aios-radius-md)] bg-[var(--color-bg)] px-3 py-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+          className="block w-full resize-none rounded-[var(--osai-radius-md)] bg-[var(--color-bg)] px-3 py-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
         />
         <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] text-[var(--color-faint)]">
           <span>⏎ save · esc cancel</span>
           <button
             type="button"
             onClick={() => onCommit(value)}
-            className="press rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-3 py-1 text-[11px] font-medium text-[var(--color-bg)]"
+            className="press rounded-[var(--osai-radius-pill)] bg-[var(--color-accent)] px-3 py-1 text-[11px] font-medium text-[var(--color-bg)]"
           >
             save goal
           </button>
@@ -393,7 +393,7 @@ export function Dropdown({
       if (openUp) pos.bottom = window.innerHeight - r.top + 6;
       else pos.top = r.bottom + 6;
       pos.maxHeight = Math.max(140, openUp ? spaceAbove : spaceBelow);
-      (pos as Record<string, string | number>)["--aios-origin"] = openUp
+      (pos as Record<string, string | number>)["--osai-origin"] = openUp
         ? "bottom center"
         : "top center";
       setMenuPos(pos);
@@ -460,7 +460,7 @@ export function Dropdown({
             // SQUARE that ignores border-radius (the owner's "boxy border"
             // over the hero title while searching) — same bug W1.6c fixed on
             // PaneMenu. Solid panel + shadow, no straight-lit inset lip.
-            className="scale-in fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] p-1 shadow-[var(--aios-shadow-pop)]"
+            className="scale-in fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] p-1 shadow-[var(--osai-shadow-pop)]"
             style={menuPos}
           >
             {children}
@@ -502,7 +502,7 @@ export function MenuItem({
       {active && !disabled && (
         <span
           aria-hidden
-          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] shadow-[var(--osai-glow-soft)]"
         />
       )}
       <span className="min-w-0 flex-1">{children}</span>
@@ -539,7 +539,7 @@ export function OverlayPanel({
 }) {
   return (
     <div
-      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
+      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--osai-shadow-pop)] ${
         drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
       } ${compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"}`}
     >
@@ -676,7 +676,7 @@ export function ResumePicker({
       ref={rootRef}
       // solid for the same reason as the Dropdown menu: WebView2's backdrop
       // blur paints a square that ignores the rounded corners.
-      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--aios-shadow-pop)] ${
+      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] shadow-[var(--osai-shadow-pop)] ${
         drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
       }`}
     >
@@ -732,7 +732,7 @@ export function ResumePicker({
           <>
             <span
               aria-hidden
-              className="pointer-events-none absolute bottom-2 left-[18px] top-2 w-[2px] rounded-full bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-accent)_45%,transparent),color-mix(in_srgb,var(--aios-accent-2)_25%,transparent),transparent)]"
+              className="pointer-events-none absolute bottom-2 left-[18px] top-2 w-[2px] rounded-full bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-accent)_45%,transparent),color-mix(in_srgb,var(--osai-accent-2)_25%,transparent),transparent)]"
             />
             {byDate.map((grp) => (
               <div key={grp.group}>
@@ -774,7 +774,7 @@ export function ResumePicker({
  *  opencode=amber). */
 function engineColorVar(engine: string): string {
   if (engine === "codex" || engine === "openai") return "var(--color-info)";
-  if (engine === "local" || engine === "ollama") return "var(--aios-accent-2)";
+  if (engine === "local" || engine === "ollama") return "var(--osai-accent-2)";
   if (engine === "opencode" || engine === "openrouter") return "var(--color-warning)";
   return "var(--color-accent)";
 }
@@ -811,7 +811,7 @@ function ResumeRow({
       onMouseEnter={onHoverStart}
       className={`relative block w-full rounded-xl border py-[5px] pl-9 pr-2 text-left transition-[background-color,border-color,box-shadow] duration-150 ${
         active
-          ? "border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+          ? "border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--osai-glow-soft)]"
           : "border-transparent"
       }`}
     >

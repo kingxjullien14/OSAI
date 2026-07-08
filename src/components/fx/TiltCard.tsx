@@ -1,7 +1,7 @@
 /** TiltCard — the CardSpotlight + 3D-card pattern (Aceternity, 2026-06-14) at
  *  cockpit intensity: a subtle pointer-driven tilt (±`max`°, default 4 — full
  *  strength is landing-page energy) plus the neutral mouse-follow glare from
- *  `.aios-spotlight` (App.css), driven by the same `--spot-x/y` vars. Reduce-
+ *  `.osai-spotlight` (App.css), driven by the same `--spot-x/y` vars. Reduce-
  *  motion → a plain div (the glare CSS transition is governed by the master
  *  guard regardless). Give it a rounded class so the glare clips to the corners. */
 import type { ReactNode } from "react";
@@ -25,11 +25,11 @@ export function TiltCard({
   const rotateX = useSpring(0, { stiffness: 200, damping: 18 });
   const rotateY = useSpring(0, { stiffness: 200, damping: 18 });
 
-  if (reduce) return <div className={cn("aios-spotlight", className)}>{children}</div>;
+  if (reduce) return <div className={cn("osai-spotlight", className)}>{children}</div>;
 
   return (
     <m.div
-      className={cn("aios-spotlight", className)}
+      className={cn("osai-spotlight", className)}
       style={{ rotateX, rotateY, transformPerspective: 600 }}
       onMouseMove={(e) => {
         const el = e.currentTarget;

@@ -64,7 +64,7 @@ export class LspTransport {
     }
 
     // pipe-level sentinel from lsp.rs: the server process exited.
-    if (msg.method === "$/aios/serverExit") {
+    if (msg.method === "$/osai/serverExit") {
       this.markDead(new Error("language server exited"));
       return;
     }

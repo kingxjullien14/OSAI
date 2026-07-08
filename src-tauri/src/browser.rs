@@ -111,7 +111,7 @@ fn install_standard_adblock(wk: &objc2_web_kit::WKWebView) {
         return;
     };
     let controller = unsafe { wk.configuration().userContentController() };
-    let identifier = NSString::from_str("aios-standard-adblock-v1");
+    let identifier = NSString::from_str("osai-standard-adblock-v1");
     let rules = NSString::from_str(&standard_adblock_content_rules_json());
     let block = RcBlock::new(move |rule_list: *mut objc2_web_kit::WKContentRuleList, _err: *mut objc2_foundation::NSError| {
         if let Some(rule_list) = unsafe { rule_list.as_ref() } {
@@ -188,11 +188,11 @@ pub async fn browser_show(
             let alt = app.windows().into_values().next();
             match alt {
                 Some(w) => {
-                    eprintln!("[aios browser] no 'main' window; using '{}'", w.label());
+                    eprintln!("[osai browser] no 'main' window; using '{}'", w.label());
                     w
                 }
                 None => {
-                    eprintln!("[aios browser] FAIL: no windows at all");
+                    eprintln!("[osai browser] FAIL: no windows at all");
                     return Err("no main window".into());
                 }
             }
@@ -1210,10 +1210,10 @@ pub async fn browser_screenshot(
 //   1. We `eval()` a small annotator into the page. It highlights the hovered
 //      element, captures `{selector, tagName, text, rect, url}` on click, shows
 //      an inline note box, and on submit writes
-//      `"AIOS_ANNOT:" + JSON.stringify(payload)` to the clipboard via
+//      `"OSAI_ANNOT:" + JSON.stringify(payload)` to the clipboard via
 //      `navigator.clipboard.writeText(...)`.
 //   2. The FRONTEND (main webview) polls `read_clipboard()` (below), which runs
-//      `pbpaste` on macOS. When it sees the `AIOS_ANNOT:` sentinel prefix it
+//      `pbpaste` on macOS. When it sees the `OSAI_ANNOT:` sentinel prefix it
 //      parses the JSON, formats a line, fires `onAnnotate`, and exits annotate
 //      mode. The sentinel prefix means we never grab unrelated clipboard text.
 //
@@ -1221,18 +1221,18 @@ pub async fn browser_screenshot(
 
 /// Injects the annotator overlay + listeners into the page. Idempotent: tears
 /// down any prior instance first, so re-entering is safe. On submit the
-/// annotation JSON is copied to the clipboard with the `AIOS_ANNOT:` sentinel
+/// annotation JSON is copied to the clipboard with the `OSAI_ANNOT:` sentinel
 /// (the frontend polls `read_clipboard` to pick it up).
 #[tauri::command]
 pub fn browser_enter_annotate(app: AppHandle, label: String) -> Result<(), String> {
     let wv = app.get_webview(&label).ok_or("browser not open")?;
-    // Wrapped in an IIFE; all state hangs off `window.__aiosAnnot` so
+    // Wrapped in an IIFE; all state hangs off `window.__osaiAnnot` so
     // `browser_exit_annotate` can clean up listeners + DOM precisely.
     let _ = wv.eval(
         r#"(function(){
   try{
-    if(window.__aiosAnnot&&window.__aiosAnnot.teardown){window.__aiosAnnot.teardown();}
-    var SENT='AIOS_ANNOT:';
+    if(window.__osaiAnnot&&window.__osaiAnnot.teardown){window.__osaiAnnot.teardown();}
+    var SENT='OSAI_ANNOT:';
     var hl=document.createElement('div');
     hl.style.cssText='position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6ea8fe;background:rgba(110,168,254,.12);border-radius:3px;transition:all .03s linear;display:none;';
     document.documentElement.appendChild(hl);
@@ -1295,9 +1295,9 @@ pub fn browser_enter_annotate(app: AppHandle, label: String) -> Result<(), Strin
           url:location.href
         };
         try{navigator.clipboard.writeText(SENT+JSON.stringify(payload));}catch(_){
-          try{window.__aiosAnnotation=payload;}catch(__){}
+          try{window.__osaiAnnotation=payload;}catch(__){}
         }
-        window.__aiosAnnotation=payload;
+        window.__osaiAnnotation=payload;
         closeBox();
       };
     }
@@ -1312,14 +1312,14 @@ pub fn browser_enter_annotate(app: AppHandle, label: String) -> Result<(), Strin
     document.addEventListener('mousemove',move,true);
     document.addEventListener('click',click,true);
     document.addEventListener('keydown',key,true);
-    window.__aiosAnnot={
+    window.__osaiAnnot={
       teardown:function(){
         try{document.removeEventListener('mousemove',move,true);}catch(_){}
         try{document.removeEventListener('click',click,true);}catch(_){}
         try{document.removeEventListener('keydown',key,true);}catch(_){}
         try{closeBox();}catch(_){}
         try{hl.remove();}catch(_){}
-        try{delete window.__aiosAnnot;}catch(_){window.__aiosAnnot=null;}
+        try{delete window.__osaiAnnot;}catch(_){window.__osaiAnnot=null;}
       }
     };
   }catch(e){}
@@ -1334,14 +1334,14 @@ pub fn browser_enter_annotate(app: AppHandle, label: String) -> Result<(), Strin
 pub fn browser_exit_annotate(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
         let _ = wv.eval(
-            "(function(){try{if(window.__aiosAnnot&&window.__aiosAnnot.teardown){window.__aiosAnnot.teardown();}}catch(e){}})()",
+            "(function(){try{if(window.__osaiAnnot&&window.__osaiAnnot.teardown){window.__osaiAnnot.teardown();}}catch(e){}})()",
         );
     }
     Ok(())
 }
 
 /// Evals a copy of the current text selection into the clipboard with the
-/// `AIOS_ANNOT:` sentinel so the frontend's existing poll picks it up. Used by
+/// `OSAI_ANNOT:` sentinel so the frontend's existing poll picks it up. Used by
 /// the "send selection to chat" button. The payload shape mirrors the annotator
 /// (note carries the selection, text is empty) so one parser handles both.
 #[tauri::command]
@@ -1350,12 +1350,12 @@ pub fn browser_copy_selection(app: AppHandle, label: String) -> Result<(), Strin
     let _ = wv.eval(
         r#"(function(){
   try{
-    var SENT='AIOS_ANNOT:';
+    var SENT='OSAI_ANNOT:';
     var sel=(window.getSelection?window.getSelection().toString():'').trim();
     if(!sel)return;
     var payload={selector:'',tagName:'selection',text:'',note:sel,rect:null,url:location.href};
-    try{navigator.clipboard.writeText(SENT+JSON.stringify(payload));}catch(_){window.__aiosAnnotation=payload;}
-    window.__aiosAnnotation=payload;
+    try{navigator.clipboard.writeText(SENT+JSON.stringify(payload));}catch(_){window.__osaiAnnotation=payload;}
+    window.__osaiAnnotation=payload;
   }catch(e){}
 })()"#,
     );
@@ -1363,7 +1363,7 @@ pub fn browser_copy_selection(app: AppHandle, label: String) -> Result<(), Strin
 }
 
 /// Evals the current page's `{url, title, innerText}` into the clipboard with the
-/// `AIOS_PAGE:` sentinel — the "send this page to chat" bridge. Cross-platform
+/// `OSAI_PAGE:` sentinel — the "send this page to chat" bridge. Cross-platform
 /// (works on Windows today, unlike a WebView2-COM path). The frontend reads it
 /// back via `read_clipboard`, parses the sentinel, and routes the page content to
 /// the active chat. A future `browser_eval_result` (WebView2 `ExecuteScriptAsync`
@@ -1375,7 +1375,7 @@ pub fn browser_extract_page(app: AppHandle, label: String) -> Result<(), String>
     let _ = wv.eval(
         r#"(function(){
   try{
-    var SENT='AIOS_PAGE:';
+    var SENT='OSAI_PAGE:';
     var t=(document.body?document.body.innerText:'')||'';
     t=t.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
     if(t.length>20000)t=t.slice(0,20000)+'\n…[truncated]';
@@ -1388,7 +1388,7 @@ pub fn browser_extract_page(app: AppHandle, label: String) -> Result<(), String>
 }
 
 /// Reads the system clipboard as text — the receive end of the clipboard-bridge.
-/// The frontend polls this and filters for the `AIOS_ANNOT:` sentinel, so
+/// The frontend polls this and filters for the `OSAI_ANNOT:` sentinel, so
 /// unrelated clipboard contents are ignored.
 #[tauri::command]
 pub fn read_clipboard() -> Result<String, String> {

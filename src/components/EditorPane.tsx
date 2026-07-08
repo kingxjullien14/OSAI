@@ -152,7 +152,7 @@ export function EditorPane({
 
       editor = monaco.editor.create(hostRef.current, {
         model,
-        theme: "aios-dark",
+        theme: "osai-dark",
         automaticLayout: true,
         // the appearance "text size" slider drives editors + terminals alike.
         fontSize: loadSettings().terminalFontSize || 13,
@@ -440,7 +440,7 @@ export function EditorPane({
       if (!modified) return;
       original = monaco.editor.createModel(disk, languageForPath(path));
       diff = monaco.editor.createDiffEditor(diffHostRef.current, {
-        theme: "aios-dark",
+        theme: "osai-dark",
         automaticLayout: true,
         originalEditable: false,
         readOnly: false,

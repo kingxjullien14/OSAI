@@ -24,7 +24,7 @@ interface Props {
   agentChatStates?: Partial<Record<ScheduledAgentSummary["id"], ScheduledAgentChatState>>;
 }
 
-const COLLAPSE_KEY = "aios.scheduledAgentsCollapsed";
+const COLLAPSE_KEY = "osai.scheduledAgentsCollapsed";
 
 export type ScheduledAgentChatState = "open" | "running" | "saved" | "none";
 
@@ -140,7 +140,7 @@ export function ScheduledAgentsSection({
           type="button"
           onClick={() => applyTemplate(t)}
           title={`${t.blurb} · runs ${t.schedule}`}
-          className="rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2 py-0.5 text-[10px] text-[var(--color-text-2)] backdrop-blur-md transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)]"
+          className="rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2 py-0.5 text-[10px] text-[var(--color-text-2)] backdrop-blur-md transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:shadow-[var(--osai-glow-soft)]"
         >
           {t.label}
         </button>

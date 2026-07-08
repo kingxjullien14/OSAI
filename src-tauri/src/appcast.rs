@@ -1,4 +1,4 @@
-//! App-cast panes — live-mirror ONE foreign macOS app window inside an AIOS pane
+//! App-cast panes — live-mirror ONE foreign macOS app window inside an OSAI pane
 //! (ScreenCaptureKit spike, Phase A: capture + mirror, NO input forwarding).
 //!
 //! macOS forbids reparenting another process's `NSWindow` into ours, so the only
@@ -103,7 +103,7 @@ mod imp {
 
     define_class!(
         #[unsafe(super(NSObject))]
-        #[name = "AiosAppCastOutput"]
+        #[name = "OsaiAppCastOutput"]
         #[ivars = DelegateIvars]
         struct AppCastOutput;
 
@@ -296,7 +296,7 @@ mod imp {
     define_class!(
         #[unsafe(super(NSView))]
         #[thread_kind = MainThreadOnly]
-        #[name = "AiosAppCastInputView"]
+        #[name = "OsaiAppCastInputView"]
         #[ivars = OverlayViewIvars]
         struct AppCastInputView;
 
@@ -575,8 +575,8 @@ mod imp {
                         ),
                         None => (String::new(), -1, String::new()),
                     };
-                    // Skip our own bundle so the picker never lists AIOS itself.
-                    if app_name == "AIOS" {
+                    // Skip our own bundle so the picker never lists OSAI itself.
+                    if app_name == "OSAI" {
                         continue;
                     }
                     if is_system_junk(&app_name, &bundle_id) {

@@ -29,7 +29,7 @@ import { modalPop, overlayFade } from "./fx/motionTokens";
 import { trapTab } from "./ui";
 
 // ── MRU (recent commands) — surfaced as a "recent" group on the empty query ──
-const MRU_KEY = "aios.palette.mru";
+const MRU_KEY = "osai.palette.mru";
 const MRU_CAP = 8;
 export function loadMru(): string[] {
   try {
@@ -347,7 +347,7 @@ export function CommandPalette({
       return rows;
     }
     // AI intents kept alive for ANY non-empty query (was >= 2) so a user is never
-    // dead-ended — even a 1-char query can "ask aios".
+    // dead-ended — even a 1-char query can "ask osai".
     const intentCommands: Command[] = q.length >= 1
       ? [
           ...(onAsk
@@ -406,7 +406,7 @@ export function CommandPalette({
         if (m) scored.push({ ...c, _idx: m.idx, _score: m.score });
       }
       scored.sort((a, b) => b._score - a._score);
-      // the ask-AIOS intent is the omnibar's HERO row — pin it on top so the
+      // the ask-OSAI intent is the omnibar's HERO row — pin it on top so the
       // escape hatch is always one glance (and never buried mid-list).
       const askIdx = scored.findIndex((s) => s.id.startsWith("ai.ask."));
       if (askIdx > 0) {
@@ -591,7 +591,7 @@ export function CommandPalette({
       {/* THE CONSOLE OMNIBAR (sketch board rev 4 — K2 + K3, locked): a lone
           glowing pill bar that speaks mono (the ❯ prompt), scope tabs riding
           the seam, and a detached results card with numbered rows, the
-          ask-AIOS hero, and the filament as its bottom edge. */}
+          ask-OSAI hero, and the filament as its bottom edge. */}
       <m.div
         {...pop}
         initial={morphOpen ? false : pop.initial}
@@ -684,12 +684,12 @@ export function CommandPalette({
         </div>
 
         {/* the results card — detached, filament bottom edge */}
-        <div className="relative mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel)_88%,transparent)] shadow-[var(--aios-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
+        <div className="relative mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel)_88%,transparent)] shadow-[var(--osai-shadow-pop),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
           <div ref={listRef} id="palette-listbox" role="listbox" aria-label="results" className="min-h-0 flex-1 overflow-y-auto py-1.5">
             {results.length === 0 ? (
               <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
                 <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] opacity-40">
-                  <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]" />
+                  <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))]" />
                 </span>
                 <div className="text-[12.5px] text-[var(--color-muted)]">
                   no {scope === "all" ? "command" : scope + " command"} matches “{query}”
@@ -702,7 +702,7 @@ export function CommandPalette({
                       onClose();
                       onAsk(query.trim());
                     }}
-                    className="press mt-1 inline-flex items-center gap-1.5 rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/50"
+                    className="press mt-1 inline-flex items-center gap-1.5 rounded-[var(--osai-radius-pill)] border border-[var(--color-border-strong)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]/50"
                   >
                     <MessageSquare size={13} /> ask osai about “{query.trim()}” instead
                   </button>
@@ -743,10 +743,10 @@ export function CommandPalette({
                         }}
                         className={`relative flex w-full items-center gap-2.5 px-2.5 py-2 text-left transition-colors ${
                           hero
-                            ? `border-b border-[var(--color-border)] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_10%,transparent),color-mix(in_srgb,var(--aios-accent-2)_5%,transparent)_70%,transparent)] px-4 ${
+                            ? `border-b border-[var(--color-border)] bg-[linear-gradient(90deg,color-mix(in_srgb,var(--color-accent)_10%,transparent),color-mix(in_srgb,var(--osai-accent-2)_5%,transparent)_70%,transparent)] px-4 ${
                                 active ? "bg-[var(--color-accent-soft)]" : ""
                               }`
-                            : `rounded-[var(--aios-radius-md)] ${
+                            : `rounded-[var(--osai-radius-md)] ${
                                 active
                                   ? "bg-[color-mix(in_srgb,var(--color-accent)_13%,transparent)] shadow-[inset_0_0_26px_-12px_var(--color-accent)]"
                                   : "hover:bg-[var(--color-panel-2)]/50"
@@ -757,7 +757,7 @@ export function CommandPalette({
                         {active && !hero && (
                           <span
                             aria-hidden
-                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--aios-accent-2))] shadow-[var(--aios-glow-soft)]"
+                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] shadow-[var(--osai-glow-soft)]"
                           />
                         )}
                         {/* row number — ⌥1–9 jump-runs it */}
@@ -766,7 +766,7 @@ export function CommandPalette({
                         </span>
                         {c.icon && (
                           <span
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--aios-radius-sm)] border transition-colors ${
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--osai-radius-sm)] border transition-colors ${
                               active || hero
                                 ? "border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                                 : "border-[var(--color-border)] bg-[var(--color-panel-2)]/50 text-[var(--color-muted)]"
@@ -832,7 +832,7 @@ export function CommandPalette({
           {/* the filament — same DNA as the composer deck's top edge */}
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-x-3.5 bottom-0 z-10 h-[2px] rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--aios-accent-2),transparent)] opacity-60"
+            className="pointer-events-none absolute inset-x-3.5 bottom-0 z-10 h-[2px] rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--osai-accent-2),transparent)] opacity-60"
           />
         </div>
       </m.div>

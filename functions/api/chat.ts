@@ -1,7 +1,7 @@
 interface Env {
   OPENAI_API_KEY?: string;
-  AIOS_CHAT_MODEL?: string;
-  AIOS_OPENAI_BASE_URL?: string;
+  OSAI_CHAT_MODEL?: string;
+  OSAI_OPENAI_BASE_URL?: string;
 }
 
 interface WebChatTurn {
@@ -66,11 +66,11 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context: { request: Request; env: Env }) {
   const { request, env } = context;
-  if (!env.OPENAI_API_KEY || !env.AIOS_CHAT_MODEL) {
+  if (!env.OPENAI_API_KEY || !env.OSAI_CHAT_MODEL) {
     return json(
       {
         error:
-          "web chat is not configured. add OPENAI_API_KEY and AIOS_CHAT_MODEL to cloudflare pages secrets.",
+          "web chat is not configured. add OPENAI_API_KEY and OSAI_CHAT_MODEL to cloudflare pages secrets.",
       },
       { status: 503 },
     );
@@ -86,10 +86,10 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
   const text = (body.text ?? "").trim();
   if (!text) return json({ error: "message is empty" }, { status: 400 });
 
-  const model = env.AIOS_CHAT_MODEL;
+  const model = env.OSAI_CHAT_MODEL;
   const defaultEndpoint = "https://api.openai.com/v1/responses";
-  const endpoint = env.AIOS_OPENAI_BASE_URL
-    ? `${env.AIOS_OPENAI_BASE_URL}/responses`
+  const endpoint = env.OSAI_OPENAI_BASE_URL
+    ? `${env.OSAI_OPENAI_BASE_URL}/responses`
     : defaultEndpoint;
   const upstream = await fetch(endpoint, {
     method: "POST",
@@ -101,7 +101,7 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       model,
       input: buildInput(text, Array.isArray(body.messages) ? body.messages : []),
       instructions:
-        "you are aios web shell. answer directly, keep responses concise, and be clear about browser-only limitations.",
+        "you are osai web shell. answer directly, keep responses concise, and be clear about browser-only limitations.",
       store: false,
     }),
   });

@@ -47,7 +47,7 @@ export interface MirrorSnapshotInput {
 }
 
 export interface MirrorSnapshot {
-  schema: "aios.mirror.v1";
+  schema: "osai.mirror.v1";
   generatedAt: number;
   desktop: {
     sidebarOpen: boolean;
@@ -123,7 +123,7 @@ export function buildMirrorSnapshot(input: MirrorSnapshotInput): MirrorSnapshot 
   }));
 
   return {
-    schema: "aios.mirror.v1",
+    schema: "osai.mirror.v1",
     generatedAt: input.now ?? Date.now(),
     desktop: {
       sidebarOpen: input.sidebarOpen,

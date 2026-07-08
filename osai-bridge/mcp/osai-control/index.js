@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * aios-control — an MCP server that lets a claude oracle drive the running AIOS
- * app. It exposes ONE tool, `control`, which forwards a command to AIOS's
+ * osai-control — an MCP server that lets a claude oracle drive the running OSAI
+ * app. It exposes ONE tool, `control`, which forwards a command to OSAI's
  * localhost control plane (a tiny HTTP server in src-tauri/src/control.rs); the
  * app runs it through the SAME code a human's clicks do (App.tsx dispatchControl).
  *
- * Discovery: reads the bearer token + ephemeral port AIOS writes on launch —
- *   ~/.aios/control-token  and  ~/.aios/control-port
+ * Discovery: reads the bearer token + ephemeral port OSAI writes on launch —
+ *   ~/.osai/control-token  and  ~/.osai/control-port
  * (re-read per call, since the port changes each app launch). If they're missing,
- * AIOS isn't running with the control plane enabled (launch it with AIOS_CONTROL=1).
+ * OSAI isn't running with the control plane enabled (launch it with OSAI_CONTROL=1).
  *
  * Register it in the oracle's MCP config, e.g. in ~/.claude.json:
- *   "mcpServers": { "aios-control": { "command": "node",
- *       "args": ["<abs path>/aios-bridge/mcp/aios-control/index.js"] } }
+ *   "mcpServers": { "osai-control": { "command": "node",
+ *       "args": ["<abs path>/osai-bridge/mcp/osai-control/index.js"] } }
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -25,9 +25,9 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-/** Read the live token + port AIOS wrote (fresh each call — the port is ephemeral). */
+/** Read the live token + port OSAI wrote (fresh each call — the port is ephemeral). */
 function readConfig() {
-  const dir = path.join(os.homedir(), ".aios");
+  const dir = path.join(os.homedir(), ".osai");
   let token;
   let port;
   try {
@@ -35,16 +35,16 @@ function readConfig() {
     port = fs.readFileSync(path.join(dir, "control-port"), "utf8").trim();
   } catch {
     throw new Error(
-      "AIOS control plane not reachable — no ~/.aios/control-token|control-port. " +
-        "Launch AIOS with AIOS_CONTROL=1 so it starts the local control server.",
+      "OSAI control plane not reachable — no ~/.osai/control-token|control-port. " +
+        "Launch OSAI with OSAI_CONTROL=1 so it starts the local control server.",
     );
   }
-  if (!token || !port) throw new Error("AIOS control token/port file is empty.");
+  if (!token || !port) throw new Error("OSAI control token/port file is empty.");
   return { token, port };
 }
 
 const DESCRIPTION = [
-  "Drive the running AIOS desktop app — the same actions a human does in its UI.",
+  "Drive the running OSAI desktop app — the same actions a human does in its UI.",
   "Pass an `action` plus its fields. Run `pane.list` first to get pane `key`s for",
   "key-based actions. Actions:",
   "• pane.open {content,label?} — open a pane. content is a PaneContent, e.g.",
@@ -65,7 +65,7 @@ const DESCRIPTION = [
 ].join("\n");
 
 const server = new Server(
-  { name: "aios-control", version: "1.0.0" },
+  { name: "osai-control", version: "1.0.0" },
   { capabilities: { tools: {} } },
 );
 
@@ -111,7 +111,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { token, port } = readConfig();
     const res = await fetch(`http://127.0.0.1:${port}/control`, {
       method: "POST",
-      headers: { "X-AIOS-Token": token, "Content-Type": "application/json" },
+      headers: { "X-OSAI-Token": token, "Content-Type": "application/json" },
       body: JSON.stringify(args),
     });
     const text = await res.text();

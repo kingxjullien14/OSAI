@@ -230,23 +230,23 @@ test("an unknown action fails loudly (never a silent no-op)", () => {
 
 test("notes verbs are async: list/read/create/append resolve with data", async () => {
   const h = mkHandlers();
-  const list = await routeControl({ action: "notes.list", q: "beacon", tag: "aios" }, h);
+  const list = await routeControl({ action: "notes.list", q: "beacon", tag: "osai" }, h);
   assert.equal(list.ok, true);
   assert.deepEqual(list.result, [{ id: "n1", title: "beacon" }]);
-  assert.deepEqual(h.calls.at(-1), ["notesList", { q: "beacon", tag: "aios" }]);
+  assert.deepEqual(h.calls.at(-1), ["notesList", { q: "beacon", tag: "osai" }]);
 
   const read = await routeControl({ action: "notes.read", id: "n1" }, h);
   assert.equal(read.ok, true);
   assert.equal(read.result.content, "…");
 
   const created = await routeControl(
-    { action: "notes.create", content: "# hi", tags: ["from-aios"] },
+    { action: "notes.create", content: "# hi", tags: ["from-osai"] },
     h,
   );
   assert.equal(created.ok, true);
   assert.deepEqual(h.calls.at(-1), [
     "notesCreate",
-    { content: "# hi", title: undefined, tags: ["from-aios"] },
+    { content: "# hi", title: undefined, tags: ["from-osai"] },
   ]);
 
   const appended = await routeControl({ action: "notes.append", id: "n1", text: "more" }, h);

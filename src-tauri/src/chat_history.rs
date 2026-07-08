@@ -1,9 +1,9 @@
-//! Durable, append-only, full-fidelity chat history store (AIOS-owned).
+//! Durable, append-only, full-fidelity chat history store (OSAI-owned).
 //!
 //! Plan: `misc/PLAN-chatpane-history-and-navigation.md` §2 (phase P1).
 //!
 //! Every chat session's normalized event stream is mirrored to
-//! `~/.aios/state/chat-history/<engineSessionId>/events.jsonl` as it streams —
+//! `~/.osai/state/chat-history/<engineSessionId>/events.jsonl` as it streams —
 //! ONE settled event per line — independent of the engine's own transcript files
 //! (which the engine may compact or prune). Both the rendered `Turn` list and the
 //! `RunEvent` timeline replay from this single log through the SAME reducers the
@@ -103,16 +103,16 @@ impl HistoryLog {
     }
 }
 
-/// `~/.aios/state/chat-history` — the store root (shared with the future reader +
+/// `~/.osai/state/chat-history` — the store root (shared with the future reader +
 /// history pane). Mirrors the path convention of `chat::sessions_store`.
 pub fn history_root() -> Option<PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    Some(PathBuf::from(home).join(".aios/state/chat-history"))
+    Some(PathBuf::from(home).join(".osai/state/chat-history"))
 }
 
-/// `~/.aios/state/chat-history/<id>` for an already-sanitized id.
+/// `~/.osai/state/chat-history/<id>` for an already-sanitized id.
 fn history_session_dir(id: &str) -> Option<PathBuf> {
     Some(history_root()?.join(id))
 }
@@ -162,7 +162,7 @@ pub struct ChatHistoryPage {
 }
 
 /// Reads a session's durable log. `from_seq`/`limit` page it (omit both → all).
-/// Returns an empty page when there's no AIOS-owned store for the id (a foreign
+/// Returns an empty page when there's no OSAI-owned store for the id (a foreign
 /// or pre-store chat) — the caller then falls back to the engine transcript.
 #[tauri::command]
 pub fn read_chat_history(
@@ -377,7 +377,7 @@ fn sessions_index_path() -> Option<PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    Some(PathBuf::from(home).join(".aios/state/chat-sessions.json"))
+    Some(PathBuf::from(home).join(".osai/state/chat-sessions.json"))
 }
 fn load_sessions_index() -> Vec<Value> {
     sessions_index_path()
@@ -500,10 +500,10 @@ pub fn delete_chats(ids: Vec<String>) {
     // `list_chat_sessions` re-finds them on every list, so deleting the index entry
     // alone left them undeletable. Record a trash marker so `list_chat_history`
     // (which filters trashed ids) hides them. The codex rollout itself is left on
-    // disk — we only hide it from AIOS history.
+    // disk — we only hide it from OSAI history.
     for id in &ids {
         if !handled.contains(id) {
-            move_to_trash(id); // no-op when there's no AIOS-owned store
+            move_to_trash(id); // no-op when there's no OSAI-owned store
             manifest.push(TrashRecord {
                 id: id.clone(),
                 title: String::new(),
@@ -659,7 +659,7 @@ pub fn line_to_api_message(line: &str) -> Option<Value> {
 
 /// Rebuild the API-tier conversation `[{role, content}]` from a session's durable
 /// log, in order — so a BYO-key chat RESUMES with full context (chat.rs
-/// `start_api_session`). Empty when there's no AIOS-owned store for the id.
+/// `start_api_session`). Empty when there's no OSAI-owned store for the id.
 pub fn replay_api_messages(id: &str) -> Vec<Value> {
     let Some(safe) = safe_id(id) else {
         return Vec::new();

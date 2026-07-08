@@ -294,7 +294,7 @@ test("a replayed text user event becomes a user bubble (reattach fidelity)", () 
   );
 });
 
-test("a replayed user event with aios_image_ref blocks restores thumbnails", () => {
+test("a replayed user event with osai_image_ref blocks restores thumbnails", () => {
   n = 0;
   const s = reduceChatStreamEvent(
     { turns: [], streamingTurnId: null, thinkingTurnId: null },
@@ -303,7 +303,7 @@ test("a replayed user event with aios_image_ref blocks restores thumbnails", () 
       message: {
         role: "user",
         content: [
-          { type: "aios_image_ref", path: "C:/tmp/shot.png" },
+          { type: "osai_image_ref", path: "C:/tmp/shot.png" },
           { type: "text", text: "what is this?" },
         ],
       },
@@ -342,7 +342,7 @@ test("a tool_result user event still fills its tool card, not a bubble", () => {
 test("replayHistoryToTurns restores image refs on user turns", () => {
   n = 0;
   const lines = [
-    `{"type":"user","message":{"role":"user","content":[{"type":"aios_image_ref","path":"/tmp/a.png"},{"type":"text","text":"look"}]},"_ts":1000}`,
+    `{"type":"user","message":{"role":"user","content":[{"type":"osai_image_ref","path":"/tmp/a.png"},{"type":"text","text":"look"}]},"_ts":1000}`,
   ];
   const turns = replayHistoryToTurns(lines, uid);
   assert.equal(turns.length, 1);

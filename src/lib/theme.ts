@@ -1,4 +1,4 @@
-// AIOS cockpit theme state.
+// OSAI cockpit theme state.
 // Theming is driven entirely by CSS custom props in App.css. Setting
 // document.documentElement.dataset.theme to "light" | "dark" swaps the
 // var(--color-*) tokens app-wide. "system" resolves via prefers-color-scheme.
@@ -12,7 +12,7 @@ import { scheduleUiMirrorSave } from "./uiMirror";
 
 export type Theme = "system" | "light" | "dark";
 
-const STORAGE_KEY = "aios.theme";
+const STORAGE_KEY = "osai.theme";
 
 const listeners = new Set<(t: Theme) => void>();
 let systemMql: MediaQueryList | null = null;
@@ -71,7 +71,7 @@ export function subscribe(fn: (t: Theme) => void): () => void {
 
 /* ── accent ──────────────────────────────────────────────────────────────
  * A small palette of brand-preset accents PLUS arbitrary custom hex colors.
- * orange is the AIOS default (mirrors the App.css --color-accent: #f26522).
+ * orange is the OSAI default (mirrors the App.css --color-accent: #f26522).
  *
  * The whole accent family (accent / hover / dim / soft / cursor / selection /
  * fg) is DERIVED programmatically from a single base hex — see
@@ -235,8 +235,8 @@ export function isCustomAccent(a: Accent): boolean {
   return !(a in ACCENT_PRESETS);
 }
 
-const ACCENT_KEY = "aios.accent";
-const ACCENT_RECENTS_KEY = "aios.accent.recents";
+const ACCENT_KEY = "osai.accent";
+const ACCENT_RECENTS_KEY = "osai.accent.recents";
 const MAX_RECENTS = 4;
 
 const accentListeners = new Set<(a: Accent) => void>();
@@ -337,7 +337,7 @@ export function subscribeAccent(fn: (a: Accent) => void): () => void {
 
 /* ── accent 2 (the "glow") ───────────────────────────────────────────────
  * The cold companion color — the composer lip, the send CTA, the pet's core,
- * signature edges (--aios-accent-2 in App.css). Historically a FIXED neon
+ * signature edges (--osai-accent-2 in App.css). Historically a FIXED neon
  * cyan; now user-settable because some primary accents clash with cyan.
  * Single-var family (consumers mix their own shades via color-mix), so apply
  * = one override. Custom hexes share the primary accent's recents row. */
@@ -346,7 +346,7 @@ export type Accent2Preset = "cyan" | "teal" | "lime" | "pink" | "gold" | "ice";
 
 export type Accent2 = Accent2Preset | string;
 
-/** preset id → base hex. cyan = the brand default (App.css --aios-accent-2). */
+/** preset id → base hex. cyan = the brand default (App.css --osai-accent-2). */
 export const ACCENT2_PRESETS: Record<Accent2Preset, string> = {
   cyan: "#3de8ff",
   teal: "#2dd4bf",
@@ -359,7 +359,7 @@ export const ACCENT2_PRESETS: Record<Accent2Preset, string> = {
 /** ordered list for rendering the preset swatch row (cyan = default, first). */
 export const ACCENT2_ORDER: Accent2Preset[] = ["cyan", "teal", "lime", "pink", "gold", "ice"];
 
-const ACCENT2_KEY = "aios.accent2";
+const ACCENT2_KEY = "osai.accent2";
 
 const accent2Listeners = new Set<(a: Accent2) => void>();
 
@@ -389,13 +389,13 @@ export function getAccent2(): Accent2 {
   return "cyan";
 }
 
-/** Override --aios-accent-2 on :root. Cyan (the stylesheet default) clears
+/** Override --osai-accent-2 on :root. Cyan (the stylesheet default) clears
  *  the inline override so a fresh install stays exactly on the App.css value. */
 export function applyAccent2(a: Accent2 = getAccent2()): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement.style;
-  if (a === "cyan") root.removeProperty("--aios-accent-2");
-  else root.setProperty("--aios-accent-2", accent2ToHex(a));
+  if (a === "cyan") root.removeProperty("--osai-accent-2");
+  else root.setProperty("--osai-accent-2", accent2ToHex(a));
 }
 
 /** Persist + apply an accent-2 (preset id or hex), then notify subscribers. */

@@ -1,4 +1,4 @@
-<title>AIOS Chat — 02 Framed Turns (full pane)</title>
+<title>OSAI Chat — 02 Framed Turns (full pane)</title>
 <style>
   :root{--ground:#0A0713;--void:#06040D;--text:#ECE9F7;--text-2:#C4BEDA;--muted:#8A83A3;--faint:#5C5673;
     --accent:#A86BFF;--accent-2:#3DE8FF;--hair:rgba(255,255,255,0.08);--hair-2:rgba(255,255,255,0.12);
@@ -65,7 +65,7 @@
 
     <div class="card2 you"><div class="strip"><span class="dot" style="background:var(--accent);box-shadow:0 0 7px var(--glow-v)"></span><span class="who">YOU</span><span class="tm">12:31 AM</span></div><div class="in2"><div class="umsg">what's the best 5070ti, and do you think the super series cards are coming soon?</div></div></div>
 
-    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">AIOS · SONNET 4.6</span><span class="tm">worked 12s · 3 steps</span></div><div class="in2">
+    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">OSAI · SONNET 4.6</span><span class="tm">worked 12s · 3 steps</span></div><div class="in2">
       <div class="fold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg> thought for 4s</div>
       <div class="change"><div class="hd"><span class="fi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><span class="nm">gpu-picks.md</span><span class="stat"><span class="a">+6</span> <span class="d">−1</span></span></div><div class="diff"><div class="l del"><span class="g">-</span><span class="x">Pick the RTX 5080 for 1440p.</span></div><div class="l add"><span class="g">+</span><span class="x">Pick the RX 9070 XT — best value.</span></div><div class="l add"><span class="g">+</span><span class="x">16GB VRAM, RM 3,399.</span></div></div></div>
       <h2 class="h">RTX 50 Super Series — Coming Soon?</h2>
@@ -75,7 +75,7 @@
 
     <div class="card2 you"><div class="strip"><span class="dot" style="background:var(--accent);box-shadow:0 0 7px var(--glow-v)"></span><span class="who">YOU</span><span class="tm">12:34 AM</span></div><div class="in2"><div class="umsg">im in malaysia, so maybe look at shopee instead of amazon</div></div></div>
 
-    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">AIOS · SONNET 4.6</span><span class="tm">worked 6s</span></div><div class="in2">
+    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">OSAI · SONNET 4.6</span><span class="tm">worked 6s</span></div><div class="in2">
       <div class="pr">Good call — Shopee MY has better local pricing + warranty. Cheapest legit listings right now:</div>
       <ul class="bl"><li><b>Sapphire RX 9070 XT</b> — RM 3,399 (Thunder Match, official)</li><li><b>ASUS TUF 9070 XT OC</b> — RM 3,699 (best thermals)</li></ul>
       <div class="sources"><div class="sh">sources</div><a href="#"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg> Sapphire RX 9070 XT — Thunder Match</a><a href="#"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg> RTX 5070 Ti pricing — Lowyat.NET</a></div>
@@ -83,17 +83,17 @@
 
     <div class="card2 you"><div class="strip"><span class="dot" style="background:var(--accent);box-shadow:0 0 7px var(--glow-v)"></span><span class="who">YOU</span><span class="tm">12:37 AM</span></div><div class="in2"><div class="umsg">okay, now please tell me what is tauri</div></div></div>
 
-    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">AIOS · SONNET 4.6</span><span class="tm">worked 3s</span></div><div class="in2">
+    <div class="card2"><div class="strip"><span class="dot" style="background:var(--ok);box-shadow:0 0 7px var(--ok)"></span><span class="who">OSAI · SONNET 4.6</span><span class="tm">worked 3s</span></div><div class="in2">
       <div class="pr"><b>Tauri</b> builds desktop apps with a web frontend + a Rust backend — like Electron, but it uses the OS's native webview, so bundles are tiny (~3MB vs ~120MB).</div>
       <div class="code"><div class="ch"><span>rust · src-tauri/src/lib.rs</span><span>copy</span></div><pre><span class="c">// expose a command to the frontend</span>
 <span class="k">#[tauri::command]</span>
 <span class="k">fn</span> greet(name: &str) -> String {
   <span class="k">format!</span>(<span class="s">"hello, {name}"</span>)
 }</pre></div>
-      <div class="pr">AIOS itself is a Tauri app — that's how it drives your terminal, files, and browser natively.</div>
+      <div class="pr">OSAI itself is a Tauri app — that's how it drives your terminal, files, and browser natively.</div>
     </div></div>
 
-    <div class="card2"><div class="strip"><span class="dot" style="background:var(--accent-2);box-shadow:0 0 7px var(--accent-2)"></span><span class="who">AIOS · <span class="shimmer">THINKING</span></span><span class="tm">streaming…</span></div><div class="in2"><div class="fold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg> <span class="shimmer">checking the latest Tauri v2 release notes…</span></div></div></div>
+    <div class="card2"><div class="strip"><span class="dot" style="background:var(--accent-2);box-shadow:0 0 7px var(--accent-2)"></span><span class="who">OSAI · <span class="shimmer">THINKING</span></span><span class="tm">streaming…</span></div><div class="in2"><div class="fold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg> <span class="shimmer">checking the latest Tauri v2 release notes…</span></div></div></div>
   </div></div>
 
   <div class="foot">

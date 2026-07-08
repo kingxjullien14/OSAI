@@ -103,7 +103,7 @@ function maybeConfetti(cooldownMs: number) {
   confettiListeners.forEach((l) => l());
 }
 
-const STORAGE_KEY = "aios.pet.state.v1";
+const STORAGE_KEY = "osai.pet.state.v1";
 const TICK_MS = 10000;
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));

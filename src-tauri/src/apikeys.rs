@@ -10,7 +10,7 @@
 
 use keyring::{Entry, Error as KeyringError};
 
-const SERVICE: &str = "aios-api-keys";
+const SERVICE: &str = "osai-api-keys";
 
 /// Providers that take a key (ollama is keyless/local, so it's never stored here).
 const KEYED_PROVIDERS: [&str; 3] = ["openrouter", "anthropic", "openai"];
@@ -35,7 +35,7 @@ fn env_var(provider: &str) -> Option<&'static str> {
 
 /// Store (or replace) the API key for a provider in the OS keychain.
 #[tauri::command]
-pub fn aios_set_api_key(provider: String, key: String) -> Result<(), String> {
+pub fn osai_set_api_key(provider: String, key: String) -> Result<(), String> {
     if !valid_provider(&provider) {
         return Err(format!("unknown provider \"{provider}\""));
     }
@@ -50,7 +50,7 @@ pub fn aios_set_api_key(provider: String, key: String) -> Result<(), String> {
 
 /// Remove a provider's stored key. A missing key is success (idempotent).
 #[tauri::command]
-pub fn aios_delete_api_key(provider: String) -> Result<(), String> {
+pub fn osai_delete_api_key(provider: String) -> Result<(), String> {
     if !valid_provider(&provider) {
         return Err(format!("unknown provider \"{provider}\""));
     }
@@ -63,14 +63,14 @@ pub fn aios_delete_api_key(provider: String) -> Result<(), String> {
 /// Whether a provider has a usable key (keychain OR env fallback). Never returns
 /// the key itself.
 #[tauri::command]
-pub fn aios_has_api_key(provider: String) -> bool {
+pub fn osai_has_api_key(provider: String) -> bool {
     key_for(&provider).is_some()
 }
 
 /// The provider ids that currently have a key configured — drives the model
 /// catalog gating in the frontend. Never returns key material.
 #[tauri::command]
-pub fn aios_list_api_keys() -> Vec<String> {
+pub fn osai_list_api_keys() -> Vec<String> {
     KEYED_PROVIDERS
         .iter()
         .filter(|p| key_for(p).is_some())

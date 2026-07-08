@@ -133,7 +133,7 @@ export type PaneKind =
 
 /**
  * Derives a stable, tmux-safe session name (`[a-z0-9_-]`) from a pane key so the
- * SAME pane reattaches to the SAME persistent `aios-term-<name>` session across
+ * SAME pane reattaches to the SAME persistent `osai-term-<name>` session across
  * remounts/relaunches. Falls back to a per-mount id when no key is available
  * (that pane just won't persist across full app restarts — acceptable).
  */
@@ -394,7 +394,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     let unlistenExit: (() => void) | null = null;
 
     if (!isTauriRuntime()) {
-      term.write("\r\n\x1b[33m[aios] terminal panes run inside the desktop shell.\x1b[0m\r\n");
+      term.write("\r\n\x1b[33m[osai] terminal panes run inside the desktop shell.\x1b[0m\r\n");
       return () => {
         disposed = true;
         host.removeEventListener("auxclick", onAuxClick);
@@ -522,7 +522,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       const rows = Math.max(1, term.rows);
 
       // Default ("shell") panes route through a PERSISTENT tmux session
-      // `aios-term-<name>` so they survive pane-close + app-quit (detach, not
+      // `osai-term-<name>` so they survive pane-close + app-quit (detach, not
       // kill). The name is derived from the stable pane key; cmd (e.g. "claude")
       // becomes the session's startup command. tmux is Unix-only, so on Windows
       // (or any box without tmux) pty_spawn_terminal is absent/fails — fall back
@@ -530,13 +530,13 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       let persisted = false;
       try {
         if (kind.type === "oracle") {
-          sessionId = await spawnOracle(onData, kind.identity, cols, rows, loadSettings().terminalSocket || "aios");
+          sessionId = await spawnOracle(onData, kind.identity, cols, rows, loadSettings().terminalSocket || "osai");
         } else if (kind.type === "tmux") {
           sessionId = await spawnTmux(onData, kind.socket, kind.session, cols, rows);
         } else {
           const name = termSessionName(paneKey);
           const cwd = kind.type === "shell" ? kind.cwd ?? null : null;
-          const socket = loadSettings().terminalSocket || "aios";
+          const socket = loadSettings().terminalSocket || "osai";
           // Friendly per-session label = a creation datetime (stable across
           // detach/reattach — the backend only applies it when the session is
           // first CREATED). Renameable later from the reattach list. NOT the pane
@@ -553,13 +553,13 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
             sessionId = await spawnTerminal(onData, name, kind.cmd ?? null, cwd, cols, rows, socket, label);
             persisted = true;
           } catch {
-            // no tmux (Windows / non-AIOS box) → ephemeral shell fallback.
+            // no tmux (Windows / non-OSAI box) → ephemeral shell fallback.
             // still honor the requested cwd ("open terminal here").
             sessionId = await spawnShell(onData, cwd, cols, rows);
           }
         }
       } catch (e) {
-        term.write(`\r\n\x1b[31m[aios] spawn failed: ${e}\x1b[0m\r\n`);
+        term.write(`\r\n\x1b[31m[osai] spawn failed: ${e}\x1b[0m\r\n`);
         // A definite failure (unlike pty-exit, which carries no code and may be
         // a clean `exit`) — the one terminal signal the pet should wince at.
         onPetError(String(e));
@@ -599,7 +599,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       inputDisposer = term.onData((d) => {
         if (sessionId != null) ptyWrite(sessionId, d).catch((e) => reportDiag("terminal.write", e, { action: "data" }));
       });
-      // auto-run an init command (e.g. `aios`) once the shell is ready.
+      // auto-run an init command (e.g. `osai`) once the shell is ready.
       // Skip for persistent panes — there `cmd` is the tmux session's startup
       // command, so typing it again would double-launch (and re-launch on reattach).
       if (kind.type === "shell" && kind.cmd && !persisted) {
@@ -660,7 +660,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       term.dispose();
     };
     // Re-runs on restartNonce (B3 restart): tears down the dead terminal + respawns
-    // — for a tmux-backed pane this reattaches the persistent `aios-term-<name>`
+    // — for a tmux-backed pane this reattaches the persistent `osai-term-<name>`
     // (recreating it via `new-session -A` if the process had exited).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restartNonce]);
@@ -773,7 +773,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           if (sel?.trim())
             saveToNotes("```console\n" + sel.trimEnd() + "\n```", {
               title: `terminal · ${sel.trim().split("\n")[0]?.slice(0, 60) ?? "capture"}`,
-              tags: ["from-aios", "terminal"],
+              tags: ["from-osai", "terminal"],
             }).catch((e) => reportDiag("snc.termSave", e, { action: "saveSelection" }));
         },
       },
@@ -819,11 +819,11 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     if (id != null) ptyWrite(id, bytes).catch((e) => reportDiag("terminal.write", e, { action: "bytes" }));
   };
 
-  // LIVE cwd via the AIOS BEACON (W7 pane 1 — the mechanism that actually
+  // LIVE cwd via the OSAI BEACON (W7 pane 1 — the mechanism that actually
   // works): psmux repaints its own screen, so the inner shell's invisible
   // escapes (OSC 9;9) never reach this stream, and psmux's
   // #{pane_current_path} is frozen at spawn (both probed live). Instead the
-  // PowerShell profile writes $PWD to ~/.aios/state/cwd/<PSMUX_SESSION>.txt
+  // PowerShell profile writes $PWD to ~/.osai/state/cwd/<PSMUX_SESSION>.txt
   // at every prompt (keyed by the env var psmux injects); we poll that file.
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -832,22 +832,22 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       kind.type === "tmux"
         ? kind.session
         : kind.type === "oracle"
-          ? `aios-${kind.identity}`
-          : `aios-term-${termSessionName(paneKey)}`;
+          ? `osai-${kind.identity}`
+          : `osai-term-${termSessionName(paneKey)}`;
     let alive = true;
     let home: string | null = null;
     const tick = async () => {
       try {
         if (!home) home = await homeDir();
         if (!home || !alive) return;
-        const raw = await readTextFile(`${home}\\.aios\\state\\cwd\\${session}.txt`);
+        const raw = await readTextFile(`${home}\\.osai\\state\\cwd\\${session}.txt`);
         const cwd = raw.replace(/^\uFEFF/, "").trim();
         if (alive && cwd && cwd !== liveCwdRef.current) {
           liveCwdRef.current = cwd;
           setPaneCwd(cwd);
         }
       } catch {
-        /* no beacon yet (fresh session / non-AIOS shell) — keep last known */
+        /* no beacon yet (fresh session / non-OSAI shell) — keep last known */
       }
     };
     const iv = setInterval(tick, 2500);
@@ -908,10 +908,10 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       }
     }
     const path =
-      e.dataTransfer.getData("application/x-aios-path") || e.dataTransfer.getData("text/plain");
+      e.dataTransfer.getData("application/x-osai-path") || e.dataTransfer.getData("text/plain");
     if (!path) return;
     // a folder → `cd <dir>`; a file → just its quoted path.
-    if (e.dataTransfer.getData("application/x-aios-dir")) {
+    if (e.dataTransfer.getData("application/x-osai-dir")) {
       ptyWrite(id, `cd ${quotePath(path)} `).catch((e) => reportDiag("terminal.write", e, { action: "cdPath" }));
       return;
     }
@@ -963,7 +963,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
           className="pointer-events-none absolute inset-0 z-0"
           style={{
             background:
-              "radial-gradient(760px 480px at 14% -12%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 56%), radial-gradient(680px 480px at 112% 116%, color-mix(in srgb, var(--aios-accent-2) 12%, transparent), transparent 54%), var(--color-bg)",
+              "radial-gradient(760px 480px at 14% -12%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 56%), radial-gradient(680px 480px at 112% 116%, color-mix(in srgb, var(--osai-accent-2) 12%, transparent), transparent 54%), var(--color-bg)",
           }}
         />
         {/* the HOST paints the frost: it spans the full pane, so the fitted
@@ -984,7 +984,7 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
             point at ⌘W to close. Replaces the silent corpse the old code left. */}
         {exited && (
           <div className="absolute inset-0 z-30 grid place-items-center bg-[var(--color-bg)]/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-6 py-5 text-center shadow-[var(--aios-shadow-pop)]">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-6 py-5 text-center shadow-[var(--osai-shadow-pop)]">
               <span className="text-[13px] text-[var(--color-text)]">
                 process exited
               </span>

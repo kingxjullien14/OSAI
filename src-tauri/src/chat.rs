@@ -193,7 +193,7 @@ impl Engine {
 /// `buffer`, so the session keeps running (and buffering) after a pane closes.
 struct ChatSession {
     /// This session's own numeric id (the key in the sessions map), copied in so
-    /// `ingest_line` can name the session when emitting the `aios-notify` event.
+    /// `ingest_line` can name the session when emitting the `osai-notify` event.
     id: u32,
     /// Which CLI backend this session drives.
     engine: Engine,
@@ -219,8 +219,8 @@ struct ChatSession {
     /// claude's own session uuid (from the init event) — used to match a
     /// reopened pane back to this live process.
     claude_id: Mutex<Option<String>>,
-    /// Durable, append-only history log (AIOS-owned, full-fidelity). Mirrors this
-    /// session's settled event stream to `~/.aios/state/chat-history/<id>/` so the
+    /// Durable, append-only history log (OSAI-owned, full-fidelity). Mirrors this
+    /// session's settled event stream to `~/.osai/state/chat-history/<id>/` so the
     /// conversation survives engine compaction and can be replayed/searched later.
     /// See `chat_history.rs` + `PLAN-chatpane-history-and-navigation.md` §2.
     history: Mutex<crate::chat_history::HistoryLog>,
@@ -262,9 +262,9 @@ struct ChatSession {
     /// `apply_patch_approval`); we surface it as the SAME ApprovalCard claude
     /// uses and, on the user's decision, reply over JSON-RPC with the mapped id.
     pending_approvals: Mutex<HashMap<String, Value>>,
-    /// API tier (Tier 4): the FULL conversation AIOS owns + replays to the provider
+    /// API tier (Tier 4): the FULL conversation OSAI owns + replays to the provider
     /// every turn (`[{role, content}]`, chronological). Empty for CLI engines.
-    /// AIOS owning this array is also what makes honest branching possible later.
+    /// OSAI owning this array is also what makes honest branching possible later.
     api_messages: Mutex<Vec<Value>>,
 }
 
@@ -289,7 +289,7 @@ fn with_sessions<R>(f: impl FnOnce(&mut HashMap<u32, Arc<ChatSession>>) -> R) ->
 /// a plain command string here and rely on `Command`'s PATH lookup first.
 fn claude_bin() -> String {
     // Honour an explicit override if the cockpit ever sets one.
-    if let Ok(p) = std::env::var("AIOS_CLAUDE_BIN") {
+    if let Ok(p) = std::env::var("OSAI_CLAUDE_BIN") {
         if !p.is_empty() {
             return p;
         }
@@ -441,10 +441,10 @@ fn codex_native_bin() -> Option<String> {
 
 /// Resolves the `codex` binary (OpenAI Codex CLI — drives the ChatGPT sub).
 /// Prefers the native binary so it works in GUI-launched apps; the explicit
-/// `AIOS_CODEX_BIN` override always wins, and we fall back to the generic
+/// `OSAI_CODEX_BIN` override always wins, and we fall back to the generic
 /// PATH/nvm resolver if no native binary is found.
 fn codex_bin() -> String {
-    if let Ok(p) = std::env::var("AIOS_CODEX_BIN") {
+    if let Ok(p) = std::env::var("OSAI_CODEX_BIN") {
         if !p.is_empty() {
             return p;
         }
@@ -452,7 +452,7 @@ fn codex_bin() -> String {
     if let Some(native) = codex_native_bin() {
         return native;
     }
-    resolve_bin("codex", "AIOS_CODEX_BIN", &[])
+    resolve_bin("codex", "OSAI_CODEX_BIN", &[])
 }
 
 /// Resolves the `opencode` binary (its installer drops it under ~/.opencode/bin).
@@ -469,7 +469,7 @@ fn opencode_bin() -> String {
         }
     }
     let refs: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
-    resolve_bin("opencode", "AIOS_OPENCODE_BIN", &refs)
+    resolve_bin("opencode", "OSAI_OPENCODE_BIN", &refs)
 }
 
 /// Cross-platform PATH search used by `detect_providers`. If `name` is already
@@ -550,12 +550,12 @@ pub fn detect_providers() -> Vec<ProviderStatus> {
 /// reasoning, plugins, hooks, MCP servers, memory, browser/computer-use tools,
 /// and AGENTS.md behavior as typing `codex` in a terminal.
 ///
-/// Set `fast=true` (or `AIOS_CODEX_FAST_HOME=1`) to opt into the old low-latency
+/// Set `fast=true` (or `OSAI_CODEX_FAST_HOME=1`) to opt into the old low-latency
 /// profile that mirrors config into `~/.codex-chat` while stripping MCP servers.
 /// Fast mode is useful when startup latency matters more than terminal-grade
 /// capability, but it should not be the product default.
 fn codex_chat_home(fast_requested: bool) -> Option<String> {
-    let fast_env = std::env::var("AIOS_CODEX_FAST_HOME")
+    let fast_env = std::env::var("OSAI_CODEX_FAST_HOME")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false);
     let fast = fast_requested || fast_env;
@@ -582,7 +582,7 @@ fn codex_chat_home(fast_requested: bool) -> Option<String> {
     let _ = std::fs::write(
         format!("{chat}/config.toml"),
         format!(
-            "# managed by AIOS shell fast mode — mirrors ~/.codex/config.toml with mcp_servers stripped.\n\
+            "# managed by OSAI shell fast mode — mirrors ~/.codex/config.toml with mcp_servers stripped.\n\
              # terminal-grade mode leaves CODEX_HOME unset and uses ~/.codex directly.\n{config}"
         ),
     );
@@ -675,7 +675,7 @@ fn user_line(text: &str) -> String {
 }
 
 /// The user line we RECORD (history + replay buffer) when images rode the turn:
-/// same shape as `user_line` plus one `aios_image_ref` block per attachment.
+/// same shape as `user_line` plus one `osai_image_ref` block per attachment.
 /// The engine still gets real base64 blocks on the wire; recording only paths
 /// keeps the log light while letting replay re-show the thumbnails — before
 /// this, a resumed image turn silently showed just its caption, as if the
@@ -683,7 +683,7 @@ fn user_line(text: &str) -> String {
 fn user_record_line(text: &str, images: &[String]) -> String {
     let mut content: Vec<Value> = images
         .iter()
-        .map(|p| json!({ "type": "aios_image_ref", "path": p }))
+        .map(|p| json!({ "type": "osai_image_ref", "path": p }))
         .collect();
     if !text.trim().is_empty() {
         content.push(json!({ "type": "text", "text": text }));
@@ -1007,7 +1007,7 @@ pub fn chat_start(
                                 continue;
                             }
                             let ev = format!(
-                                "{{\"type\":\"aios_stderr\",\"text\":\"{}\"}}",
+                                "{{\"type\":\"osai_stderr\",\"text\":\"{}\"}}",
                                 json_escape(line)
                             );
                             ingest_line(&sess, &app_err, &ev);
@@ -1070,7 +1070,7 @@ fn start_per_turn(
 }
 
 /// Register a BYO-key API session (Tier 4) — no process; `run_api_turn` does the
-/// HTTP per turn. AIOS mints the session id (no CLI to do it) so history keys +
+/// HTTP per turn. OSAI mints the session id (no CLI to do it) so history keys +
 /// the frontend's recordChatSession work, and emits a `system` init carrying it.
 fn start_api_session(
     provider: ApiProvider,
@@ -1082,7 +1082,7 @@ fn start_api_session(
     let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
     // RESUME: reuse the prior chat's id (append to the SAME durable log) + replay
     // its message array so the conversation continues with full context across a
-    // restart / model switch (AIOS owns the array — the CLI can't do this). A
+    // restart / model switch (OSAI owns the array — the CLI can't do this). A
     // fresh chat mints a new id + an empty array.
     let resume_id = resume.filter(|s| !s.is_empty());
     let api_sid = resume_id
@@ -1175,7 +1175,7 @@ fn send_api_request(
 }
 
 /// Run ONE turn for a BYO-key API session (Tier 4). Appends the user message to
-/// the AIOS-owned conversation, calls the provider over HTTP on a worker thread,
+/// the OSAI-owned conversation, calls the provider over HTTP on a worker thread,
 /// STREAMS the response line-by-line (text tokens type out live), and settles with
 /// the full answer (recorded to history) + a usage-bearing `result`. Errors
 /// surface as a red result.
@@ -1275,7 +1275,7 @@ fn run_api_turn(
             );
             return;
         }
-        // record the FULL answer (durable history + AIOS-owned array). The deltas
+        // record the FULL answer (durable history + OSAI-owned array). The deltas
         // already rendered it, so the reducer dedups this line in the UI. Then the
         // `result` settles the streaming turn.
         ingest_line(&sess2, &app2, &assistant_text_line(&full));
@@ -1498,7 +1498,7 @@ fn run_per_turn(sess: Arc<ChatSession>, app: AppHandle, text: String) -> Result<
 /// newline-JSON-RPC stdio server. Prefer the standalone managed under the chat
 /// CODEX_HOME, then the Codex.app desktop bundle, then the override / native.
 fn codex_appserver_bin() -> String {
-    if let Ok(p) = std::env::var("AIOS_CODEX_APPSERVER_BIN") {
+    if let Ok(p) = std::env::var("OSAI_CODEX_APPSERVER_BIN") {
         if !p.is_empty() {
             return p;
         }
@@ -1726,7 +1726,7 @@ fn start_codex_appserver(
         &json!({
             "jsonrpc": "2.0", "id": codex_next_rpc(&session), "method": "initialize",
             "params": {
-                "clientInfo": { "name": "aios-shell", "title": null, "version": "0.1.0" },
+                "clientInfo": { "name": "osai-shell", "title": null, "version": "0.1.0" },
                 "capabilities": { "experimentalApi": false, "requestAttestation": false }
             }
         }),
@@ -2523,7 +2523,7 @@ fn ingest_line(sess: &Arc<ChatSession>, app: &AppHandle, line: &str) {
     }
 }
 
-/// Reads the statusline's `~/.aios/state/usage.json` and builds a claude-shaped
+/// Reads the statusline's `~/.osai/state/usage.json` and builds a claude-shaped
 /// `usage` event line (5h/7d windows), or `None` if it's not written yet.
 fn claude_usage_event() -> Option<String> {
     // single source of truth with the sidebar: OAuth endpoint first (live,
@@ -2632,21 +2632,21 @@ fn extract_json_str(line: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// Payload for the in-app `aios-notify` event. The front-end turns this into a
-/// clickable `AiosNotification` whose target reattaches the chat by session id.
+/// Payload for the in-app `osai-notify` event. The front-end turns this into a
+/// clickable `OsaiNotification` whose target reattaches the chat by session id.
 /// `claude_id` (the durable conversation uuid) rides along so a click can still
 /// reopen the conversation from history when the live session is gone — the
 /// registry is in-memory, so every backend id in a notification dies with the
 /// app; without the uuid a stale notification was a permanent dead end.
 #[derive(serde::Serialize, Clone)]
-struct AiosNotifyPayload {
+struct OsaiNotifyPayload {
     kind: String,
     session_id: u32,
     title: String,
     claude_id: Option<String>,
 }
 
-/// Fires a native OS notification AND an in-app `aios-notify` event that a
+/// Fires a native OS notification AND an in-app `osai-notify` event that a
 /// backgrounded chat finished. The in-app event is what makes the bell + toast
 /// fire and carries the session id so the click can reattach the exact chat.
 fn notify_done(app: &AppHandle, session_id: u32, title: &str, claude_id: Option<String>) {
@@ -2658,8 +2658,8 @@ fn notify_done(app: &AppHandle, session_id: u32, title: &str, claude_id: Option<
         .body(format!("{title} — done. click to reopen."))
         .show();
     let _ = app.emit(
-        "aios-notify",
-        AiosNotifyPayload {
+        "osai-notify",
+        OsaiNotifyPayload {
             kind: "chat.done".to_string(),
             session_id,
             title: title.to_string(),
@@ -3100,7 +3100,7 @@ fn now_secs() -> u64 {
 
 fn sessions_store() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
-    Some(std::path::PathBuf::from(home).join(".aios/state/chat-sessions.json"))
+    Some(std::path::PathBuf::from(home).join(".osai/state/chat-sessions.json"))
 }
 
 fn load_store() -> Vec<ChatSessionInfo> {
@@ -3671,7 +3671,7 @@ enabled = true
 command = "node"
 
 [mcp_servers.memory.env]
-CODEX_HOME = "/Users/aios/.codex"
+CODEX_HOME = "/Users/osai/.codex"
 
 [features]
 js_repl = false
@@ -3690,7 +3690,7 @@ js_repl = false
     #[test]
     fn finds_chatpane_codex_rollout_before_normal_codex_home() {
         let root =
-            std::env::temp_dir().join(format!("aios-chat-rollout-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("osai-chat-rollout-test-{}", std::process::id()));
         let chat = root.join(".codex-chat/sessions/2026/06/01");
         let normal = root.join(".codex/sessions/2026/06/01");
         std::fs::create_dir_all(&chat).unwrap();
@@ -3708,7 +3708,7 @@ js_repl = false
     #[test]
     fn falls_back_to_normal_codex_home_for_older_rollouts() {
         let root =
-            std::env::temp_dir().join(format!("aios-normal-rollout-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("osai-normal-rollout-test-{}", std::process::id()));
         let normal = root.join(".codex/sessions/2026/06/01");
         std::fs::create_dir_all(&normal).unwrap();
         let id = "019e-old-thread";
@@ -3722,7 +3722,7 @@ js_repl = false
     #[test]
     fn infers_codex_engine_for_existing_chatpane_rollout() {
         let root =
-            std::env::temp_dir().join(format!("aios-engine-inference-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("osai-engine-inference-test-{}", std::process::id()));
         let chat = root.join(".codex-chat/sessions/2026/06/01");
         std::fs::create_dir_all(&chat).unwrap();
         let id = "019e-inferred-thread";
@@ -3736,13 +3736,13 @@ js_repl = false
     #[test]
     fn discovers_normal_codex_rollouts_for_resume() {
         let root =
-            std::env::temp_dir().join(format!("aios-discover-codex-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("osai-discover-codex-test-{}", std::process::id()));
         let normal = root.join(".codex/sessions/2026/06/01");
         std::fs::create_dir_all(&normal).unwrap();
         let id = "019e7f41-aaaa-bbbb-cccc-000000000001";
         let rollout = normal.join(format!("rollout-2026-06-01t02-18-15-{id}.jsonl"));
         let text = format!(
-            r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/Users/aios/Repo/aios/shell","model":"gpt-5-codex"}}}}
+            r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/Users/osai/Repo/osai/shell","model":"gpt-5-codex"}}}}
 {{"type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"make resume and buttons commercial ready"}}]}}}}
 "#
         );
@@ -3755,7 +3755,7 @@ js_repl = false
         assert_eq!(sessions[0].engine, "codex");
         assert_eq!(sessions[0].model, "gpt-5-codex");
         assert_eq!(sessions[0].title, "make resume and buttons commercial ready");
-        assert_eq!(sessions[0].cwd, "/Users/aios/Repo/aios/shell");
+        assert_eq!(sessions[0].cwd, "/Users/osai/Repo/osai/shell");
         let _ = std::fs::remove_dir_all(root);
     }
 }

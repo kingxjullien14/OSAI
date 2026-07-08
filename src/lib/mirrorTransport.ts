@@ -23,10 +23,10 @@ export type MirrorSocketMessage =
   | { type: "control_result"; requestId: string; result: unknown }
   | { type: "error"; error: string };
 
-const ROOM_KEY = "aios.mirror.room";
-const TOKEN_KEY = "aios.mirror.token";
+const ROOM_KEY = "osai.mirror.room";
+const TOKEN_KEY = "osai.mirror.token";
 // No hardcoded endpoint — the mirror worker is deployment-specific. Set
-// `VITE_AIOS_MIRROR_URL` at build time to point at your own Cloudflare worker;
+// `VITE_OSAI_MIRROR_URL` at build time to point at your own Cloudflare worker;
 // empty → the mirror feature stays dormant (it's opt-in via a shared link).
 const DEFAULT_HTTP_ENDPOINT = "";
 
@@ -56,7 +56,7 @@ export function ensureMirrorPairing(): MirrorPairing {
   let room = safeStorageGet(ROOM_KEY);
   let token = safeStorageGet(TOKEN_KEY);
   if (!room) {
-    room = `aios-${randomToken(5)}`;
+    room = `osai-${randomToken(5)}`;
     safeStorageSet(ROOM_KEY, room);
   }
   if (!token || token.length < 24) {
@@ -86,14 +86,14 @@ export function savedMirrorPairing(): MirrorPairing | null {
 }
 
 export function mirrorShareUrl(pairing: MirrorPairing): string {
-  return `https://aios-superapp.pages.dev/#mirror=${pairing.room}.${pairing.token}`;
+  return `https://osai-superapp.pages.dev/#mirror=${pairing.room}.${pairing.token}`;
 }
 
 /** The mirror WebSocket URL for a pairing, or `null` when no endpoint is
- *  configured (`VITE_AIOS_MIRROR_URL` unset) — the mirror is opt-in, so callers
+ *  configured (`VITE_OSAI_MIRROR_URL` unset) — the mirror is opt-in, so callers
  *  treat null as "feature dormant" and simply don't connect. */
 export function mirrorWebSocketUrl(pairing: MirrorPairing): string | null {
-  const base = import.meta.env.VITE_AIOS_MIRROR_URL || DEFAULT_HTTP_ENDPOINT;
+  const base = import.meta.env.VITE_OSAI_MIRROR_URL || DEFAULT_HTTP_ENDPOINT;
   if (!base) return null;
   const url = new URL(`${base.replace(/\/+$/, "")}/${encodeURIComponent(pairing.room)}`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

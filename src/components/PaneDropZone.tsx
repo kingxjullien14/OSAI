@@ -1,26 +1,26 @@
-/** Wraps a pane's content and accepts cross-pane drops of an `x-aios-path`
+/** Wraps a pane's content and accepts cross-pane drops of an `x-osai-path`
  *  payload (e.g. a folder dragged from the Files pane). The drop overlay only
- *  appears WHILE a path-drag is in flight app-wide (via the `onAiosDrag`
+ *  appears WHILE a path-drag is in flight app-wide (via the `onOsaiDrag`
  *  signal), so it floats ABOVE intercepting children like xterm's canvas and
  *  reliably captures the drop — fixing the case where a terminal swallowed it.
  *
  *  Usage: <PaneDropZone onPath={(p) => insert(p)}>…pane content…</PaneDropZone> */
 import { useEffect, useState } from "react";
-import { AIOS_DIR_MIME, AIOS_PATH_MIME, currentPathDrag, onAiosDrag } from "../lib/paneBus";
+import { OSAI_DIR_MIME, OSAI_PATH_MIME, currentPathDrag, onOsaiDrag } from "../lib/paneBus";
 
 /** True when the drag carries our directory marker (a folder row from the Files
  *  pane). Lets a pane do the folder-appropriate thing (`cd`, re-root) instead of
  *  treating the path as a file. */
 function isDirDrop(dt: DataTransfer): boolean {
-  return !!dt.getData(AIOS_DIR_MIME);
+  return !!dt.getData(OSAI_DIR_MIME);
 }
 
 /** Pull a filesystem path out of a drop — works for in-app pane drags (our
  *  custom mime), Finder/Explorer drags (`text/uri-list` file:// URIs), and
  *  plain text. Returns null if nothing path-like is present. */
 function extractPath(dt: DataTransfer): string | null {
-  const aios = dt.getData(AIOS_PATH_MIME);
-  if (aios) return aios;
+  const osai = dt.getData(OSAI_PATH_MIME);
+  if (osai) return osai;
   const uriList = dt.getData("text/uri-list");
   if (uriList) {
     const first = uriList
@@ -63,7 +63,7 @@ export function PaneDropZone({
   // the cursor is currently over THIS pane's overlay
   const [over, setOver] = useState(false);
 
-  useEffect(() => onAiosDrag(setArmed), []);
+  useEffect(() => onOsaiDrag(setArmed), []);
 
   return (
     <div className="relative h-full min-h-0 w-full">
@@ -124,7 +124,7 @@ export function PaneDropZone({
           }}
         >
           {over && (
-            <span className="fade-in-up rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 text-[12px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]">
+            <span className="fade-in-up rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 px-3 py-1.5 text-[12px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]">
               {label}
             </span>
           )}

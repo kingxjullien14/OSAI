@@ -1,8 +1,8 @@
 /**
  * Thin wrappers over the durable chat-history store (`chat_history.rs`).
  *
- * The store is the AIOS-owned, append-only, full-fidelity log of every chat
- * (`~/.aios/state/chat-history/<engineSessionId>/events.jsonl`), independent of
+ * The store is the OSAI-owned, append-only, full-fidelity log of every chat
+ * (`~/.osai/state/chat-history/<engineSessionId>/events.jsonl`), independent of
  * the engine's own transcript files. `read_chat_history` returns the raw
  * normalized event lines for replay through the live stream reducer
  * (`replayHistoryToTurns` in chatStream.ts); `chat_history_meta` is the cheap
@@ -40,7 +40,7 @@ export interface ChatHistoryMeta {
 /**
  * Reads a session's durable event log, paginated by line index (`fromSeq` +
  * `limit`; omit both for the whole log). An empty `lines` array means there's no
- * AIOS-owned store for this id (a foreign/legacy chat) — the caller should fall
+ * OSAI-owned store for this id (a foreign/legacy chat) — the caller should fall
  * back to the engine transcript (`readChatTranscript`).
  */
 export async function readChatHistory(

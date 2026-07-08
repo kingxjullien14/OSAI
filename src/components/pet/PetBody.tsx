@@ -39,7 +39,7 @@ export function PetBody({
       viewBox="0 0 100 100"
       width={size}
       height={size}
-      className="aios-pet"
+      className="osai-pet"
       data-pose={pose}
       data-mood={mood}
       aria-label={`pet — ${mood}${asleep ? ", asleep" : ""}`}
@@ -50,14 +50,14 @@ export function PetBody({
       }}
     >
       <defs>
-        <radialGradient id="aiosPetCore" cx="50%" cy="40%" r="65%">
+        <radialGradient id="osaiPetCore" cx="50%" cy="40%" r="65%">
           <stop offset="0%" stopColor="color-mix(in srgb, var(--color-accent) 45%, white)" />
           <stop offset="55%" stopColor="var(--color-accent)" />
           <stop offset="100%" stopColor="color-mix(in srgb, var(--color-accent) 55%, black)" />
         </radialGradient>
-        <radialGradient id="aiosPetInner" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="color-mix(in srgb, var(--aios-accent-2) 85%, white)" />
-          <stop offset="100%" stopColor="color-mix(in srgb, var(--aios-accent-2) 20%, transparent)" />
+        <radialGradient id="osaiPetInner" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="color-mix(in srgb, var(--osai-accent-2) 85%, white)" />
+          <stop offset="100%" stopColor="color-mix(in srgb, var(--osai-accent-2) 20%, transparent)" />
         </radialGradient>
       </defs>
 
@@ -90,7 +90,7 @@ export function PetBody({
           <path
             className="pet2-body"
             d="M16 58 C16 31 31 17 50 17 C69 17 84 31 84 58 C84 78 69 89 50 89 C31 89 16 78 16 58 Z"
-            fill="url(#aiosPetCore)"
+            fill="url(#osaiPetCore)"
             opacity="0.92"
           />
           {/* glass rim light */}
@@ -103,11 +103,11 @@ export function PetBody({
             opacity="0.7"
           />
           {/* the glowing core */}
-          <circle className="pet2-core" cx="50" cy="58" r="15" fill="url(#aiosPetInner)" opacity="0.85" />
+          <circle className="pet2-core" cx="50" cy="58" r="15" fill="url(#osaiPetInner)" opacity="0.85" />
 
           {/* cheeks when delighted */}
           {(mood === "happy" || mood === "ecstatic") && !asleep && (
-            <g fill="color-mix(in srgb, var(--aios-accent-2) 55%, transparent)">
+            <g fill="color-mix(in srgb, var(--osai-accent-2) 55%, transparent)">
               <ellipse cx="29" cy="56" rx="5" ry="3" />
               <ellipse cx="71" cy="56" rx="5" ry="3" />
             </g>
@@ -126,7 +126,7 @@ export function PetBody({
       {asleep && (
         <g
           className="pet2-zzz"
-          fill="var(--aios-accent-2)"
+          fill="var(--osai-accent-2)"
           fontFamily="ui-monospace, monospace"
           fontWeight="bold"
         >
@@ -161,7 +161,7 @@ function eyeStyle(mood: PetMood, pose: PetPose): EyeKind {
 }
 
 const PUPIL = "color-mix(in srgb, var(--color-bg) 70%, black)";
-const SHINE = "color-mix(in srgb, var(--aios-accent-2) 80%, white)";
+const SHINE = "color-mix(in srgb, var(--osai-accent-2) 80%, white)";
 
 function Eyes({ style }: { style: EyeKind }) {
   const stroke = PUPIL;
@@ -254,7 +254,7 @@ function Topper({ stage, flavor }: { stage: PetStage; flavor: PetSurface | null 
       </g>
     );
   }
-  const emblemColor = "var(--aios-accent-2)";
+  const emblemColor = "var(--osai-accent-2)";
   const emblem = (() => {
     switch (flavor) {
       case "terminal":
@@ -297,7 +297,7 @@ function Topper({ stage, flavor }: { stage: PetStage; flavor: PetSurface | null 
           rx="15"
           ry="4"
           fill="none"
-          stroke="color-mix(in srgb, var(--aios-accent-2) 75%, white)"
+          stroke="color-mix(in srgb, var(--osai-accent-2) 75%, white)"
           strokeWidth="2.4"
           opacity="0.85"
         />

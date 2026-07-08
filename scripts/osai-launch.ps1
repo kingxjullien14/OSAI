@@ -8,7 +8,7 @@
     2. launches the app (Tauri dev - hot reload of your local source)
   It does NOT fetch or merge anything - you stay on exactly your own code.
 
-  (The filename keeps the aios- prefix on purpose: desktop shortcuts and any
+  (The filename keeps the osai- prefix on purpose: desktop shortcuts and any
   scheduled tasks point at this exact path.)
 
   ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI, so

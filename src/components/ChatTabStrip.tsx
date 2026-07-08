@@ -1,7 +1,7 @@
 /** ChatTabStrip — the conversation switcher for the windowed workspace's chat
  *  canvas (PLAN-odysseus-feel.md, W1.5). Open chat panes live BEHIND the
  *  floating tool windows as one full-bleed canvas; this strip is how you flip
- *  between them (Odysseus's session header, AIOS-style): a pill per open
+ *  between them (Odysseus's session header, OSAI-style): a pill per open
  *  conversation + new-chat + home. Right-click a pill for rename (inline;
  *  double-click too) / archive / close. Archived conversations leave the strip
  *  into the box dropdown on the right — picking one brings it back. Pane
@@ -92,7 +92,7 @@ export function ChatTabStrip({
   return (
     <div
       data-no-window-drag
-      className="absolute top-2 left-1/2 z-30 flex max-w-[70%] -translate-x-1/2 items-center gap-0.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-1.5 py-1 shadow-[var(--aios-shadow-pop)] backdrop-blur"
+      className="absolute top-2 left-1/2 z-30 flex max-w-[70%] -translate-x-1/2 items-center gap-0.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 px-1.5 py-1 shadow-[var(--osai-shadow-pop)] backdrop-blur"
     >
       <button
         type="button"

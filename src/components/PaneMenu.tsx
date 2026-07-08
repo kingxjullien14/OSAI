@@ -148,7 +148,7 @@ export function PaneMenu({
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top, visibility: ready ? "visible" : "hidden" }}
-      className="scale-in fixed z-[300] max-h-[70vh] min-w-[188px] max-w-[280px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] p-1 shadow-[var(--aios-shadow-pop)] backdrop-blur-2xl [scrollbar-width:thin]"
+      className="scale-in fixed z-[300] max-h-[70vh] min-w-[188px] max-w-[280px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--osai-glass-bg-strong)] p-1 shadow-[var(--osai-shadow-pop)] backdrop-blur-2xl [scrollbar-width:thin]"
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((e, i) =>

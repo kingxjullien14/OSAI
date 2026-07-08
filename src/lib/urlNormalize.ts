@@ -14,7 +14,7 @@
  *    - everything else (`how to cook rice`) → search engine query
  *
  *  Kept pure (no React, no Tauri) so it's unit-testable in isolation. Adapted
- *  from upstream/aios-superapp@1023914 (2026-06-14). */
+ *  from upstream/osai-superapp@1023914 (2026-06-14). */
 
 // Hosts that are dev/loopback → treat as a URL (not a search) AND default to
 // http://. `localhost`, any `127.x.x.x`, `[::1]`, and `0.0.0.0` qualify.

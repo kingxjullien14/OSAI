@@ -3,7 +3,7 @@
   freshly built, SIGNED Windows NSIS bundle, ready to attach to a GitHub release.
 
   Run from anywhere AFTER a signed build (see RELEASING.md):
-      $env:TAURI_SIGNING_PRIVATE_KEY      = "$env:USERPROFILE\.aios\keys\aios-updater.key"
+      $env:TAURI_SIGNING_PRIVATE_KEY      = "$env:USERPROFILE\.osai\keys\osai-updater.key"
       $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""      # key was generated passwordless
       pnpm tauri build
       pwsh scripts/make-latest-json.ps1 -Notes "what changed in this release"

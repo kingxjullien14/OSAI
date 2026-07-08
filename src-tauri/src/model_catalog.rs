@@ -4,7 +4,7 @@
 //! One best-effort sweep per app launch (the frontend fires
 //! `refresh_model_catalog` in the background at boot): every CONNECTED source
 //! that exposes a model listing is asked for its current lineup. Results are
-//! cached to `~/.aios/state/model-catalog.json` — an offline launch keeps the
+//! cached to `~/.osai/state/model-catalog.json` — an offline launch keeps the
 //! last good catalog — and returned to the frontend, which overlays them on the
 //! static curated catalogs (providers.ts for the BYO-key tier, CHAT_MODELS for
 //! the claude CLI picker).
@@ -46,7 +46,7 @@ fn catalog_path() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    Some(std::path::PathBuf::from(home).join(".aios/state/model-catalog.json"))
+    Some(std::path::PathBuf::from(home).join(".osai/state/model-catalog.json"))
 }
 
 fn load_cached() -> Option<DynamicCatalog> {

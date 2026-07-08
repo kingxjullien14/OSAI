@@ -1,9 +1,9 @@
-// AIOS Control Plane — the command vocabulary + a pure router.
+// OSAI Control Plane — the command vocabulary + a pure router.
 //
 // This is the SPINE of "the agent drives the shell" (Tier 2 of the go-to-harness
 // review; full design in misc/PLAN-control-plane.md). ONE dotted-verb command
 // schema + a single `routeControl()` that maps each command to a handler, so the
-// in-app chat, an external oracle (later, via the aios-control MCP → a localhost
+// in-app chat, an external oracle (later, via the osai-control MCP → a localhost
 // HTTP server in Rust → emit/listen), AND the UI all drive the app through one
 // place — "external == UI". The transport and App's handler wiring plug into this.
 //
@@ -87,7 +87,7 @@ export interface ControlHandlers {
    *  reports the outcome so a rejected write never looks like success. */
   settingsGet: (key?: string) => unknown;
   settingsSet: (key: string, value: unknown) => { ok: boolean; error?: string; value?: unknown };
-  /** Oracles = the agents AIOS runs as tmux sessions. `oracleKill` → false if no
+  /** Oracles = the agents OSAI runs as tmux sessions. `oracleKill` → false if no
    *  such oracle in the current roster (so a typo'd id isn't a silent no-op). */
   oracleList: () => unknown;
   oracleSpawn: (id: string) => void;

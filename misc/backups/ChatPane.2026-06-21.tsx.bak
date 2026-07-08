@@ -1,5 +1,5 @@
 /**
- * Codex-style chat surface for the AIOS cockpit.
+ * Codex-style chat surface for the OSAI cockpit.
  *
  * Looks like OpenAI Codex's chat — centered "do anything" composer when empty,
  * clean transcript with text bubbles + tool-call cards after the first send —
@@ -347,7 +347,7 @@ const WAVEFORM_BARS: { h: number; delay: number }[] = Array.from(
   { length: 40 },
   (_, i) => ({ h: 28 + ((i * 37) % 60), delay: (i * 70) % 900 }),
 );
-// (the aios-wave keyframe lives in App.css now — one definition app-wide.)
+// (the osai-wave keyframe lives in App.css now — one definition app-wide.)
 
 /** File extension for a clipboard/file image mime. */
 function extFromMime(mime: string): string {
@@ -392,12 +392,12 @@ const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string
 const CTRL_PILL =
   "flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel-2)_55%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text-2)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
 const CTRL_PILL_OPEN =
-  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur-md transition-all duration-150";
+  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--osai-glow-soft)] backdrop-blur-md transition-all duration-150";
 /** The flashy "you're in an expensive mode" variant — the animated ultracode
- *  gradient (.aios-ultra owns bg/border/color) on the context + effort pills
+ *  gradient (.osai-ultra owns bg/border/color) on the context + effort pills
  *  whenever ultracode / ultra effort is live, so the spend is unmissable. */
 const CTRL_PILL_ULTRA =
-  "aios-ultra flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-[11.5px] transition-all duration-150 hover:-translate-y-px";
+  "osai-ultra flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-[11.5px] transition-all duration-150 hover:-translate-y-px";
 
 /** Chip ids that are now interactive control PILLS in the composer's action row,
  *  so the passive summary-chips row drops them (no duplicate readout). */
@@ -405,7 +405,7 @@ const CONTROL_CHIP_IDS = new Set(["model", "effort", "permission", "budget", "cw
 
 function memoryContextBlock(memories: MemoryHit[]): string {
   if (memories.length === 0) return "";
-  return `Relevant AIOS memory context:\n${memories
+  return `Relevant OSAI memory context:\n${memories
     .map((m, i) => {
       const reasons = m.reasons.length ? ` reasons: ${m.reasons.join("; ")}` : "";
       return `${i + 1}. ${m.title} [${m.type}] — ${m.description || m.preview}${reasons}`;
@@ -920,7 +920,7 @@ async function openChatFileReference(ref: string, cwd?: string | null): Promise<
 
 // ── component ────────────────────────────────────────────────────────────────
 
-const runEventsStorageKey = (sessionId: string) => `aios.chat.run-events:${sessionId}`;
+const runEventsStorageKey = (sessionId: string) => `osai.chat.run-events:${sessionId}`;
 
 export function ChatPane({
   cwd,
@@ -1002,7 +1002,7 @@ export function ChatPane({
   // composer draft persists per pane so /clear, a restart, or a remount never
   // loses what you were typing. Keyed by paneKey; seed (e.g. notes "send to AI")
   // still wins on first mount.
-  const draftKey = paneKey ? `aios-chat-draft:${paneKey}` : null;
+  const draftKey = paneKey ? `osai-chat-draft:${paneKey}` : null;
   const [input, setInput] = useState<string>(() => {
     if (seed) return seed;
     if (draftKey) {
@@ -1312,7 +1312,7 @@ export function ChatPane({
   // ── composer autocomplete (copilot-style) ──────────────────────────────────
   // Past sent messages, newest first — the source for inline ghost completion.
   // Persisted across sessions so the suggestions are useful from the first keypress.
-  const HISTORY_KEY = "aios.chat.history";
+  const HISTORY_KEY = "osai.chat.history";
   const historyRef = useRef<string[]>([]);
   useEffect(() => {
     try {
@@ -1841,7 +1841,7 @@ export function ChatPane({
       }
 
       // surface a backend stderr line (missing binary / not logged in / bad flag)
-      case "aios_stderr": {
+      case "osai_stderr": {
         if (ev.text) onPetError(ev.text);
         if (ev.text) {
           setTurns((prev) => [
@@ -3874,7 +3874,7 @@ export function ChatPane({
                     className="w-[3px] shrink-0 origin-center rounded-full bg-[var(--color-accent)]"
                     style={{
                       height: `${b.h}%`,
-                      animation: "aios-wave 0.9s ease-in-out infinite",
+                      animation: "osai-wave 0.9s ease-in-out infinite",
                       animationDelay: `${b.delay}ms`,
                     }}
                   />
@@ -4301,7 +4301,7 @@ export function ChatPane({
                     type="button"
                     onClick={send}
                     disabled={action.disabled}
-                    className="aios-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
+                    className="osai-shimmer btn-glow flex h-8 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-3.5 text-[12px] font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--color-panel)] disabled:text-[var(--color-faint)] disabled:shadow-none"
                     title={action.title}
                   >
                     <ArrowUp size={16} />
@@ -4488,7 +4488,7 @@ export function ChatPane({
   }, [blocks]);
 
   // ── find-in-chat ────────────────────────────────────────────────────────
-  // mod+F routes here via App's handleCmdF → "aios-chat-find" (same context-
+  // mod+F routes here via App's handleCmdF → "osai-chat-find" (same context-
   // aware pattern as the browser pane; before this, ⌘F on a chat pane
   // FULLSCREENED it). Matching is block-granular: jump + one-shot highlight
   // wash, with collapsed thinking/activity groups force-opened on their hits —
@@ -4556,8 +4556,8 @@ export function ChatPane({
         findInputRef.current?.select();
       });
     };
-    window.addEventListener("aios-chat-find", onFind);
-    return () => window.removeEventListener("aios-chat-find", onFind);
+    window.addEventListener("osai-chat-find", onFind);
+    return () => window.removeEventListener("osai-chat-find", onFind);
   }, [paneKey]);
 
   // ── run cinema — replay the captured run-event timeline ────────────────
@@ -4773,12 +4773,12 @@ export function ChatPane({
             (drift keyframes die under reduce-motion; the static wash stays). */}
         <div
           aria-hidden
-          className="aios-drift-a pointer-events-none absolute h-[44vh] w-[44vh] rounded-full opacity-[0.04]"
+          className="osai-drift-a pointer-events-none absolute h-[44vh] w-[44vh] rounded-full opacity-[0.04]"
           style={{ background: "radial-gradient(circle, var(--color-accent), transparent 62%)", filter: "blur(80px)" }}
         />
         <div
           aria-hidden
-          className="aios-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
+          className="osai-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
           style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 62%)", filter: "blur(80px)" }}
         />
         <div className="fade-in-up relative w-full max-w-2xl">
@@ -4798,7 +4798,7 @@ export function ChatPane({
                       "what",
                       "should",
                       "we",
-                      <span key="work" className="aios-greet-name">
+                      <span key="work" className="osai-greet-name">
                         work
                       </span>,
                       "on?",
@@ -4855,7 +4855,7 @@ export function ChatPane({
               {starterDeck.map(({ icon: Icon, label, sub, prompt }) => (
                 // TiltCard owns the hover motion (3D tilt + mouse-follow glare),
                 // so the button drops `lift` to avoid a double transform.
-                <TiltCard key={label} className="rounded-[var(--aios-radius-lg)]">
+                <TiltCard key={label} className="rounded-[var(--osai-radius-lg)]">
                   <button
                     type="button"
                     disabled={!started}
@@ -4956,7 +4956,7 @@ export function ChatPane({
       data-chat-pane
       tabIndex={-1}
       onKeyDown={onPaneKeyDown}
-      className="aios-stage relative flex h-full min-h-0 w-full flex-col outline-none"
+      className="osai-stage relative flex h-full min-h-0 w-full flex-col outline-none"
     >
       {/* quiet dot-grid texture on the chat ground — behind the aurora + content */}
       <DotPattern className="-z-10" gap={26} />
@@ -4977,7 +4977,7 @@ export function ChatPane({
               setSnipTip(null);
               window.getSelection()?.removeAllRanges();
             }}
-            className="scale-in absolute z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 px-2.5 py-1 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)] transition-colors hover:border-[var(--color-accent)]/50"
+            className="scale-in absolute z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 px-2.5 py-1 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)] transition-colors hover:border-[var(--color-accent)]/50"
             style={{ left: snipTip.x, top: Math.max(snipTip.y - 34, 4) }}
             title="attach the selected text as a context snippet on your next message"
           >
@@ -5214,7 +5214,7 @@ export function ChatPane({
               (native bar hidden). Markers slide inside it as you scroll. */}
           {railWin && (
             <div
-              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--aios-glow-soft)] transition-[top,height] duration-100 group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
+              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--osai-glow-soft)] transition-[top,height] duration-100 group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
               style={{ top: `${railWin.top * 100}%`, height: `${Math.max(railWin.size * 100, 6)}%` }}
             />
           )}
@@ -5249,7 +5249,7 @@ export function ChatPane({
           {/* hover / drag bubble: time + snippet of the nearest turn */}
           {scrubBubble && (
             <div
-              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--aios-shadow-pop)]"
+              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--osai-shadow-pop)]"
               style={{ top: `${scrubBubble.frac * 100}%` }}
             >
               {scrubBubble.at != null && (
@@ -5270,7 +5270,7 @@ export function ChatPane({
           type="button"
           onClick={jumpToLatest}
           title="scroll to bottom"
-          className="glass-strong absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)]"
+          className="glass-strong absolute bottom-24 right-5 z-20 grid h-9 w-9 place-items-center rounded-full text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--osai-glow-soft)]"
         >
           <ArrowDown size={15} />
         </button>
@@ -5426,7 +5426,7 @@ function RunRail({ phase }: { phase: RunPhase }) {
           <span
             className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
               i === idx
-                ? "aios-node-live bg-[var(--color-accent)]"
+                ? "osai-node-live bg-[var(--color-accent)]"
                 : i < idx
                   ? "bg-[var(--color-accent)]/45"
                   : "border border-[var(--color-border-strong)]"
@@ -6058,7 +6058,7 @@ function ChangeCard({ turn }: { turn: ToolTurn }) {
   };
 
   return (
-    <div className="aios-spotlight glass overflow-hidden rounded-xl" onMouseMove={spotlightMove}>
+    <div className="osai-spotlight glass overflow-hidden rounded-xl" onMouseMove={spotlightMove}>
       <button
         type="button"
         onClick={open}
@@ -6299,7 +6299,7 @@ function UserBubble({
           <Waypoints size={10} /> steered into the running turn
         </span>
       )}
-      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[var(--color-accent-soft)] px-4 py-2.5 font-sans text-[14px] leading-relaxed text-[var(--color-text)] shadow-[var(--aios-glow-soft)]">
+      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[var(--color-accent-soft)] px-4 py-2.5 font-sans text-[14px] leading-relaxed text-[var(--color-text)] shadow-[var(--osai-glow-soft)]">
         {turn.text}
       </div>
       <div className="flex items-center gap-0.5 pr-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
@@ -6421,11 +6421,11 @@ function CadencedShimmer({ children }: { children: string }) {
   return (
     <span
       ref={ref}
-      className={`aios-cadenced-shimmer select-none truncate ${active ? "aios-cadenced-shimmer--active" : ""}`}
+      className={`osai-cadenced-shimmer select-none truncate ${active ? "osai-cadenced-shimmer--active" : ""}`}
     >
       {children}
-      <span aria-hidden="true" className="aios-cadenced-shimmer__sweep">
-        <span className="aios-cadenced-shimmer__highlight">{children}</span>
+      <span aria-hidden="true" className="osai-cadenced-shimmer__sweep">
+        <span className="osai-cadenced-shimmer__highlight">{children}</span>
       </span>
     </span>
   );
@@ -6466,7 +6466,7 @@ function AssistantBubble({
               type="button"
               disabled={disabled}
               onClick={() => onButton(label)}
-              className="rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-[var(--osai-radius-pill)] border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {label}
             </button>
@@ -6919,7 +6919,7 @@ function ApprovalCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--aios-glow-soft)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] backdrop-blur-md shadow-[var(--osai-glow-soft)]">
       <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-2">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-bg)]/40 text-[var(--color-accent)]">
           <ShieldQuestion size={14} />
@@ -6979,7 +6979,7 @@ function ApprovalCard({
 // and [links](url). Headings + bullet / numbered lists are handled at the line
 // level. Anything it doesn't recognize falls through as plain text.
 
-const HELP_TEXT = `**AIOS chat**
+const HELP_TEXT = `**OSAI chat**
 
 - type to talk to claude — streams token by token
 - \`/\` opens commands · \`@\` mentions files from the working dir
@@ -7021,7 +7021,7 @@ function ImagePreview({
         src={image.url}
         alt="attachment preview"
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
+        className="max-h-[78vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--osai-shadow-pop)]"
       />
       <div
         onClick={(e) => e.stopPropagation()}
@@ -7107,14 +7107,14 @@ function GoalEditorOverlay({
           rows={2}
           placeholder="describe a goal — kept as context across turns until cleared"
           spellCheck={false}
-          className="block w-full resize-none rounded-[var(--aios-radius-md)] bg-[var(--color-bg)] px-3 py-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
+          className="block w-full resize-none rounded-[var(--osai-radius-md)] bg-[var(--color-bg)] px-3 py-2 font-sans text-[14px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-faint)] focus:outline-none"
         />
         <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] text-[var(--color-faint)]">
           <span>⏎ save · esc cancel</span>
           <button
             type="button"
             onClick={() => onCommit(value)}
-            className="press rounded-[var(--aios-radius-pill)] bg-[var(--color-accent)] px-3 py-1 text-[11px] font-medium text-[var(--color-bg)]"
+            className="press rounded-[var(--osai-radius-pill)] bg-[var(--color-accent)] px-3 py-1 text-[11px] font-medium text-[var(--color-bg)]"
           >
             save goal
           </button>
@@ -7601,7 +7601,7 @@ function Dropdown({
       if (openUp) pos.bottom = window.innerHeight - r.top + 6;
       else pos.top = r.bottom + 6;
       pos.maxHeight = Math.max(140, openUp ? spaceAbove : spaceBelow);
-      (pos as Record<string, string | number>)["--aios-origin"] = openUp
+      (pos as Record<string, string | number>)["--osai-origin"] = openUp
         ? "bottom center"
         : "top center";
       setMenuPos(pos);
@@ -7664,7 +7664,7 @@ function Dropdown({
           <div
             ref={menuRef}
             role="menu"
-            className="scale-in glass fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 p-1 shadow-[var(--aios-shadow-pop)]"
+            className="scale-in glass fixed z-[70] min-w-[200px] overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 p-1 shadow-[var(--osai-shadow-pop)]"
             style={menuPos}
           >
             {children}
@@ -7737,7 +7737,7 @@ function OverlayPanel({
 }) {
   return (
     <div
-      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--aios-shadow-pop)] ${
+      className={`absolute z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--osai-shadow-pop)] ${
         drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
       } ${compact ? "left-3 min-w-[220px] max-w-[min(360px,90%)]" : "left-0 right-0"}`}
     >
@@ -7844,7 +7844,7 @@ function ResumePicker({
   let rowIndex = 0;
   return (
     <div
-      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--aios-glass-bg-strong)] shadow-[var(--aios-shadow-pop)] backdrop-blur-md ${
+      className={`absolute left-0 right-0 z-40 overflow-hidden rounded-xl border border-[var(--color-border-strong)] bg-[var(--osai-glass-bg-strong)] shadow-[var(--osai-shadow-pop)] backdrop-blur-md ${
         drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
       }`}
     >

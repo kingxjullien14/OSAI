@@ -122,8 +122,8 @@ export function FileViewerPane({ path, paneKey }: { path: string; paneKey?: stri
         <span className="flex min-w-0 items-center gap-1.5">
           {/* mode identity — the owner asked for an unmissable viewer/editor tell */}
           <span
-            className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--aios-accent-2)_35%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide"
-            style={{ color: "var(--aios-accent-2)" }}
+            className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--osai-accent-2)_35%,transparent)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide"
+            style={{ color: "var(--osai-accent-2)" }}
             title="read-only viewer — use the pen (or ⋯) to edit"
           >
             viewer

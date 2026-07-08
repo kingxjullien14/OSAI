@@ -12,7 +12,7 @@
  *  still the conceptual/UI word.
  *
  *  P1 (this file): the data model + a versioned localStorage store + a one-time
- *  migration from the old `aios.projects` store + a back-compat adapter that
+ *  migration from the old `osai.projects` store + a back-compat adapter that
  *  flattens to today's `ProjectInfo` so existing consumers keep working while the
  *  detection backend / config UI / context-file phases land.
  *
@@ -88,7 +88,7 @@ export interface ProjectWorkspace {
   source: "scanned" | "custom";
   /** unix epoch seconds of the root's last modification. */
   mtime: number;
-  /** "aios.workspace.json" if one exists on disk (set by the backend later). */
+  /** "osai.workspace.json" if one exists on disk (set by the backend later). */
   manifestPath?: string;
   schemaVersion: 1;
 }
@@ -309,7 +309,7 @@ export function projectInfoToWorkspace(
   };
 }
 
-/** Pure migration: fold the old `aios.projects` store into a v2 workspaces store.
+/** Pure migration: fold the old `osai.projects` store into a v2 workspaces store.
  *  - custom projects → fullstack custom workspaces
  *  - hidden roots → prefs[root].hidden
  *  - overrides{name,cmd} → prefs[root].{name,cmd}
@@ -368,9 +368,9 @@ export function mergeProjectWorkspaces(
 
 /* ── impure shell (localStorage + event emitter) ─────────────────────── */
 
-const KEY = "aios.workspaces.projects";
-const OLD_KEY = "aios.projects";
-const EVENT = "aios:project-workspaces";
+const KEY = "osai.workspaces.projects";
+const OLD_KEY = "osai.projects";
+const EVENT = "osai:project-workspaces";
 
 const emptyStore = (): ProjectWorkspacesStore => ({
   schemaVersion: 2,
@@ -388,7 +388,7 @@ function normalizeStore(p: Partial<ProjectWorkspacesStore> | null): ProjectWorks
   };
 }
 
-/** Load the v2 store. On first run, lazily migrate the old `aios.projects` store
+/** Load the v2 store. On first run, lazily migrate the old `osai.projects` store
  *  (and persist the result so migration happens exactly once). */
 export function loadProjectWorkspacesStore(): ProjectWorkspacesStore {
   try {

@@ -46,7 +46,7 @@ test("the shell ships with no built-in agents and no stranger identity", () => {
 test("created agents persist only the user's inputs (no baked-in derived fields)", () => {
   withLocalStorage((store) => {
     createScheduledAgent({ label: "ops", mission: "keep things green", schedule: "daily" });
-    const stored = JSON.parse(store.get("aios.chatAgents.custom"));
+    const stored = JSON.parse(store.get("osai.chatAgents.custom"));
     assert.equal(stored.length, 1);
     assert.equal(stored[0].id, "ops");
     assert.equal(stored[0].mission, "keep things green");
@@ -63,7 +63,7 @@ test("created agents persist only the user's inputs (no baked-in derived fields)
 test("stored agents pointing at another machine's home self-heal", () => {
   withLocalStorage((store) => {
     store.set(
-      "aios.chatAgents.custom",
+      "osai.chatAgents.custom",
       JSON.stringify([
         { id: "legacy", label: "legacy", mission: "old agent", cwd: "/Users/olduser/Repo/project" },
       ]),
@@ -134,7 +134,7 @@ test("run commands speak the agent's own mission, not a stranger's business", ()
   const cmd = buildScheduledAgentRunCommand({ label: "scout", mission: "qualify leads" }, "scheduled");
   assert.match(cmd, /run a scheduled pulse for scout/);
   assert.match(cmd, /goal: qualify leads/);
-  assert.doesNotMatch(cmd, /sales for aios/);
+  assert.doesNotMatch(cmd, /sales for osai/);
 });
 
 test("schedule cadences parse: canonical, every-N (5min floor), legacy phrasings, manual=never", () => {

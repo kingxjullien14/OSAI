@@ -8,7 +8,7 @@ import { ArrowUp, Square, X } from "lucide-react";
 export function engineDotColor(engine: string | undefined): string {
   const e = engine ?? "claude";
   if (e === "codex" || e === "openai") return "var(--color-info)";
-  if (e === "local" || e === "ollama") return "var(--aios-accent-2)";
+  if (e === "local" || e === "ollama") return "var(--osai-accent-2)";
   if (e === "openrouter") return "var(--color-warning)";
   return "var(--color-accent)";
 }
@@ -30,7 +30,7 @@ export function EffortTicks({ effortId, ultra }: { effortId: string; ultra?: boo
             background:
               i < filled
                 ? ultra
-                  ? "linear-gradient(180deg, var(--aios-accent-2), var(--color-accent))"
+                  ? "linear-gradient(180deg, var(--osai-accent-2), var(--color-accent))"
                   : "var(--color-accent)"
                 : "oklch(1 0 0 / 14%)",
           }}
@@ -74,7 +74,7 @@ export function Filament({
               width: `${Math.round(Math.min(1, Math.max(0, pct)) * 100)}%`,
               background: hot
                 ? "linear-gradient(90deg, var(--color-accent), var(--color-warning))"
-                : "linear-gradient(90deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 45%, var(--aios-accent-2)))",
+                : "linear-gradient(90deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 45%, var(--osai-accent-2)))",
               boxShadow: hot
                 ? "0 0 8px color-mix(in srgb, var(--color-warning) 60%, transparent)"
                 : "0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent)",
@@ -84,7 +84,7 @@ export function Filament({
             {live && (
               <span
                 aria-hidden
-                className="absolute inset-0 animate-[aios-fil-sheen_1.6s_linear_infinite] bg-[linear-gradient(90deg,transparent,oklch(1_0_0_/_0.55),transparent)]"
+                className="absolute inset-0 animate-[osai-fil-sheen_1.6s_linear_infinite] bg-[linear-gradient(90deg,transparent,oklch(1_0_0_/_0.55),transparent)]"
               />
             )}
           </div>
@@ -96,7 +96,7 @@ export function Filament({
           <div aria-label={label} className="absolute inset-x-0 -top-2 h-4" />
           {/* the card opens UPWARD over the transcript — downward it clipped
               against the pane edge with the composer docked at the bottom. */}
-          <div className="pointer-events-none absolute bottom-full right-0 z-40 mb-2.5 hidden w-64 flex-col gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)] p-3 text-left shadow-[var(--aios-shadow-pop)] group-hover/fil:flex">
+          <div className="pointer-events-none absolute bottom-full right-0 z-40 mb-2.5 hidden w-64 flex-col gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)] p-3 text-left shadow-[var(--osai-shadow-pop)] group-hover/fil:flex">
             {card}
           </div>
         </>
@@ -128,7 +128,7 @@ export function SendOrb({
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute -inset-1 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] motion-safe:animate-[aios-orb-breathe_1.8s_ease-in-out_infinite]"
+          className="pointer-events-none absolute -inset-1 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] motion-safe:animate-[osai-orb-breathe_1.8s_ease-in-out_infinite]"
         />
         <Square size={11} className="fill-current" />
       </button>
@@ -143,7 +143,7 @@ export function SendOrb({
       title={title}
       className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-all ${
         ready
-          ? "press border border-transparent bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_55%,var(--aios-accent-2)))] text-[var(--color-accent-fg)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:brightness-110"
+          ? "press border border-transparent bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_55%,var(--osai-accent-2)))] text-[var(--color-accent-fg)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:brightness-110"
           : "border border-[var(--color-border-strong)] bg-[color-mix(in_srgb,var(--color-panel-2)_70%,transparent)] text-[var(--color-faint)]"
       } disabled:cursor-not-allowed`}
     >

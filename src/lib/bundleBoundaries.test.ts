@@ -94,7 +94,7 @@ test("pet is the glass spirit: soul-driven room + companion + roaming overlay", 
   assert.match(idle, /onOpenPet/);
   assert.match(idle, /suggestActivity/);
   assert.doesNotMatch(idle, /PetDashboardCompanion/);
-  assert.doesNotMatch(css, /aios-pet-mini/);
+  assert.doesNotMatch(css, /osai-pet-mini/);
 
   // the DESK CREATURE (P2): mounted in the shell, gated by the petRoam
   // setting, grab/toss physics intact.
@@ -118,7 +118,7 @@ test("pet is the glass spirit: soul-driven room + companion + roaming overlay", 
   for (const kf of ["pet2-breathe", "pet2-hop", "pet2-celebrate", "pet2-dangle", "pet2-spin", "pet2-land"]) {
     assert.ok(css.includes(`@keyframes ${kf}`), `@keyframes ${kf} must exist`);
   }
-  assert.match(css, /\[data-reduce-motion="true"\] \.aios-pet \*/);
+  assert.match(css, /\[data-reduce-motion="true"\] \.osai-pet \*/);
 
   // the 8-bit pixel pet is fully retired — no orphan markup or CSS anywhere
   assert.doesNotMatch(pane, /pet-pixel|PET_VARIANT_KEY|makeVariant|hatch roll/);
@@ -133,7 +133,7 @@ test("sidebar usage renders a real claude meter (not the spark proxy)", () => {
   const sidebar = read("src/components/SidebarUsage.tsx");
 
   // upstream 2026-06-06: replaced the gpt-5.3-codex-spark block with a real claude
-  // meter sourced from ~/.aios/state/usage.json (claude_usage → claudeRate).
+  // meter sourced from ~/.osai/state/usage.json (claude_usage → claudeRate).
   assert.match(source, /ProviderBlock\s+name="claude"/);
   assert.match(source, /claudeRate\(\)/);
   // per-model carve-out rows (claude sonnet/opus weekly, codex spark) nest
@@ -245,7 +245,7 @@ test("web mirror uses a cloudflare durable object transport", () => {
   assert.match(viewer, /pixel streaming is not enabled yet/);
   // mirror endpoint is deployment-specific (env-configurable), never a hardcoded
   // personal worker URL.
-  assert.match(transport, /VITE_AIOS_MIRROR_URL/);
+  assert.match(transport, /VITE_OSAI_MIRROR_URL/);
   assert.doesNotMatch(transport, /firazfhansurie/);
   assert.match(transport, /#mirror=/);
   assert.match(worker, /class MirrorRoom extends DurableObject/);
@@ -275,7 +275,7 @@ test("hosted web chat uses a cloud chat transport instead of a dead preview", ()
   assert.match(chatPane, /webChatSend\(wire/);
   assert.doesNotMatch(chatPane, /web preview loaded\. live chat runs inside the desktop shell/);
   assert.match(fn, /OPENAI_API_KEY/);
-  assert.match(fn, /AIOS_CHAT_MODEL/);
+  assert.match(fn, /OSAI_CHAT_MODEL/);
   assert.match(fn, /https:\/\/api\.openai\.com\/v1\/responses/);
 });
 
@@ -394,9 +394,9 @@ test("idle home is the Horizon lock screen: starfield sky + clock on the line + 
   assert.match(controlCenter, /function LockDock/);
   assert.match(controlCenter, /function ContinueShelf/);
   assert.match(controlCenter, /function CommandLine/);
-  assert.match(controlCenter, /aios-horizon-line/);
-  assert.match(controlCenter, /aios-lock-fly/);
-  assert.match(controlCenter, /aios-lock-ridge-a/);
+  assert.match(controlCenter, /osai-horizon-line/);
+  assert.match(controlCenter, /osai-lock-fly/);
+  assert.match(controlCenter, /osai-lock-ridge-a/);
 
   // the dock is exactly the owner's three: chat · terminal · notes
   assert.match(controlCenter, /type: "notes"/);
@@ -433,16 +433,16 @@ test("idle home is the Horizon lock screen: starfield sky + clock on the line + 
 
   // the ambience family exists in CSS, stilled by reduce-motion
   for (const kf of [
-    "aios-horizon-flow",
-    "aios-lock-twinkle",
-    "aios-lock-shoot",
-    "aios-lock-fly",
-    "aios-lock-ridge",
-    "aios-lock-sat",
+    "osai-horizon-flow",
+    "osai-lock-twinkle",
+    "osai-lock-shoot",
+    "osai-lock-fly",
+    "osai-lock-ridge",
+    "osai-lock-sat",
   ]) {
     assert.ok(css.includes(`@keyframes ${kf}`), `@keyframes ${kf} must exist`);
   }
-  assert.match(css, /\[data-reduce-motion="true"\] :is\(\.aios-lock-star/);
+  assert.match(css, /\[data-reduce-motion="true"\] :is\(\.osai-lock-star/);
 
   // the Mission Control era is fully retired on this surface
   assert.doesNotMatch(controlCenter, /Mission Control/);
@@ -548,7 +548,7 @@ test("codex chatpane uses terminal-grade codex context by default", () => {
   const chat = read("src/lib/chat.ts");
 
   assert.match(rust, /deliberately uses the user's real `~\/\.codex`/);
-  assert.match(rust, /AIOS_CODEX_FAST_HOME/);
+  assert.match(rust, /OSAI_CODEX_FAST_HOME/);
   assert.match(rust, /let fast = fast_requested \|\| fast_env;/);
   assert.match(rust, /start_codex_appserver[\s\S]*if let Some\(ch\) = codex_chat_home\(fast\)/);
   assert.match(rust, /params\["model"\] = json!\(m\)/);
@@ -700,8 +700,8 @@ test("shell exposes a policy-gated agent control bridge", () => {
   const actions = read("src/lib/agentActions.ts");
   const controller = read("src/lib/agentController.ts");
 
-  assert.match(app, /__aiosAgentControl/);
-  assert.match(app, /aios-agent-action/);
+  assert.match(app, /__osaiAgentControl/);
+  assert.match(app, /osai-agent-action/);
   assert.match(actions, /agentActionPolicy/);
   assert.match(actions, /requires confirmation/);
   assert.match(controller, /createAgentController/);
@@ -763,7 +763,7 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
   // convergence sweep continues. If this test fails because a number grew, use
   // the token instead: readable-on-accent = --color-accent-fg, hover lift =
   // border-strong (accent is for active/primary/focus only, DESIGN.md §6),
-  // floating surfaces = .surface-pop / --aios-shadow-pop.
+  // floating surfaces = .surface-pop / --osai-shadow-pop.
   const dir = join(root, "src", "components");
   const sources = readdirSync(dir, { recursive: true })
     .filter((f) => String(f).endsWith(".tsx"))
@@ -781,8 +781,8 @@ test("design-token ratchet: hardcoded color/elevation literals must not increase
   // buttons, snippet tip). Decoration (rows, chips, floats) is border-strong.
   ratchet("hover accent border (use border-strong)", /hover:border-\[var\(--color-accent\)\]/g, 10);
   // floor is 3, not 0: TerminalComposer.tsx is locked (never edited) and
-  // carries the last three. Everything editable is on --aios-shadow-pop.
-  ratchet("shadow-2xl (use --aios-shadow-pop)", /shadow-2xl/g, 3);
+  // carries the last three. Everything editable is on --osai-shadow-pop.
+  ratchet("shadow-2xl (use --osai-shadow-pop)", /shadow-2xl/g, 3);
 
   // Hex color literals — 0 outside the two legit users: TerminalRuntime.tsx
   // (xterm's 16-color ANSI palette is hex by contract) and Settings.tsx (the

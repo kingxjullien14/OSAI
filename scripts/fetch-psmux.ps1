@@ -46,7 +46,7 @@ $api = if ($Tag -eq "latest") {
   "https://api.github.com/repos/$Repo/releases/tags/$Tag"
 }
 Write-Host "fetch-psmux: querying $api"
-$headers = @{ "User-Agent" = "aios-fetch-psmux" }
+$headers = @{ "User-Agent" = "osai-fetch-psmux" }
 if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
 $release = Invoke-RestMethod -Uri $api -Headers $headers
 

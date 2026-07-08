@@ -3,7 +3,7 @@
  *
  * The CLI tier (claude/codex/opencode) already lives in chat.ts/chat.rs as the
  * `Engine` enum + `adapt_line`. THIS is the API tier: direct HTTP to a provider
- * with the user's OWN key, so AIOS owns the message array end-to-end (which is
+ * with the user's OWN key, so OSAI owns the message array end-to-end (which is
  * also what makes honest branching / edit-rewind possible later — see
  * PLAN-chat-power.md).
  *

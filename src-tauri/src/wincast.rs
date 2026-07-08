@@ -149,7 +149,7 @@ extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
         if cloaked != 0 {
             return true.into();
         }
-        // a real title, a non-trivial client area, and not AIOS itself
+        // a real title, a non-trivial client area, and not OSAI itself
         let mut title_buf = [0u16; 512];
         let n = GetWindowTextW(hwnd, &mut title_buf);
         if n <= 0 {
@@ -217,7 +217,7 @@ pub fn list_windows() -> Result<Vec<WindowInfo>, String> {
 // child HWND — the display-only surface floated over the React slot
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CLASS_NAME: windows::core::PCWSTR = windows::core::w!("AIOS_WINCAST_HOST");
+const CLASS_NAME: windows::core::PCWSTR = windows::core::w!("OSAI_WINCAST_HOST");
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     // Phase A is display-only: hit-tests fall straight through to whatever is

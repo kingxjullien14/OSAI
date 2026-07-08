@@ -3,7 +3,7 @@
  * cockpit-at-rest: the live data IS the decoration. Everything here reuses
  * already-wired Tauri commands — no new Rust — so it stays cheap + resilient.
  *
- *   - focus  ← ~/.aios/state/goals/active.json (current phase + active task)
+ *   - focus  ← ~/.osai/state/goals/active.json (current phase + active task)
  *   - rate   ← usage_stats   (live 5h / 7d rate-limit %)
  *   - streak ← usage_extras  (streak + 70-day heatmap + token total)
  *   - fleet  ← list_oracles  (awake oracle sessions)
@@ -31,7 +31,7 @@ export async function idleFocus(): Promise<IdleFocus> {
   };
   try {
     const home = await invoke<string>("home_dir");
-    const path = `${home}/.aios/state/goals/active.json`;
+    const path = `${home}/.osai/state/goals/active.json`;
     const res = await invoke<{ text: string | null }>("read_file_preview", { path });
     if (!res?.text) return empty;
     const g = JSON.parse(res.text) as {
@@ -61,7 +61,7 @@ export async function idleFocus(): Promise<IdleFocus> {
 }
 
 export interface MemoryFocus {
-  /** Humanised note name, e.g. "aios superapp" (accent tag line). */
+  /** Humanised note name, e.g. "osai superapp" (accent tag line). */
   tag: string | null;
   /** The note's one-line `description:` — the focus body. */
   title: string | null;
@@ -206,7 +206,7 @@ export async function codexRate(): Promise<CodexRate> {
 }
 
 /**
- * Live Claude rate-limit usage, parsed from `~/.aios/state/usage.json` by the
+ * Live Claude rate-limit usage, parsed from `~/.osai/state/usage.json` by the
  * `claude_usage` Rust command (the statusline-written file). 5h / 7d windows
  * mirror codexRate's shape so the sidebar renders both with the same component.
  * Returns the empty shape when usage.json is missing/unwritten so the block

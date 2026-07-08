@@ -54,7 +54,7 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
         agent.id,
         agent.label,
         [
-          "agent control update from the aios shell:",
+          "agent control update from the osai shell:",
           instruction,
           "",
           "apply this to your operating plan for your mission.",
@@ -130,7 +130,7 @@ export function ScheduledAgentsPane({ onOpenAgentChat }: Props) {
           {agents.map((agent) => (
             <section
               key={agent.id}
-              className="min-w-0 rounded-[var(--aios-radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] p-3"
+              className="min-w-0 rounded-[var(--osai-radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] p-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

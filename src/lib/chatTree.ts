@@ -1,11 +1,11 @@
 // Conversation tree — the data model behind PROPER branching (Tier-3 P2, built on
-// Tier-4 BYO-key where AIOS owns the message array).
+// Tier-4 BYO-key where OSAI owns the message array).
 //
 // Unlike the display-only re-roll switcher (`chatBranching.ts`, which only shows
 // alternate answers to the LAST prompt), this is a real tree: edit OR regenerate
 // at any point FORKS a sibling branch, you SWAP between branches, and each branch
 // keeps its OWN continuation. The visible transcript is the active root→leaf path;
-// on each send the active path's messages go to the model (AIOS owns the array).
+// on each send the active path's messages go to the model (OSAI owns the array).
 //
 // Pure + transport/UI-agnostic + generic over the node payload `T`, so it's
 // unit-tested in isolation and the ChatPane integration just projects its `turns`

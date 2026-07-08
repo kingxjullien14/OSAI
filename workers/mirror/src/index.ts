@@ -3,7 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 type MirrorRole = "desktop" | "viewer" | "unknown";
 
 interface Env {
-  AIOS_MIRROR: DurableObjectNamespace<MirrorRoom>;
+  OSAI_MIRROR: DurableObjectNamespace<MirrorRoom>;
 }
 
 interface PeerMeta {
@@ -81,7 +81,7 @@ export class MirrorRoom extends DurableObject<Env> {
     if (request.headers.get("Upgrade") !== "websocket") {
       return json({
         ok: true,
-        schema: "aios.mirror.room.v1",
+        schema: "osai.mirror.room.v1",
         hasSnapshot: this.latest != null,
         peers: this.peers().length,
       });
@@ -209,7 +209,7 @@ export class MirrorRoom extends DurableObject<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const room = roomFromRequest(request);
-    const id = env.AIOS_MIRROR.idFromName(room);
-    return env.AIOS_MIRROR.get(id).fetch(request);
+    const id = env.OSAI_MIRROR.idFromName(room);
+    return env.OSAI_MIRROR.get(id).fetch(request);
   },
 };

@@ -11,7 +11,7 @@ import { scheduleUiMirrorSave } from "./uiMirror";
  *  W5 "Terminal density" variant of Neon Glass (PLAN-odysseus-feel.md). */
 export type Density = "compact" | "comfortable" | "terminal";
 
-const DENSITY_KEY = "aios.density";
+const DENSITY_KEY = "osai.density";
 /** Baseline px the font-scale multiplier is relative to (TerminalPane's default). */
 const FONT_BASELINE = 13;
 

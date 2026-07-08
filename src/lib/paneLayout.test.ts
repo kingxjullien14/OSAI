@@ -17,5 +17,5 @@ test("movePane clamps at edges", () => {
 });
 
 test("gridTrackStorageKey scopes persisted sizes by grid shape", () => {
-  assert.equal(gridTrackStorageKey("aios.grid", 2, 3), "aios.grid:2x3");
+  assert.equal(gridTrackStorageKey("osai.grid", 2, 3), "osai.grid:2x3");
 });

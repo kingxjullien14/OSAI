@@ -144,7 +144,7 @@ export function ResizableGrid({
           // master reduce-motion guard squashes the duration globally.
           transition: dragging
             ? "none"
-            : "grid-template-columns var(--aios-dur-slow) var(--aios-ease-out), grid-template-rows var(--aios-dur-slow) var(--aios-ease-out)",
+            : "grid-template-columns var(--osai-dur-slow) var(--osai-ease-out), grid-template-rows var(--osai-dur-slow) var(--osai-ease-out)",
         }}
       >
         {children}

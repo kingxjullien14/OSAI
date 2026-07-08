@@ -1,25 +1,25 @@
-//! AIOS Control Plane transport (Tier 2) — a localhost-only HTTP server that lets
+//! OSAI Control Plane transport (Tier 2) — a localhost-only HTTP server that lets
 //! an external agent drive the running app. Each POSTed command is forwarded to
-//! the webview via `app.emit("aios://control", …)`, where `App.tsx`'s
+//! the webview via `app.emit("osai://control", …)`, where `App.tsx`'s
 //! `dispatchControl` runs it through the SAME closures the UI uses ("external ==
 //! UI"). The command vocabulary + routing live in `src/lib/control.ts`.
 //!
 //! **Request/response:** the server injects a correlation `id`, emits the command,
-//! and waits (≤5s) for the webview to `emit("aios://control-reply", {id, …})`,
+//! and waits (≤5s) for the webview to `emit("osai://control-reply", {id, …})`,
 //! which it returns as the HTTP body. So READS (`pane.list`/`state.get`) return
 //! real data, and writes echo the new pane list — the agent stays in sync in one
 //! round-trip.
 //!
 //! Security: **off by default**. Two gates:
 //!   1. A runtime enable flag (`ENABLED`) flipped by **Settings → general → agent
-//!      control** (or `AIOS_CONTROL=1` to force it on at boot for dev/headless).
-//!      The choice persists in `~/.aios/control-enabled` so it survives restarts
+//!      control** (or `OSAI_CONTROL=1` to force it on at boot for dev/headless).
+//!      The choice persists in `~/.osai/control-enabled` so it survives restarts
 //!      (Rust can't read the webview's localStorage — that file is the source of
 //!      truth). Enabling lazily starts the server, so the toggle needs no restart;
 //!      while disabled every request is refused with 403.
-//!   2. Bind **127.0.0.1 only** + a 256-bit `X-AIOS-Token` (OS CSPRNG, in
-//!      `~/.aios/control-token`). The ephemeral port is advertised in
-//!      `~/.aios/control-port` so a client (the `aios-control` MCP / curl / the
+//!   2. Bind **127.0.0.1 only** + a 256-bit `X-OSAI-Token` (OS CSPRNG, in
+//!      `~/.osai/control-token`). The ephemeral port is advertised in
+//!      `~/.osai/control-port` so a client (the `osai-control` MCP / curl / the
 //!      WhatsApp bridge) can discover it.
 
 use std::collections::HashMap;
@@ -47,13 +47,13 @@ fn enabled_flag() -> &'static Arc<AtomicBool> {
     ENABLED.get_or_init(|| Arc::new(AtomicBool::new(false)))
 }
 
-/// `~/.aios` (HOME, or USERPROFILE on Windows — the app aliases HOME to it at
+/// `~/.osai` (HOME, or USERPROFILE on Windows — the app aliases HOME to it at
 /// startup, but read both so the server works regardless of launch context).
-fn aios_home() -> Option<PathBuf> {
+fn osai_home() -> Option<PathBuf> {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()
-        .map(|h| PathBuf::from(h).join(".aios"))
+        .map(|h| PathBuf::from(h).join(".osai"))
 }
 
 /// A 256-bit bearer token from the OS CSPRNG (getrandom), hex-encoded. Falls back
@@ -113,20 +113,20 @@ fn enabled_file(dir: &PathBuf) -> PathBuf {
     dir.join("control-enabled")
 }
 fn persist_enabled(on: bool) {
-    if let Some(dir) = aios_home() {
+    if let Some(dir) = osai_home() {
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(enabled_file(&dir), if on { "1" } else { "0" });
     }
 }
 fn read_persisted_enabled() -> bool {
-    aios_home()
+    osai_home()
         .and_then(|dir| std::fs::read_to_string(enabled_file(&dir)).ok())
         .map(|s| s.trim() == "1")
         .unwrap_or(false)
 }
-/// `AIOS_CONTROL=1` forces control on at boot (dev/headless override).
+/// `OSAI_CONTROL=1` forces control on at boot (dev/headless override).
 fn env_enabled() -> bool {
-    std::env::var("AIOS_CONTROL")
+    std::env::var("OSAI_CONTROL")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
 }
@@ -139,7 +139,7 @@ fn ensure_started(app: AppHandle) {
     if STARTED.swap(true, Ordering::SeqCst) {
         return; // already running
     }
-    let Some(dir) = aios_home() else {
+    let Some(dir) = osai_home() else {
         eprintln!("[control] no HOME/USERPROFILE — control server disabled");
         STARTED.store(false, Ordering::SeqCst);
         return;
@@ -160,10 +160,10 @@ fn ensure_started(app: AppHandle) {
 
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
 
-    // Reply correlation: the webview emits `aios://control-reply` with {id, …};
+    // Reply correlation: the webview emits `osai://control-reply` with {id, …};
     // match the id to the waiting request and hand it the result.
     let pending_reply = pending.clone();
-    app.listen_any("aios://control-reply", move |event| {
+    app.listen_any("osai://control-reply", move |event| {
         let Ok(reply) = serde_json::from_str::<Value>(event.payload()) else {
             return;
         };
@@ -189,7 +189,7 @@ fn ensure_started(app: AppHandle) {
         let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(0);
         PORT.store(port, Ordering::Relaxed);
         let _ = std::fs::write(dir.join("control-port"), port.to_string());
-        eprintln!("[control] listening on 127.0.0.1:{port} — POST /control (X-AIOS-Token)");
+        eprintln!("[control] listening on 127.0.0.1:{port} — POST /control (X-OSAI-Token)");
 
         for mut request in server.incoming_requests() {
             if *request.method() != tiny_http::Method::Post || request.url() != "/control" {
@@ -201,7 +201,7 @@ fn ensure_started(app: AppHandle) {
             if !gate.load(Ordering::Relaxed) {
                 let _ = request.respond(
                     tiny_http::Response::from_string(
-                        r#"{"ok":false,"error":"control disabled — enable it in AIOS Settings → general → agent control"}"#,
+                        r#"{"ok":false,"error":"control disabled — enable it in OSAI Settings → general → agent control"}"#,
                     )
                     .with_status_code(403),
                 );
@@ -211,7 +211,7 @@ fn ensure_started(app: AppHandle) {
             let authed = request
                 .headers()
                 .iter()
-                .any(|h| h.field.equiv("X-AIOS-Token") && h.value.as_str() == token);
+                .any(|h| h.field.equiv("X-OSAI-Token") && h.value.as_str() == token);
             if !authed {
                 let _ = request.respond(
                     tiny_http::Response::from_string("unauthorized").with_status_code(401),
@@ -251,7 +251,7 @@ fn ensure_started(app: AppHandle) {
                 map.insert(id.clone(), tx);
             }
 
-            if let Err(e) = app.emit("aios://control", cmd) {
+            if let Err(e) = app.emit("osai://control", cmd) {
                 if let Ok(mut map) = pending.lock() {
                     map.remove(&id);
                 }
@@ -289,14 +289,14 @@ fn ensure_started(app: AppHandle) {
 }
 
 /// Boot entry (called from `lib.rs` setup). Starts the server only if control was
-/// left enabled (persisted) or forced on via `AIOS_CONTROL=1` — otherwise NOTHING
+/// left enabled (persisted) or forced on via `OSAI_CONTROL=1` — otherwise NOTHING
 /// binds (no port, no files) until the user flips the Settings toggle, which
 /// lazily starts it.
 pub fn start_control_server(app: AppHandle) {
     let on = env_enabled() || read_persisted_enabled();
     if on {
         enabled_flag().store(true, Ordering::Relaxed);
-        // a one-time AIOS_CONTROL=1 also persists, so the choice sticks.
+        // a one-time OSAI_CONTROL=1 also persists, so the choice sticks.
         if env_enabled() {
             persist_enabled(true);
         }
@@ -314,7 +314,7 @@ pub struct ControlStatus {
 
 /// Read the current control-plane state (Settings → agent control).
 #[tauri::command]
-pub fn aios_control_status() -> ControlStatus {
+pub fn osai_control_status() -> ControlStatus {
     ControlStatus {
         enabled: ENABLED.get().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false),
         running: STARTED.load(Ordering::Relaxed),
@@ -325,11 +325,11 @@ pub fn aios_control_status() -> ControlStatus {
 /// Flip the control plane on/off from Settings. Enabling lazily starts the
 /// localhost server (no restart needed); the choice is persisted across launches.
 #[tauri::command]
-pub fn aios_set_control(app: AppHandle, on: bool) -> ControlStatus {
+pub fn osai_set_control(app: AppHandle, on: bool) -> ControlStatus {
     persist_enabled(on);
     enabled_flag().store(on, Ordering::Relaxed);
     if on {
         ensure_started(app);
     }
-    aios_control_status()
+    osai_control_status()
 }

@@ -1,5 +1,5 @@
 /**
- * IdleDashboard — the entry point for the AIOS home screen (shown when no panes
+ * IdleDashboard — the entry point for the OSAI home screen (shown when no panes
  * are open). This module is a thin DATA LOADER: it self-loads the cheap,
  * defensive idle data (usage extras / claude rate / memory focus / scheduled-agent
  * summaries / git pulse for recent repos) on a 30s poll and hands it to
@@ -28,7 +28,7 @@ import {
   type IdleRate,
   type MemoryFocus,
 } from "../lib/dashboard";
-import type { AiosNotification } from "../lib/notifications";
+import type { OsaiNotification } from "../lib/notifications";
 import type { Workspace } from "../lib/workspaces";
 import type { WorkSession } from "../lib/workSessions";
 import { IdleControlCenter } from "./IdleControlCenter";
@@ -56,9 +56,9 @@ interface IdleDashboardProps {
    *  stored layout); null = nothing to resume, the pill hides. */
   resumeLayout?: { count: number; labels: string[] } | null;
   onResumeLayout?: () => void;
-  notifications: AiosNotification[];
+  notifications: OsaiNotification[];
   onTalkToJarvis: (seed: string) => void;
-  onOpenNotificationTarget: (item: AiosNotification) => void;
+  onOpenNotificationTarget: (item: OsaiNotification) => void;
   onClearNotification: (id: string) => void;
   /** restore a saved workspace (named pane layout) from its launch-row chip. */
   onApplyWorkspace?: (ws: Workspace) => void;
@@ -212,7 +212,7 @@ function Ring({
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={c * (1 - filled)}
-            className="aios-ring"
+            className="osai-ring"
             style={{
               transition: "stroke-dashoffset 0.9s cubic-bezier(0.16,1,0.3,1)",
               filter: `drop-shadow(0 0 4px ${ringColor(pct)})`,

@@ -6,7 +6,7 @@
  *  installed app (tauri.localhost) are different origins with SEPARATE
  *  localStorage, so a glow picked in one silently "doesn't persist" in the
  *  other. This module write-through-mirrors those keys to
- *  `~/.aios/state/ui-state.json` (files.rs ui_state_save) and re-hydrates any
+ *  `~/.osai/state/ui-state.json` (files.rs ui_state_save) and re-hydrates any
  *  key that's missing at boot — restore-only, so a live localStorage always
  *  wins over the mirror.
  */
@@ -16,20 +16,20 @@ import { invoke, isTauriRuntime } from "./tauri";
  *  layout (those are big and have their own stores) — just the prefs a user
  *  notices vanishing. */
 const MIRROR_KEYS = [
-  "aios.settings",
-  "aios.theme",
-  "aios.accent",
-  "aios.accent2",
-  "aios.accent.recents",
-  "aios.density",
+  "osai.settings",
+  "osai.theme",
+  "osai.accent",
+  "osai.accent2",
+  "osai.accent.recents",
+  "osai.density",
   // The living-cockpit companion: its soul (bond/needs/history) and name. Same
   // durability story as the prefs — the webview's localStorage isn't durable, so
   // an installed-app restart could otherwise re-adopt a fresh hatchling and drop
   // a hard-won bond. The soul is reconciled by bond at boot (see hydrateUiMirror
   // → reconcileSoulFromMirror), not merely restore-if-missing, because a pane
   // mints a fresh soul during render before this mirror can hydrate.
-  "aios.pet.soul.v1",
-  "aios.pet.name.v1",
+  "osai.pet.soul.v1",
+  "osai.pet.name.v1",
 ] as const;
 
 const SAVE_DEBOUNCE_MS = 800;
@@ -52,7 +52,7 @@ export function scheduleUiMirrorSave(): void {
  *  localStorage (a WebView2 wipe, or a pref still at its default in this build)
  *  falls back to the on-disk value instead of being pruned. The old behavior
  *  overwrote the whole file with only currently-present keys, so any such key
- *  (famously the glow, aios.accent2) silently vanished from the mirror and
+ *  (famously the glow, osai.accent2) silently vanished from the mirror and
  *  hydrate's restore-only pass could never bring it back. */
 async function flushUiMirror(): Promise<void> {
   let existing: Record<string, unknown> = {};

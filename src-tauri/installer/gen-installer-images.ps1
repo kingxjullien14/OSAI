@@ -1,4 +1,4 @@
-# Generates the branded NSIS installer artwork from the AIOS dark palette.
+# Generates the branded NSIS installer artwork from the OSAI dark palette.
 # Run from anywhere: powershell -ExecutionPolicy Bypass -File gen-installer-images.ps1
 # Outputs (24-bit BMP, what NSIS Modern UI wants):
 #   sidebar.bmp  164x314  — welcome / finish left panel
@@ -6,7 +6,7 @@
 #
 # Kept deliberately version-agnostic (no "v1.0.0" baked in) so cutting a release
 # never means regenerating these. Echoes the in-app welcome: dark vertical
-# gradient, a faint dot grid, an accent-gradient AIOS wordmark.
+# gradient, a faint dot grid, an accent-gradient OSAI wordmark.
 Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = "Stop"
 
@@ -64,7 +64,7 @@ Add-DotGrid $g 164 314
 Add-Glow $g 20 30 175 82
 Add-Glow $g 150 300 120 36
 $wordFont = New-Object System.Drawing.Font("Segoe UI", 34, [System.Drawing.FontStyle]::Bold)
-Add-GradientWord $g "AIOS" $wordFont 13 192 140 52
+Add-GradientWord $g "OSAI" $wordFont 13 192 140 52
 $rulePen = New-Object System.Drawing.Pen($accent, 2)
 $g.DrawLine($rulePen, 17, 240, 58, 240)
 $subFont = New-Object System.Drawing.Font("Segoe UI", 10)
@@ -80,7 +80,7 @@ $res = New-Canvas 150 57
 $bmp = $res[0]; $g = $res[1]
 Add-Glow $g 8 8 70 50
 $hFont = New-Object System.Drawing.Font("Segoe UI", 15, [System.Drawing.FontStyle]::Bold)
-Add-GradientWord $g "AIOS" $hFont 11 16 62 26
+Add-GradientWord $g "OSAI" $hFont 11 16 62 26
 $g.FillEllipse((New-Object System.Drawing.SolidBrush($accent)), 70, 25, 6, 6)
 $g.Dispose()
 $bmp.Save((Join-Path $PSScriptRoot "header.bmp"), [System.Drawing.Imaging.ImageFormat]::Bmp)

@@ -9,7 +9,7 @@ import { invoke } from "./tauri";
 export type ChannelStatus = "connected" | "disconnected" | "soon";
 
 /**
- * One channel AIOS speaks through. WhatsApp is the live, fully-detected proof;
+ * One channel OSAI speaks through. WhatsApp is the live, fully-detected proof;
  * the rest are connectors on the way. Health + recent activity are best-effort:
  * any field may be null when its source is unavailable (or the channel is
  * "soon" — connectors that don't exist yet carry null stats).
@@ -29,7 +29,7 @@ export interface Channel {
   pid: number | null;
   /** Humanized process uptime, e.g. "3h 12m". */
   uptime: string | null;
-  /** launchd job label, e.g. "com.aios.aios-bridge-bsg". */
+  /** launchd job label, e.g. "com.osai.osai-bridge-bsg". */
   launchd: string | null;
   /** Whether a matching launchd job is loaded. */
   loaded: boolean;
@@ -62,7 +62,7 @@ export interface Channels {
 /** Back-compat alias for the roster shape. */
 export type Bridges = Channels;
 
-/** Fetches every channel AIOS speaks through, with status + live health. */
+/** Fetches every channel OSAI speaks through, with status + live health. */
 export async function listBridges(): Promise<Channels> {
   return invoke<Channels>("list_bridges");
 }
@@ -80,7 +80,7 @@ export interface BridgeMessage {
   ts: string;
   /** Time since the message, e.g. "4m" — null if unparseable. */
   tsAgo: string | null;
-  /** "out" = sent by AIOS, "in" = received. */
+  /** "out" = sent by OSAI, "in" = received. */
   direction: "out" | "in";
   /** Counterparty — a name when known, else a phone/id. */
   peer: string;

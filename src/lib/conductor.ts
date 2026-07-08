@@ -101,7 +101,7 @@ function parseSegment(
 
   // ask/tell — the rest of the segment is the prompt
   const ask = s.match(
-    /^(?:ask|tell)\s+(?:(?:claude|codex|opencode|aios|the\s+agent|the\s+ai|ai)\s+)?(?:to\s+)?(.+)$/,
+    /^(?:ask|tell)\s+(?:(?:claude|codex|opencode|osai|the\s+agent|the\s+ai|ai)\s+)?(?:to\s+)?(.+)$/,
   );
   if (ask) return { kind: "ask", text: ask[1].trim() };
 

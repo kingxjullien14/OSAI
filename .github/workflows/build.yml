@@ -57,7 +57,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater signing: createUpdaterArtifacts requires the private key or
           # the build fails ("A public key has been found, but no private key").
-          # The secret holds the CONTENT of ~/.aios/keys/aios-updater.key (see
+          # The secret holds the CONTENT of ~/.osai/keys/osai-updater.key (see
           # RELEASING.md). The key is passwordless — the explicitly-empty
           # password env skips the interactive prompt that would hang CI.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

@@ -3,7 +3,7 @@
  *  icons-only sidebar rail WITHOUT turning every row into a motion component
  *  (the rail is drag/drop + menu heavy — minimal surface is the point). Attach
  *  the two handlers to the scrolling rail container; tag each magnifiable
- *  control with `aios-dock-icon` (App.css owns the `transform: scale(var(...))`
+ *  control with `osai-dock-icon` (App.css owns the `transform: scale(var(...))`
  *  + transition). No reflow — icons grow over the gap like a real dock.
  *  Reduce-motion → no scaling (the move handler bails). */
 import type { PointerEvent } from "react";
@@ -17,7 +17,7 @@ const RANGE = 96;
 export function dockMagnifyMove(e: PointerEvent<HTMLElement>): void {
   if (prefersReducedMotion()) return;
   const y = e.clientY;
-  e.currentTarget.querySelectorAll<HTMLElement>(".aios-dock-icon").forEach((el) => {
+  e.currentTarget.querySelectorAll<HTMLElement>(".osai-dock-icon").forEach((el) => {
     const r = el.getBoundingClientRect();
     const center = r.top + r.height / 2;
     const t = Math.max(0, 1 - Math.abs(y - center) / RANGE);
@@ -26,7 +26,7 @@ export function dockMagnifyMove(e: PointerEvent<HTMLElement>): void {
 }
 
 export function dockMagnifyReset(e: PointerEvent<HTMLElement>): void {
-  e.currentTarget.querySelectorAll<HTMLElement>(".aios-dock-icon").forEach((el) => {
+  e.currentTarget.querySelectorAll<HTMLElement>(".osai-dock-icon").forEach((el) => {
     el.style.setProperty("--dock-scale", "1");
   });
 }

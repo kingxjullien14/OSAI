@@ -180,7 +180,7 @@ export async function dictateStart(): Promise<void> {
   } catch (e) {
     const name = (e as DOMException)?.name;
     if (name === "NotAllowedError" || name === "SecurityError") {
-      throw new Error("microphone permission denied — allow mic access for AIOS");
+      throw new Error("microphone permission denied — allow mic access for OSAI");
     }
     if (name === "NotFoundError" || name === "OverconstrainedError") {
       throw new Error("no microphone found");

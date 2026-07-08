@@ -1,5 +1,5 @@
 /**
- * Codex-style chat surface for the AIOS cockpit.
+ * Codex-style chat surface for the OSAI cockpit.
  *
  * Looks like OpenAI Codex's chat — centered "do anything" composer when empty,
  * clean transcript with text bubbles + tool-call cards after the first send —
@@ -404,7 +404,7 @@ const WAVEFORM_BARS: { h: number; delay: number }[] = Array.from(
   { length: 40 },
   (_, i) => ({ h: 28 + ((i * 37) % 60), delay: (i * 70) % 900 }),
 );
-// (the aios-wave keyframe lives in App.css now — one definition app-wide.)
+// (the osai-wave keyframe lives in App.css now — one definition app-wide.)
 
 /** File extension for a clipboard/file image mime. */
 function extFromMime(mime: string): string {
@@ -459,13 +459,13 @@ const CONTEXT_BUDGETS: Array<{ id: ContextBudgetMode; label: string; sub: string
 const CTRL_PILL =
   "flex shrink-0 items-center gap-1 rounded-full border border-transparent bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2 py-[3px] font-sans text-[11px] text-[var(--color-muted)] backdrop-blur-md transition-all duration-150 hover:border-[var(--color-border)] hover:text-[var(--color-text)]";
 const CTRL_PILL_OPEN =
-  "flex shrink-0 items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2 py-[3px] font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur-md transition-all duration-150";
+  "flex shrink-0 items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] px-2 py-[3px] font-sans text-[11px] text-[var(--color-text)] shadow-[var(--osai-glow-soft)] backdrop-blur-md transition-all duration-150";
 /** The model pill leads the action group (nearest send — the most-changed
  *  control), so it reads accent-tinted at rest (mockup 02's `.pill.model`):
  *  a faint accent wash + edge, lifting on hover. Distinct from the neutral
  *  CTRL_PILL without shouting like CTRL_PILL_OPEN. */
 const CTRL_PILL_MODEL =
-  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_38%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] hover:shadow-[var(--aios-glow-soft)]";
+  "flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_38%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-2.5 py-1 font-sans text-[11.5px] text-[var(--color-text)] backdrop-blur-md transition-all duration-150 hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] hover:shadow-[var(--osai-glow-soft)]";
 
 /** Chip ids that are now interactive control PILLS in the composer's action row,
  *  so the passive summary-chips row drops them (no duplicate readout). */
@@ -1049,7 +1049,7 @@ async function openChatFileReference(ref: string, cwd?: string | null): Promise<
 
 // ── component ────────────────────────────────────────────────────────────────
 
-const runEventsStorageKey = (sessionId: string) => `aios.chat.run-events:${sessionId}`;
+const runEventsStorageKey = (sessionId: string) => `osai.chat.run-events:${sessionId}`;
 
 export function ChatPane({
   cwd,
@@ -1160,7 +1160,7 @@ export function ChatPane({
   // composer draft persists per pane so /clear, a restart, or a remount never
   // loses what you were typing. Keyed by paneKey; seed (e.g. notes "send to AI")
   // still wins on first mount.
-  const draftKey = paneKey ? `aios-chat-draft:${paneKey}` : null;
+  const draftKey = paneKey ? `osai-chat-draft:${paneKey}` : null;
   const [input, setInput] = useState<string>(() => {
     if (seed) return seed;
     if (draftKey) {
@@ -1566,7 +1566,7 @@ export function ChatPane({
   // ── composer autocomplete (copilot-style) ──────────────────────────────────
   // Past sent messages, newest first — the source for inline ghost completion.
   // Persisted across sessions so the suggestions are useful from the first keypress.
-  const HISTORY_KEY = "aios.chat.history";
+  const HISTORY_KEY = "osai.chat.history";
   const historyRef = useRef<string[]>([]);
   useEffect(() => {
     try {
@@ -2142,7 +2142,7 @@ export function ChatPane({
         // cost intentionally omitted — the user runs on subs, $ figures are noise.
         // A lone duration with no tokens + no message is the COMPACTION completion
         // (claude reports no usage for it) — a bare "30s" footer in an otherwise
-        // empty AIOS frame reads as broken. Emit an EMPTY footer so the blocks
+        // empty OSAI frame reads as broken. Emit an EMPTY footer so the blocks
         // builder drops the result block (no hollow frame); durationMs still rides
         // the turn for the activity line. Mirrors the replay path (chatStream.ts),
         // which already skips these empty-success footers.
@@ -2171,7 +2171,7 @@ export function ChatPane({
       }
 
       // surface a backend stderr line (missing binary / not logged in / bad flag)
-      case "aios_stderr": {
+      case "osai_stderr": {
         if (ev.text) onPetError(ev.text);
         if (ev.text) {
           setTurns((prev) => [
@@ -2724,7 +2724,7 @@ export function ChatPane({
       return;
     }
     try {
-      const raw = localStorage.getItem(`aios.chat.pins.${openSessionId}`);
+      const raw = localStorage.getItem(`osai.chat.pins.${openSessionId}`);
       setPins(raw ? (JSON.parse(raw) as { h: string; preview: string }[]) : []);
     } catch {
       setPins([]);
@@ -2735,7 +2735,7 @@ export function ChatPane({
       setPins(next);
       if (openSessionId) {
         try {
-          localStorage.setItem(`aios.chat.pins.${openSessionId}`, JSON.stringify(next));
+          localStorage.setItem(`osai.chat.pins.${openSessionId}`, JSON.stringify(next));
         } catch {
           /* quota — pins stay session-local */
         }
@@ -2775,7 +2775,7 @@ export function ChatPane({
   // plan cards the user stopped before deciding → a quiet "cancelled" verdict.
   const [planCancelled, setPlanCancelled] = useState<Record<string, boolean>>({});
   // Response branching: per user-turn id, which regenerated response variant is
-  // showing (unset = the latest). Drives the ‹N/M› switcher in the AIOS frame.
+  // showing (unset = the latest). Drives the ‹N/M› switcher in the OSAI frame.
   const [activeVariant, setActiveVariant] = useState<Record<string, number>>({});
 
   // ── needs-you attention (sidebar dot) ───────────────────────────────────────
@@ -3254,7 +3254,7 @@ export function ChatPane({
         recordChatSession(sid, stableTitle, cwd ?? null, engine, model.id)
           // tell an open History pane to refresh, so a chat recorded after it was
           // opened (e.g. a new pane you then close) shows up without a manual reload.
-          .then(() => window.dispatchEvent(new Event("aios:history-changed")))
+          .then(() => window.dispatchEvent(new Event("osai:history-changed")))
           .catch(() => {
             // failed to persist → allow a later send to retry
             if (firstRecord) recordedRef.current = false;
@@ -4621,7 +4621,7 @@ export function ChatPane({
                   </span>
                   <span className="h-1.5 overflow-hidden rounded-full bg-[var(--color-panel-2)]">
                     <span
-                      className="block h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--aios-accent-2))]"
+                      className="block h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--osai-accent-2))]"
                       style={{ width: `${Math.max(2, ctxMeter.pct)}%` }}
                     />
                   </span>
@@ -4755,7 +4755,7 @@ export function ChatPane({
                     className="w-[3px] shrink-0 origin-center rounded-full bg-[var(--color-accent)]"
                     style={{
                       height: `${b.h}%`,
-                      animation: "aios-wave 0.9s ease-in-out infinite",
+                      animation: "osai-wave 0.9s ease-in-out infinite",
                       animationDelay: `${b.delay}ms`,
                     }}
                   />
@@ -4864,7 +4864,7 @@ export function ChatPane({
                   ) : permission.id === "acceptEdits" ? (
                     <ShieldHalf size={14} className="text-[var(--color-accent)]" />
                   ) : permission.id === "plan" ? (
-                    <Shield size={14} style={{ color: "var(--aios-accent-2)" }} />
+                    <Shield size={14} style={{ color: "var(--osai-accent-2)" }} />
                   ) : (
                     <Shield size={14} className="text-[var(--color-muted)]" />
                   )
@@ -4922,7 +4922,7 @@ export function ChatPane({
                           className={`flex-1 rounded-md px-0.5 py-[3px] text-center font-sans text-[10.5px] transition-colors ${
                             on
                               ? b.id === "ultracode"
-                                ? "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_30%,transparent),color-mix(in_srgb,var(--aios-accent-2)_25%,transparent))] text-[var(--color-text)]"
+                                ? "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_30%,transparent),color-mix(in_srgb,var(--osai-accent-2)_25%,transparent))] text-[var(--color-text)]"
                                 : "bg-[var(--color-accent-soft)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
                               : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
                           }`}
@@ -4951,7 +4951,7 @@ export function ChatPane({
                 title={planMode ? "plan-first armed — click to disarm" : "plan-first: propose a plan before building"}
                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors ${
                   planMode
-                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
+                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--osai-glow-soft)]"
                     : "border border-transparent text-[var(--color-muted)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
                 }`}
               >
@@ -4965,7 +4965,7 @@ export function ChatPane({
                 title={goal.trim() ? `goal — ${goal}` : "set an ongoing goal (kept across turns)"}
                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors ${
                   goal.trim()
-                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)]"
+                    ? "border border-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-[var(--osai-glow-soft)]"
                     : "border border-transparent text-[var(--color-muted)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
                 }`}
               >
@@ -4999,7 +4999,7 @@ export function ChatPane({
                 rail where attach/mic sat, for exactly the run's duration. */}
             {activeRun && (
               <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-panel-2)_45%,transparent)] px-2.5 font-mono text-[9.5px] text-[var(--color-muted)]">
-                <span className="h-[6px] w-[6px] rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+                <span className="h-[6px] w-[6px] rounded-full bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)]" />
                 working · {fmtClock(workClock)}
               </span>
             )}
@@ -5434,7 +5434,7 @@ export function ChatPane({
   }, [blocks]);
 
   // ── find-in-chat ────────────────────────────────────────────────────────
-  // mod+F routes here via App's handleCmdF → "aios-chat-find" (same context-
+  // mod+F routes here via App's handleCmdF → "osai-chat-find" (same context-
   // aware pattern as the browser pane; before this, ⌘F on a chat pane
   // FULLSCREENED it). Matching is block-granular: jump + one-shot highlight
   // wash, with collapsed thinking/activity groups force-opened on their hits —
@@ -5502,8 +5502,8 @@ export function ChatPane({
         findInputRef.current?.select();
       });
     };
-    window.addEventListener("aios-chat-find", onFind);
-    return () => window.removeEventListener("aios-chat-find", onFind);
+    window.addEventListener("osai-chat-find", onFind);
+    return () => window.removeEventListener("osai-chat-find", onFind);
   }, [paneKey]);
 
   // ── run cinema — replay the captured run-event timeline ────────────────
@@ -5775,12 +5775,12 @@ export function ChatPane({
             (drift keyframes die under reduce-motion; the static wash stays). */}
         <div
           aria-hidden
-          className="aios-drift-a pointer-events-none absolute h-[44vh] w-[44vh] rounded-full opacity-[0.04]"
+          className="osai-drift-a pointer-events-none absolute h-[44vh] w-[44vh] rounded-full opacity-[0.04]"
           style={{ background: "radial-gradient(circle, var(--color-accent), transparent 62%)", filter: "blur(80px)" }}
         />
         <div
           aria-hidden
-          className="aios-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
+          className="osai-drift-b pointer-events-none absolute h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
           style={{ background: "radial-gradient(circle, var(--color-highlight), transparent 62%)", filter: "blur(80px)" }}
         />
         {/* an open overlay (the /resume ledger drops BELOW the composer here)
@@ -5810,7 +5810,7 @@ export function ChatPane({
                         ? "resumed"
                         : "fresh";
               const accent = (key: string, text: string) => (
-                <span key={key} className="aios-greet-name">
+                <span key={key} className="osai-greet-name">
                   {text}
                 </span>
               );
@@ -5910,7 +5910,7 @@ export function ChatPane({
       data-chat-pane
       tabIndex={-1}
       onKeyDown={onPaneKeyDown}
-      className="aios-stage relative flex h-full min-h-0 w-full flex-col outline-none"
+      className="osai-stage relative flex h-full min-h-0 w-full flex-col outline-none"
     >
       {/* quiet dot-grid texture on the chat ground — behind the aurora + content */}
       <DotPattern className="-z-10" gap={26} />
@@ -5919,12 +5919,12 @@ export function ChatPane({
           static wash stays). */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div
-          className="aios-drift-a absolute left-[6%] top-[10%] h-[44vh] w-[44vh] rounded-full opacity-[0.035]"
+          className="osai-drift-a absolute left-[6%] top-[10%] h-[44vh] w-[44vh] rounded-full opacity-[0.035]"
           style={{ background: "radial-gradient(circle, var(--color-accent), transparent 62%)", filter: "blur(90px)" }}
         />
         <div
-          className="aios-drift-b absolute bottom-[6%] right-[4%] h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
-          style={{ background: "radial-gradient(circle, var(--aios-accent-2), transparent 62%)", filter: "blur(90px)" }}
+          className="osai-drift-b absolute bottom-[6%] right-[4%] h-[36vh] w-[36vh] rounded-full opacity-[0.03]"
+          style={{ background: "radial-gradient(circle, var(--osai-accent-2), transparent 62%)", filter: "blur(90px)" }}
         />
       </div>
       <div
@@ -5941,7 +5941,7 @@ export function ChatPane({
             into a follow-up about exactly this passage. */}
         {snipTip && (
           <div
-            className="scale-in absolute z-30 flex -translate-x-1/2 items-center overflow-hidden rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--aios-shadow-pop)]"
+            className="scale-in absolute z-30 flex -translate-x-1/2 items-center overflow-hidden rounded-full border border-[var(--color-border-strong)] bg-[var(--color-panel-2)]/95 font-sans text-[11px] text-[var(--color-text)] shadow-[var(--osai-shadow-pop)]"
             style={{ left: snipTip.x, top: Math.max(snipTip.y - 34, 4) }}
           >
             <button
@@ -5992,7 +5992,7 @@ export function ChatPane({
               {pinResolved.map((p) => (
                 <span
                   key={p.h}
-                  className="glass-strong flex max-w-[340px] items-center gap-1.5 overflow-hidden rounded-full py-1 pl-2.5 pr-1 shadow-[var(--aios-shadow-pop)]"
+                  className="glass-strong flex max-w-[340px] items-center gap-1.5 overflow-hidden rounded-full py-1 pl-2.5 pr-1 shadow-[var(--osai-shadow-pop)]"
                 >
                   <Pin size={10} className="shrink-0 fill-current text-[var(--color-accent)]" />
                   <button
@@ -6402,7 +6402,7 @@ export function ChatPane({
               // NO position transition (only `transition-colors` for the hover
               // tint): the thumb's top/height come straight from scroll state, so an
               // ease would make it trail the scroll — the old "follows late" lag.
-              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--aios-glow-soft)] transition-colors group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
+              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--osai-glow-soft)] transition-colors group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
               style={{ top: `${railWin.top * 100}%`, height: `${Math.max(railWin.size * 100, 6)}%` }}
             />
           )}
@@ -6437,7 +6437,7 @@ export function ChatPane({
           {/* hover / drag bubble: time + snippet of the nearest turn */}
           {scrubBubble && (
             <div
-              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--aios-shadow-pop)]"
+              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--osai-shadow-pop)]"
               style={{ top: `${scrubBubble.frac * 100}%` }}
             >
               {scrubBubble.at != null && (
@@ -6459,7 +6459,7 @@ export function ChatPane({
           type="button"
           onClick={() => setOutlineOpen((v) => !v)}
           title={outlineOpen ? "close outline" : "conversation outline"}
-          className={`glass-strong absolute right-7 top-3 z-30 grid h-7 w-7 place-items-center rounded-full shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] ${
+          className={`glass-strong absolute right-7 top-3 z-30 grid h-7 w-7 place-items-center rounded-full shadow-[var(--osai-shadow-pop)] transition-colors hover:text-[var(--color-accent)] ${
             outlineOpen ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
           }`}
         >
@@ -6467,7 +6467,7 @@ export function ChatPane({
         </button>
       )}
       {outlineOpen && outlineEntries.length >= 3 && (
-        <div className="glass-strong absolute bottom-28 right-7 top-12 z-30 flex w-80 flex-col overflow-hidden rounded-xl shadow-[var(--aios-shadow-pop)]">
+        <div className="glass-strong absolute bottom-28 right-7 top-12 z-30 flex w-80 flex-col overflow-hidden rounded-xl shadow-[var(--osai-shadow-pop)]">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-faint)]">
               outline · {outlineEntries.length}
@@ -6523,7 +6523,7 @@ export function ChatPane({
           type="button"
           onClick={jumpToLatest}
           title={newBelow > 0 ? `${newBelow} new — scroll to bottom` : "scroll to bottom"}
-          className={`glass-strong absolute bottom-24 right-5 z-20 flex h-9 items-center justify-center gap-1.5 rounded-full text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--aios-glow-soft)] ${
+          className={`glass-strong absolute bottom-24 right-5 z-20 flex h-9 items-center justify-center gap-1.5 rounded-full text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)] transition-colors hover:text-[var(--color-accent)] hover:shadow-[var(--osai-glow-soft)] ${
             newBelow > 0 ? "px-3.5" : "w-9"
           }`}
         >
@@ -6695,7 +6695,7 @@ function RunRail({ phase }: { phase: RunPhase }) {
           <span
             className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
               i === idx
-                ? "aios-node-live bg-[var(--color-accent)]"
+                ? "osai-node-live bg-[var(--color-accent)]"
                 : i < idx
                   ? "bg-[var(--color-accent)]/45"
                   : "border border-[var(--color-border-strong)]"
@@ -7372,7 +7372,7 @@ function ChangeCard({ turn }: { turn: ToolTurn }) {
   };
 
   return (
-    <div className="aios-spotlight glass overflow-hidden rounded-xl" onMouseMove={spotlightMove}>
+    <div className="osai-spotlight glass overflow-hidden rounded-xl" onMouseMove={spotlightMove}>
       <button
         type="button"
         onClick={open}

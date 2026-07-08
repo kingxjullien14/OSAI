@@ -1,4 +1,4 @@
-/** Plugins / skills — "make AIOS work your way". Lists the canonical AIOS skill
+/** Plugins / skills — "make OSAI work your way". Lists the canonical OSAI skill
  *  catalog (grouped) + connected MCP servers, searchable. Read-only catalog. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 

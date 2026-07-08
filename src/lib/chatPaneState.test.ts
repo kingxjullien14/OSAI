@@ -181,7 +181,7 @@ test("stopStrategy: codex interrupts (turn/interrupt), only opencode kill-restar
 test("composerContextChips exposes the control contract at a glance", () => {
   assert.deepEqual(
     composerContextChips({
-      cwd: "/Users/aios/Repo/aios/shell",
+      cwd: "/Users/osai/Repo/osai/shell",
       modelLabel: "gpt-5.3 codex spark",
       effortLabel: "low",
       permissionLabel: "full access",
@@ -224,7 +224,7 @@ test("contextLedger estimates pre-send context buckets and warns on expensive mo
 
   const heavy = contextLedger({
     draft: "x".repeat(6000),
-    goal: "keep improving aios",
+    goal: "keep improving osai",
     planMode: true,
     memoryCount: 4,
     imageCount: 2,
@@ -264,17 +264,17 @@ test("resumeTitle compacts the first meaningful codex prompt", () => {
 
 test("pane routing identifies browser links and local file targets", () => {
   assert.equal(isHttpPaneTarget("https://docs.anthropic.com/claude-code"), true);
-  assert.equal(isPaneFileTarget("/Users/aios/docs/research.md:12"), true);
+  assert.equal(isPaneFileTarget("/Users/osai/docs/research.md:12"), true);
   assert.equal(isPaneFileTarget("docs/research/codex-desktop-steal-list.md"), true);
   assert.equal(isPaneFileTarget("not a path"), false);
 });
 
 test("pane routing resolves markdown links relative to the current file", () => {
   assert.equal(
-    resolvePaneFileTarget("../notes/todo.md#next", "/Users/aios/project/docs/research/current.md"),
-    "/Users/aios/project/docs/notes/todo.md",
+    resolvePaneFileTarget("../notes/todo.md#next", "/Users/osai/project/docs/research/current.md"),
+    "/Users/osai/project/docs/notes/todo.md",
   );
-  assert.equal(targetLabel("/Users/aios/project/docs/notes/todo.md:44"), "todo.md");
+  assert.equal(targetLabel("/Users/osai/project/docs/notes/todo.md:44"), "todo.md");
 });
 
 test("resumeTitle strips markdown checkbox/list/heading noise from titles", () => {

@@ -390,20 +390,20 @@ export function onPaneOverlay(fn: (keys: ReadonlySet<string>) => void): () => vo
 }
 
 // ── cross-pane drag signal ───────────────────────────────────────────────────
-// When an item carrying our `application/x-aios-path` payload is dragged
+// When an item carrying our `application/x-osai-path` payload is dragged
 // anywhere in the app, every pane's drop overlay should light up so the drop is
 // captured ABOVE intercepting children (e.g. xterm's canvas). We broadcast a
 // single app-wide "a path drag is in flight" boolean from window-level dnd
-// events, and panes subscribe via `onAiosDrag`.
+// events, and panes subscribe via `onOsaiDrag`.
 
 /** The dataTransfer type a draggable pane item must set to be droppable. */
-export const AIOS_PATH_MIME = "application/x-aios-path";
+export const OSAI_PATH_MIME = "application/x-osai-path";
 
-/** Set ALONGSIDE AIOS_PATH_MIME when the dragged item is a DIRECTORY (Files-pane
+/** Set ALONGSIDE OSAI_PATH_MIME when the dragged item is a DIRECTORY (Files-pane
  *  folder row). Drop targets read this to do the folder-appropriate thing:
  *  terminal → `cd <dir>`, files pane → set root to it. Value = the abs dir path
  *  (same as the path MIME), presence of the type is what flags "this is a dir". */
-export const AIOS_DIR_MIME = "application/x-aios-dir";
+export const OSAI_DIR_MIME = "application/x-osai-dir";
 
 type DragListener = (active: boolean) => void;
 const dragListeners = new Set<DragListener>();
@@ -416,7 +416,7 @@ function setDragActive(active: boolean) {
 }
 
 /** Subscribe to the app-wide path-drag signal. Returns an unsubscribe fn. */
-export function onAiosDrag(fn: DragListener): () => void {
+export function onOsaiDrag(fn: DragListener): () => void {
   dragListeners.add(fn);
   fn(dragActive); // sync current state on mount
   return () => {
@@ -452,7 +452,7 @@ export function onWindowGesture(fn: DragListener): () => void {
 // Tauri's dragDropEnabled swallows HTML5 drag events inside the Windows
 // webview (the same reason pane-reorder is pointer-driven), so in-app drags
 // (Files-pane row → terminal/chat/files) ride plain pointer events: the source
-// calls `startPathDrag` once its 6px threshold trips; the existing onAiosDrag
+// calls `startPathDrag` once its 6px threshold trips; the existing onOsaiDrag
 // signal arms every PaneDropZone overlay; the overlay under the cursor reads
 // `currentPathDrag()` on pointerup and delivers. HTML5 drags keep working
 // where the platform allows them (macOS) — both paths feed the same overlays.
@@ -488,7 +488,7 @@ export function startPathDrag(
     "position:fixed;z-index:9999;pointer-events:none;padding:3px 9px;" +
     "font:11px ui-monospace,monospace;color:var(--color-text);" +
     "background:var(--color-panel-2);border:1px solid var(--color-border-strong);" +
-    "border-radius:9999px;box-shadow:var(--aios-shadow-pop);opacity:0.95;";
+    "border-radius:9999px;box-shadow:var(--osai-shadow-pop);opacity:0.95;";
   const place = (x: number, y: number) => {
     ghost.style.left = `${x + 14}px`;
     ghost.style.top = `${y + 12}px`;
@@ -527,8 +527,8 @@ export function startPathDrag(
 // hit-tests the pane registry). These window listeners therefore arm for the
 // in-app drags, which is exactly what triggers the browser webview-hide unlock.
 // Gutter-resizes use mouse events (not HTML5 dnd) so they never trip this.
-if (typeof window !== "undefined" && !(window as unknown as { __aiosDragWired?: boolean }).__aiosDragWired) {
-  (window as unknown as { __aiosDragWired?: boolean }).__aiosDragWired = true;
+if (typeof window !== "undefined" && !(window as unknown as { __osaiDragWired?: boolean }).__osaiDragWired) {
+  (window as unknown as { __osaiDragWired?: boolean }).__osaiDragWired = true;
   const arm = () => setDragActive(true);
   const disarm = () => setDragActive(false);
   window.addEventListener("dragenter", arm, true);

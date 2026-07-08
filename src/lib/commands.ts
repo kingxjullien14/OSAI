@@ -16,7 +16,7 @@ export interface CommandResult {
   error?: string;
 }
 
-export interface AiosCommand {
+export interface OsaiCommand {
   id: string;
   label: string;
   description?: string;
@@ -46,7 +46,7 @@ export interface CommandInput {
   ) => CommandResult | Promise<CommandResult> | void | Promise<void> | string;
 }
 
-export function createCommand(input: CommandInput): AiosCommand {
+export function createCommand(input: CommandInput): OsaiCommand {
   return {
     ...input,
     danger: input.danger ?? "none",
@@ -61,7 +61,7 @@ export function createCommand(input: CommandInput): AiosCommand {
 }
 
 export async function runCommand(
-  command: AiosCommand,
+  command: OsaiCommand,
   context: CommandContext,
   input?: unknown,
 ): Promise<CommandResult> {
@@ -72,7 +72,7 @@ export async function runCommand(
 }
 
 export function commandToPaletteCommand(
-  command: AiosCommand,
+  command: OsaiCommand,
   options: {
     context: CommandContext;
     group?: string;

@@ -140,7 +140,7 @@ export const EFFORTS: EffortOption[] = [
  * A streamed claude event. Intentionally LOOSE — the component narrows on
  * `type` and digs into the relevant nested shape. Common types seen:
  * `system` (subtype init/hook_*), `assistant`, `stream_event`, `result`,
- * `rate_limit_event`, plus our synthetic `aios_stderr`.
+ * `rate_limit_event`, plus our synthetic `osai_stderr`.
  */
 export interface ChatEvent {
   type: string;

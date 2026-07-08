@@ -1,5 +1,5 @@
 /** Glassmorphic settings window — native-feeling preferences modal for the
- *  AIOS cockpit. Left nav rail + scrollable right panel. Esc / backdrop close.
+ *  OSAI cockpit. Left nav rail + scrollable right panel. Esc / backdrop close.
  *  Every control persists through src/lib/settings.ts. lowercase, terse. */
 import {
   lazy,
@@ -1195,7 +1195,7 @@ export function Settings({
         aria-modal="true"
         aria-label="settings"
         tabIndex={-1}
-        className="glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--aios-shadow-pop)] focus:outline-none"
+        className="glass flex h-[520px] w-[720px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 shadow-[var(--osai-shadow-pop)] focus:outline-none"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => trapTab(e, e.currentTarget)}
       >
@@ -1211,7 +1211,7 @@ export function Settings({
             <SlidingIndicator
               top={navRect.top}
               height={navRect.height}
-              className="rounded-lg bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] shadow-[inset_2px_0_0_var(--color-accent),inset_0_0_24px_-14px_var(--color-accent),var(--aios-glow-soft)]"
+              className="rounded-lg bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] shadow-[inset_2px_0_0_var(--color-accent),inset_0_0_24px_-14px_var(--color-accent),var(--osai-glow-soft)]"
             />
             {NAV.map(({ id, label, icon: Icon }) => {
               const active = id === section;
@@ -1278,7 +1278,7 @@ export function Settings({
                   >
                     <button
                       type="button"
-                      onClick={() => window.dispatchEvent(new Event("aios:replay-onboarding"))}
+                      onClick={() => window.dispatchEvent(new Event("osai:replay-onboarding"))}
                       className="rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
                     >
                       replay setup
@@ -1295,19 +1295,19 @@ export function Settings({
                   </Row>
                   <Row
                     label="terminal socket"
-                    sub="private tmux/psmux namespace for AIOS's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
+                    sub="private tmux/psmux namespace for OSAI's persistent terminals — change it to isolate from other tmux servers (takes effect on the next terminal you open)"
                   >
                     <input
                       value={s.terminalSocket}
                       onChange={(e) => patch({ terminalSocket: e.target.value })}
-                      placeholder="aios"
+                      placeholder="osai"
                       spellCheck={false}
                       className="w-[230px] rounded-lg border border-[var(--color-border)] bg-[var(--color-panel-2)]/50 px-2.5 py-1 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     />
                   </Row>
                   <Row
                     label="minimize to tray"
-                    sub="closing the window keeps AIOS running in the system tray (a tray icon gives show / quit) instead of quitting"
+                    sub="closing the window keeps OSAI running in the system tray (a tray icon gives show / quit) instead of quitting"
                   >
                     <Toggle
                       checked={s.minimizeToTray}
@@ -1631,7 +1631,7 @@ export function Settings({
                 <>
                   <Row
                     label="default oracle name"
-                    sub="identity for the one-tap 'spawn an oracle' shortcut (aios-<id>); blank → your name, else 'agent'. Oracles share the terminal socket (see general settings)."
+                    sub="identity for the one-tap 'spawn an oracle' shortcut (osai-<id>); blank → your name, else 'agent'. Oracles share the terminal socket (see general settings)."
                   >
                     <input
                       value={s.primaryOracleId}
@@ -1652,12 +1652,12 @@ export function Settings({
                     />
                   </Row>
                   <Row
-                    label="show non-aios tmux sessions"
-                    sub="include sessions not started by aios"
+                    label="show non-osai tmux sessions"
+                    sub="include sessions not started by osai"
                   >
                     <Toggle
-                      checked={s.showNonAiosSessions}
-                      onChange={(v) => patch({ showNonAiosSessions: v })}
+                      checked={s.showNonOsaiSessions}
+                      onChange={(v) => patch({ showNonOsaiSessions: v })}
                     />
                   </Row>
                 </>
@@ -1714,12 +1714,12 @@ export function Settings({
                 <div className="flex flex-col items-center gap-3 py-8 text-center">
                   <img
                     src="/mascot.png"
-                    alt="aios"
+                    alt="osai"
                     className="h-20 w-20 rounded-2xl object-cover shadow-lg"
                   />
                   <div>
                     <div className="text-[16px] font-medium text-[var(--color-text)]">
-                      AIOS cockpit
+                      OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
                       v1.0.0 · Jul.Nazz

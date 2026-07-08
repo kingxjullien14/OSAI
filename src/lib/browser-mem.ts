@@ -7,7 +7,7 @@
  *  localStorage. Generic (un-pinned) browser panes have no stable id, so they
  *  don't participate — only pinned sites get memory. */
 
-const KEY = "aios.browser.lastUrl";
+const KEY = "osai.browser.lastUrl";
 
 type Mem = Record<string, string>;
 
@@ -56,7 +56,7 @@ export function forgetUrl(key: string | undefined): void {
 // ── session-restore: per-pane-key last url ───────────────────────────────────
 // Item 4. A GENERIC (un-pinned) browser pane has no stable sidebar id, but its
 // pane KEY *is* persisted in the layout (App.tsx B1) and reused on restore. So a
-// browser pane uses its own pane key as the memKey — this same `aios.browser.
+// browser pane uses its own pane key as the memKey — this same `osai.browser.
 // lastUrl` map then records its last url, and on restore the pane reads it back
 // to reopen where it left off. recallUrl/rememberUrl above already key by an
 // arbitrary string, so no new store is needed — the pane key just joins the

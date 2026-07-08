@@ -71,7 +71,7 @@ test("buildJarvisBriefing converts notifications into next conversation prompts"
         at: 100,
       },
     ],
-    focus: { title: "aios shell", detail: "dashboard work" },
+    focus: { title: "osai shell", detail: "dashboard work" },
   });
 
   assert.match(briefing.primaryPrompt, /growth needs approval/);

@@ -9,7 +9,7 @@ test("mirror snapshot exposes web-safe pane state and controls", () => {
     panes: [
       { key: "chat-1", label: "chat", kind: { type: "chat" } },
       { key: "web-1", label: "youtube", kind: { type: "browser", url: "https://youtube.com" } },
-      { key: "file-1", label: "secret", kind: { type: "editor", path: "/Users/aios/secret.ts", name: "secret.ts" } },
+      { key: "file-1", label: "secret", kind: { type: "editor", path: "/Users/osai/secret.ts", name: "secret.ts" } },
     ],
     hiddenKeys: ["file-1"],
     activeKey: "web-1",
@@ -20,7 +20,7 @@ test("mirror snapshot exposes web-safe pane state and controls", () => {
     now: 123,
   });
 
-  assert.equal(snapshot.schema, "aios.mirror.v1");
+  assert.equal(snapshot.schema, "osai.mirror.v1");
   assert.equal(snapshot.desktop.visiblePanesCount, 2);
   assert.equal(snapshot.panes[1].active, true);
   assert.equal(snapshot.panes[1].renderMode, "visual");

@@ -1,12 +1,12 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "aios-mirror-worker",
+  "name": "osai-mirror-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-02",
   "durable_objects": {
     "bindings": [
       {
-        "name": "AIOS_MIRROR",
+        "name": "OSAI_MIRROR",
         "class_name": "MirrorRoom"
       }
     ]

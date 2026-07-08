@@ -39,7 +39,7 @@ import { usagePaceRisk } from "../../lib/usagePace";
 import {
   subscribeNotifications,
   listNotifications,
-  type AiosNotification,
+  type OsaiNotification,
 } from "../../lib/notifications";
 import { loadSettings, subscribe as subscribeSettings } from "../../lib/settings";
 import { PaneMenu, type PaneMenuEntry } from "../PaneMenu";
@@ -65,7 +65,7 @@ export function PetOverlay({
   activeSurface: PetSurface | null;
   onOpenRoom: () => void;
   /** deep-link opener for click-to-jump speech (App's openNotificationTarget). */
-  onOpenTarget?: (item: AiosNotification) => void;
+  onOpenTarget?: (item: OsaiNotification) => void;
 }) {
   const [soul, setSoul] = useState(loadSoul);
   useEffect(() => subscribeSoul(setSoul), []);
@@ -431,7 +431,7 @@ export function PetOverlay({
               setSpeech(null);
             }}
             title={speech.jump ? "jump there" : undefined}
-            className={`modal-in absolute bottom-[calc(100%+8px)] z-10 w-max max-w-[230px] rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-2.5 py-1.5 text-left text-[11px] leading-snug text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)] ${
+            className={`modal-in absolute bottom-[calc(100%+8px)] z-10 w-max max-w-[230px] rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-2.5 py-1.5 text-left text-[11px] leading-snug text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)] ${
               speech.align === "left"
                 ? "left-0"
                 : speech.align === "right"

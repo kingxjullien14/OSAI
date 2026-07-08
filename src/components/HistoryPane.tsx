@@ -104,11 +104,11 @@ export function HistoryPane({ onOpenChat }: Props) {
       window.clearTimeout(t);
       t = window.setTimeout(refresh, 300);
     };
-    window.addEventListener("aios:history-changed", ping);
+    window.addEventListener("osai:history-changed", ping);
     window.addEventListener("focus", ping);
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener("aios:history-changed", ping);
+      window.removeEventListener("osai:history-changed", ping);
       window.removeEventListener("focus", ping);
     };
   }, [refresh]);
@@ -271,7 +271,7 @@ export function HistoryPane({ onOpenChat }: Props) {
         }}
         className={`group/hist flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-all ${
           isSel
-            ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--aios-glow-soft)]"
+            ? "border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--color-accent-soft)] shadow-[var(--osai-glow-soft)]"
             : "border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-panel-2)]"
         }`}
       >
@@ -432,7 +432,7 @@ export function HistoryPane({ onOpenChat }: Props) {
 
       {/* multi-select action bar — a floating glass pill, bottom-center (mockup) */}
       {view === "history" && selected.size > 0 && (
-        <div className="scale-in absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--aios-glass-bg-strong)] py-1.5 pl-4 pr-2 shadow-[0_16px_44px_-16px_var(--aios-glow-accent)] backdrop-blur-xl">
+        <div className="scale-in absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--color-accent)_32%,transparent)] bg-[var(--osai-glass-bg-strong)] py-1.5 pl-4 pr-2 shadow-[0_16px_44px_-16px_var(--osai-glow-accent)] backdrop-blur-xl">
           <span className="font-sans text-[12px] text-[var(--color-text)]">
             <b className="font-mono text-[var(--color-accent)]">{selected.size}</b> selected
           </span>
@@ -615,7 +615,7 @@ export function HistoryPane({ onOpenChat }: Props) {
 
       {/* transient note */}
       {note && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[var(--color-panel-2)] px-3 py-1 font-sans text-[11px] text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)]">
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[var(--color-panel-2)] px-3 py-1 font-sans text-[11px] text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)]">
           {note}
         </div>
       )}

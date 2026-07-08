@@ -207,7 +207,7 @@ export function FileFinder({
         role="dialog"
         aria-modal="true"
         aria-label="go to file"
-        className="glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)] ring-1 ring-black/20"
+        className="glass absolute top-[14vh] flex max-h-[64vh] w-[600px] flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--osai-shadow-pop)] ring-1 ring-black/20"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // Tab from a clicked row (focus left the input) stays inside the
@@ -265,7 +265,7 @@ export function FileFinder({
           {results.length === 0 ? (
             <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
               <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] opacity-40">
-                <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--aios-accent-2))]" />
+                <span className="block h-4 w-4 rotate-45 rounded-[4px] bg-[linear-gradient(135deg,var(--color-accent),var(--osai-accent-2))]" />
               </span>
               <div className="text-[12.5px] text-[var(--color-muted)]">
                 {root ? (loading ? "indexing files…" : `nothing matches “${query}”`) : "no files pane open"}
@@ -285,12 +285,12 @@ export function FileFinder({
                     aria-selected={active}
                     onMouseMove={() => setSel(pos)}
                     onClick={() => pickAbs(c.rel)}
-                    className={`relative flex w-full items-center gap-3 rounded-[var(--aios-radius-md)] px-2.5 py-2 text-left transition-colors ${
+                    className={`relative flex w-full items-center gap-3 rounded-[var(--osai-radius-md)] px-2.5 py-2 text-left transition-colors ${
                       active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-panel-2)]/50"
                     }`}
                   >
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--aios-radius-sm)] border transition-colors ${
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--osai-radius-sm)] border transition-colors ${
                         active
                           ? "border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                           : "border-[var(--color-border)] bg-[var(--color-panel-2)]/50 text-[var(--color-muted)]"

@@ -218,15 +218,15 @@ pub fn shell_source_status() -> Result<ShellSourceStatus, String> {
 
 fn find_shell_source_root() -> Option<String> {
     let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var("AIOS_SHELL_SOURCE_ROOT") {
+    if let Ok(path) = std::env::var("OSAI_SHELL_SOURCE_ROOT") {
         candidates.push(path);
     }
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.to_string_lossy().to_string());
     }
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(format!("{home}/Repo/aios/shell"));
-        candidates.push(format!("{home}/Repo/aios/shell"));
+        candidates.push(format!("{home}/Repo/osai/shell"));
+        candidates.push(format!("{home}/Repo/osai/shell"));
     }
 
     candidates.into_iter().find_map(|path| {
@@ -521,7 +521,7 @@ pub fn list_projects() -> Vec<ProjectInfo> {
             break;
         }
         // If this dir is a project root, record it. Still descend afterward:
-        // many AIOS workspaces are monorepos with runnable nested apps, and the
+        // many OSAI workspaces are monorepos with runnable nested apps, and the
         // command palette must surface the actual app, not only the parent.
         if let Some((kind, commands)) = project_at(&dir) {
             let name = dir
@@ -1018,8 +1018,8 @@ fn detect_workspace_impl(dir: &std::path::Path) -> ProjectWorkspaceInfo {
         hidden: None,
         source: "scanned".to_string(),
         mtime,
-        manifest_path: if dir.join("aios.workspace.json").is_file() {
-            Some("aios.workspace.json".to_string())
+        manifest_path: if dir.join("osai.workspace.json").is_file() {
+            Some("osai.workspace.json".to_string())
         } else {
             None
         },
@@ -1028,7 +1028,7 @@ fn detect_workspace_impl(dir: &std::path::Path) -> ProjectWorkspaceInfo {
 }
 
 /// Best-effort default scan roots: the parent of the launch dir (e.g. C:\FHE-Work
-/// when run from C:\FHE-Work\AIOS-Superapp) + common code dirs under home. Only
+/// when run from C:\FHE-Work\OSAI-Superapp) + common code dirs under home. Only
 /// existing dirs, deduped.
 /// True for non-project SYSTEM locations that must NEVER be scanned as workspace
 /// roots — the Windows dir, install dirs, ProgramData, and any bare drive/fs root.
@@ -1136,8 +1136,8 @@ pub fn scan_workspaces(roots: Vec<String>) -> Vec<ProjectWorkspaceInfo> {
 // workspace inherits a true map of it — no per-turn preamble. The block is the only
 // region we touch; everything outside the BEGIN/END markers is the owner's.
 
-const CTX_BEGIN: &str = "<!-- AIOS:workspace BEGIN";
-const CTX_END: &str = "<!-- AIOS:workspace END -->";
+const CTX_BEGIN: &str = "<!-- OSAI:workspace BEGIN";
+const CTX_END: &str = "<!-- OSAI:workspace END -->";
 
 /// One markdown line for a component: name, role · stack · status, run cmd, path,
 /// and the supersedes link (resolved to the superseded component's name).
@@ -1187,7 +1187,7 @@ fn ctx_has_supersedes(ws: &ProjectWorkspaceInfo) -> bool {
 /// Render the full managed block (delimiters included) for a workspace.
 fn render_workspace_context(ws: &ProjectWorkspaceInfo) -> String {
     let mut s = String::new();
-    // NOTE: the "AIOS:workspace" marker itself is a PARSE ANCHOR — existing
+    // NOTE: the "OSAI:workspace" marker itself is a PARSE ANCHOR — existing
     // CLAUDE.md/AGENTS.md blocks across every workspace match on it, so it
     // keeps the codename; only the human-facing prose says OSAI.
     s.push_str(CTX_BEGIN);
@@ -1225,7 +1225,7 @@ fn render_workspace_context(ws: &ProjectWorkspaceInfo) -> String {
             "\nWhen working here: components marked `wip` (the `*-next` / `*-nitro` rewrites) supersede the `legacy` ones — default new work to the wip components unless told otherwise.\n",
         );
     }
-    s.push_str("\n_Structure auto-detected by OSAI; full machine-readable form in `aios.workspace.json`._\n");
+    s.push_str("\n_Structure auto-detected by OSAI; full machine-readable form in `osai.workspace.json`._\n");
     s.push_str(CTX_END);
     s
 }
@@ -1253,7 +1253,7 @@ fn upsert_managed_block(existing: &str, block: &str) -> String {
 }
 
 /// Ensure `line` is present in the dir's `.gitignore` (created if missing) — so the
-/// regenerable `aios.workspace.json` stays out of git by default (owner §10.2).
+/// regenerable `osai.workspace.json` stays out of git by default (owner §10.2).
 fn ensure_gitignored(dir: &std::path::Path, line: &str) {
     let path = dir.join(".gitignore");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -1276,7 +1276,7 @@ pub fn preview_workspace_context(root: String) -> String {
     render_workspace_context(&detect_workspace_impl(std::path::Path::new(&root)))
 }
 
-/// Write `aios.workspace.json` + upsert the managed block into CLAUDE.md + AGENTS.md
+/// Write `osai.workspace.json` + upsert the managed block into CLAUDE.md + AGENTS.md
 /// at the workspace root. Returns the files written. The CLI agents (Claude/Codex)
 /// then pick the context up natively from their cwd.
 #[tauri::command]
@@ -1289,9 +1289,9 @@ pub fn generate_workspace_context(root: String) -> Result<Vec<String>, String> {
     let mut written: Vec<String> = Vec::new();
 
     let json = serde_json::to_string_pretty(&ws).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("aios.workspace.json"), json + "\n").map_err(|e| e.to_string())?;
-    ensure_gitignored(dir, "aios.workspace.json");
-    written.push("aios.workspace.json".to_string());
+    std::fs::write(dir.join("osai.workspace.json"), json + "\n").map_err(|e| e.to_string())?;
+    ensure_gitignored(dir, "osai.workspace.json");
+    written.push("osai.workspace.json".to_string());
 
     let block = render_workspace_context(&ws);
     for fname in ["CLAUDE.md", "AGENTS.md"] {
@@ -1348,18 +1348,18 @@ mod workspace_tests {
 
     #[test]
     fn upsert_block_appends_then_replaces_in_place() {
-        let b1 = "<!-- AIOS:workspace BEGIN x -->\nAAA\n<!-- AIOS:workspace END -->";
+        let b1 = "<!-- OSAI:workspace BEGIN x -->\nAAA\n<!-- OSAI:workspace END -->";
         let out = upsert_managed_block("# my notes\n", b1);
         assert!(out.starts_with("# my notes"));
         assert!(out.contains("AAA"));
         // re-running replaces the block in place (no duplicate), preserves prose.
-        let b2 = "<!-- AIOS:workspace BEGIN y -->\nBBB\n<!-- AIOS:workspace END -->";
+        let b2 = "<!-- OSAI:workspace BEGIN y -->\nBBB\n<!-- OSAI:workspace END -->";
         let out2 = upsert_managed_block(&out, b2);
         assert!(out2.contains("BBB"));
         assert!(!out2.contains("AAA"));
         assert!(out2.starts_with("# my notes"));
-        assert_eq!(out2.matches("AIOS:workspace BEGIN").count(), 1);
-        assert_eq!(out2.matches("AIOS:workspace END").count(), 1);
+        assert_eq!(out2.matches("OSAI:workspace BEGIN").count(), 1);
+        assert_eq!(out2.matches("OSAI:workspace END").count(), 1);
     }
 }
 
@@ -1451,10 +1451,10 @@ pub fn write_text_file(
     }
     let dir = p.parent().ok_or_else(|| "invalid path".to_string())?;
     // First write into a fresh location (e.g. the notes outbox under
-    // ~/.aios/cache/snc/) shouldn't fail on a missing parent.
+    // ~/.osai/cache/snc/) shouldn't fail on a missing parent.
     std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
     let tmp = dir.join(format!(
-        ".{}.aios-tmp",
+        ".{}.osai-tmp",
         p.file_name().and_then(|s| s.to_str()).unwrap_or("file")
     ));
     std::fs::write(&tmp, content.as_bytes()).map_err(|e| format!("{e}"))?;
@@ -1714,7 +1714,7 @@ fn fnv1a(s: &str) -> u64 {
 }
 
 /// Converts an office document to PDF via headless LibreOffice and returns the
-/// resulting PDF path. Output lands under `/tmp/aios-office-preview/` (in the
+/// resulting PDF path. Output lands under `/tmp/osai-office-preview/` (in the
 /// asset-protocol scope) and is cached by source path + mtime + size, so
 /// re-opening an unchanged file is instant. A per-call user profile dir lets
 /// this run even while the LibreOffice GUI is open.
@@ -1735,7 +1735,7 @@ pub fn convert_office_to_pdf(path: String) -> Result<String, String> {
         .unwrap_or(0);
     let key = fnv1a(&format!("{}|{}|{}", path, mtime, meta.len()));
 
-    let preview_root = std::env::temp_dir().join("aios-office-preview");
+    let preview_root = std::env::temp_dir().join("osai-office-preview");
     let out_dir = preview_root.join(format!("{key:x}"));
     let stem = src
         .file_stem()
@@ -1827,7 +1827,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 ///
 /// `data` is the raw base64 of the image bytes (NOT a data-URL — the frontend
 /// strips the `data:image/png;base64,` prefix). `ext` is the desired file
-/// extension (e.g. "png", "jpg"). The file lands under `/tmp/aios-paste/` with
+/// extension (e.g. "png", "jpg"). The file lands under `/tmp/osai-paste/` with
 /// a content-hashed name so repeated pastes of the same image dedupe.
 #[tauri::command]
 pub fn save_image_temp(data: String, ext: String) -> Result<String, String> {
@@ -1843,7 +1843,7 @@ pub fn save_image_temp(data: String, ext: String) -> Result<String, String> {
         .collect();
     let safe_ext = if safe_ext.is_empty() { "png".into() } else { safe_ext };
 
-    let dir = std::env::temp_dir().join("aios-paste");
+    let dir = std::env::temp_dir().join("osai-paste");
     let dir = dir.as_path();
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let key = fnv1a(&format!("{}|{}", bytes.len(), bytes.iter().take(4096).fold(0u64, |a, &b| a.wrapping_add(b as u64))));
@@ -2003,13 +2003,13 @@ fn strip_verbatim(p: &str) -> String {
     }
 }
 
-/// `~/.aios/state/ui-state.json` — a tiny disk mirror of the webview's
+/// `~/.osai/state/ui-state.json` — a tiny disk mirror of the webview's
 /// localStorage-backed UI prefs (settings blob, theme, accents, density).
 /// WebView2 can drop localStorage on profile resets, and dev vs installed
 /// builds live on different origins with separate localStorage — the mirror
 /// survives both; boot re-hydrates any missing keys (lib/uiMirror.ts).
 fn ui_state_path() -> std::path::PathBuf {
-    std::path::Path::new(&home_dir()).join(".aios/state/ui-state.json")
+    std::path::Path::new(&home_dir()).join(".osai/state/ui-state.json")
 }
 
 #[tauri::command]
@@ -2043,7 +2043,7 @@ mod resolve_tests {
 
     #[test]
     fn relative_ref_resolves_to_a_plain_path() {
-        let dir = std::env::temp_dir().join("aios-resolve-test");
+        let dir = std::env::temp_dir().join("osai-resolve-test");
         std::fs::create_dir_all(dir.join("docs")).unwrap();
         std::fs::write(dir.join("docs").join("note.md"), "x").unwrap();
         // forward slashes + a :line suffix, exactly as a model writes them
@@ -2055,7 +2055,7 @@ mod resolve_tests {
 
     #[test]
     fn absolute_ref_ignores_cwd() {
-        let dir = std::env::temp_dir().join("aios-resolve-test-abs");
+        let dir = std::env::temp_dir().join("osai-resolve-test-abs");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.txt"), "x").unwrap();
         let abs = dir.join("a.txt").to_string_lossy().to_string();

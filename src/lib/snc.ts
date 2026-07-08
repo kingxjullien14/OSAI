@@ -127,7 +127,7 @@ export async function saveToNotes(
   return createDoc({
     title: opts.title ?? deriveTitle(text),
     content: text,
-    tags: opts.tags ?? ["from-aios"],
+    tags: opts.tags ?? ["from-osai"],
   });
 }
 
@@ -138,7 +138,7 @@ export async function saveToNotes(
 
 async function outboxPath(): Promise<string> {
   const home = await homeDir();
-  return `${home}/.aios/cache/snc/outbox.json`;
+  return `${home}/.osai/cache/snc/outbox.json`;
 }
 
 export async function loadOutbox(): Promise<OutboxOp[]> {

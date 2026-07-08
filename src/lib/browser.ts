@@ -51,7 +51,7 @@ export const browserScreenshot = (label: string, r: Rect) =>
   invoke<string>("browser_screenshot", { label, ...r });
 
 // ─── Annotate mode (Codex-style select-on-page → send to chat) ──────────────
-// Clipboard-bridge: the injected annotator writes `AIOS_ANNOT:<json>` to the
+// Clipboard-bridge: the injected annotator writes `OSAI_ANNOT:<json>` to the
 // system clipboard; the pane polls `readClipboard()` and parses the sentinel.
 export const browserEnterAnnotate = (label: string) =>
   invoke("browser_enter_annotate", { label });
@@ -60,7 +60,7 @@ export const browserExitAnnotate = (label: string) =>
 export const browserCopySelection = (label: string) =>
   invoke("browser_copy_selection", { label });
 /** Evals {url,title,innerText} of the current page into the clipboard with the
- *  `AIOS_PAGE:` sentinel — the "send page to chat" bridge (the pane polls
+ *  `OSAI_PAGE:` sentinel — the "send page to chat" bridge (the pane polls
  *  readClipboard() for it). Cross-platform; works on Windows today. */
 export const browserExtractPage = (label: string) =>
   invoke("browser_extract_page", { label });
@@ -147,7 +147,7 @@ export const browserRevealInFinder = (path: string) =>
   invoke("browser_reveal_in_finder", { path });
 
 /** Shape the injected annotator (and selection-copy) serialize into the
- *  clipboard behind the `AIOS_ANNOT:` sentinel. */
+ *  clipboard behind the `OSAI_ANNOT:` sentinel. */
 export interface BrowserAnnotation {
   selector: string;
   tagName: string;

@@ -79,7 +79,7 @@ export async function previewWorkspaceContext(root: string): Promise<string> {
   return invoke<string>("preview_workspace_context", { root });
 }
 
-/** Write `aios.workspace.json` + upsert the managed block into CLAUDE.md +
+/** Write `osai.workspace.json` + upsert the managed block into CLAUDE.md +
  *  AGENTS.md at the workspace root. Returns the files written. */
 export async function generateWorkspaceContext(root: string): Promise<string[]> {
   return invoke<string[]>("generate_workspace_context", { root });

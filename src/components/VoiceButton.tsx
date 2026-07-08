@@ -165,7 +165,7 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
             {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
               <span
                 key={i}
-                className="aios-wave-bar h-full rounded-full !bg-[var(--color-danger)]"
+                className="osai-wave-bar h-full rounded-full !bg-[var(--color-danger)]"
                 style={{ animationDelay: `${(i * 110) % 700}ms` }}
               />
             ))}

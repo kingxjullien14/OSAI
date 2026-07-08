@@ -53,7 +53,7 @@ import {
 import { scanWorkspaces, type ProjectInfo } from "../lib/run";
 import { flattenProjectWorkspaces, getScanRoots } from "../lib/projectWorkspaces";
 import { browserRevealInFinder } from "../lib/browser";
-import { AIOS_DIR_MIME, AIOS_PATH_MIME, openEditorFileInPane, spawnPane, startPathDrag } from "../lib/paneBus";
+import { OSAI_DIR_MIME, OSAI_PATH_MIME, openEditorFileInPane, spawnPane, startPathDrag } from "../lib/paneBus";
 import { PaneMenu, type PaneMenuEntry } from "./PaneMenu";
 import { Markdown } from "./chat/Markdown";
 import { fileIcon } from "../lib/fileIcons";
@@ -74,9 +74,9 @@ const GIT_COLOR: Record<GitCode, string> = {
 };
 
 // Persisted toggles (VS Code-style defaults: both hidden).
-const HIDDEN_KEY = "aios.files.showHidden";
-const ALL_KEY = "aios.files.showAll";
-const PREVIEW_KEY = "aios.files.preview";
+const HIDDEN_KEY = "osai.files.showHidden";
+const ALL_KEY = "osai.files.showAll";
+const PREVIEW_KEY = "osai.files.preview";
 function loadBool(key: string): boolean {
   try {
     return localStorage.getItem(key) === "1";
@@ -716,7 +716,7 @@ export function FilesPane({
           ))}
           {gitRoot && (
             <span
-              className="ml-1 shrink-0 rounded border border-[color-mix(in_srgb,var(--aios-accent-2)_32%,transparent)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--aios-accent-2)]"
+              className="ml-1 shrink-0 rounded border border-[color-mix(in_srgb,var(--osai-accent-2)_32%,transparent)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--osai-accent-2)]"
               title={`git repo · ${gitRoot}`}
             >
               git
@@ -1055,7 +1055,7 @@ function highlightLine(line: string): React.ReactNode {
     const tok = m[0];
     const isStr = /^["'`]/.test(tok);
     parts.push(
-      <span key={i++} style={{ color: isStr ? "var(--color-success)" : "var(--aios-accent-2)" }}>
+      <span key={i++} style={{ color: isStr ? "var(--color-success)" : "var(--osai-accent-2)" }}>
         {tok}
       </span>,
     );
@@ -1129,7 +1129,7 @@ function FilePreviewPanel({
     <div className="glass flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)]">
       {/* preview header — cyan file-icon chip + name + meta + dismiss */}
       <div className="flex h-10 shrink-0 items-center gap-2.5 border-b border-[var(--color-border)] px-3">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--aios-accent-2)_30%,transparent)] bg-[color-mix(in_srgb,var(--aios-accent-2)_12%,transparent)] text-[var(--aios-accent-2)]">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--osai-accent-2)_30%,transparent)] bg-[color-mix(in_srgb,var(--osai-accent-2)_12%,transparent)] text-[var(--osai-accent-2)]">
           <FileText size={12} />
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--color-text)]" title={path}>
@@ -1192,7 +1192,7 @@ function FilePreviewPanel({
         ) : !preview ? null : preview.kind === "image" ? (
           <div className="grid h-full place-items-center p-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={fileSrc(path)} alt={name} className="max-h-full max-w-full rounded-lg object-contain shadow-[var(--aios-shadow-pop)]" />
+            <img src={fileSrc(path)} alt={name} className="max-h-full max-w-full rounded-lg object-contain shadow-[var(--osai-shadow-pop)]" />
           </div>
         ) : preview.kind === "pdf" ? (
           <iframe src={fileSrc(path)} title={name} className="h-full w-full border-0" />
@@ -1202,7 +1202,7 @@ function FilePreviewPanel({
             <video
               src={fileSrc(path)}
               controls
-              className="max-h-full max-w-full rounded-lg shadow-[var(--aios-shadow-pop)]"
+              className="max-h-full max-w-full rounded-lg shadow-[var(--osai-shadow-pop)]"
             />
           </div>
         ) : preview.kind === "office" ? (
@@ -1277,7 +1277,7 @@ function FilePreviewPanel({
       <div className="flex shrink-0 items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
         <button
           onClick={onOpenInEditor}
-          className="press flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-medium text-[var(--color-accent-fg)] transition-all bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:brightness-110"
+          className="press flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-medium text-[var(--color-accent-fg)] transition-all bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--osai-accent-2)))] shadow-[0_0_16px_-5px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] hover:brightness-110"
         >
           <PenLine size={12} /> open in editor
         </button>
@@ -1419,10 +1419,10 @@ function TreeRow({
       draggable={isApple}
       onDragStart={(ev) => {
         ev.dataTransfer.setData("text/plain", entry.path);
-        ev.dataTransfer.setData(AIOS_PATH_MIME, entry.path);
+        ev.dataTransfer.setData(OSAI_PATH_MIME, entry.path);
         // FOLDER rows also flag the dir MIME so drop targets can `cd`/re-root
         // instead of treating the path as a file.
-        if (isDir) ev.dataTransfer.setData(AIOS_DIR_MIME, entry.path);
+        if (isDir) ev.dataTransfer.setData(OSAI_DIR_MIME, entry.path);
         ev.dataTransfer.effectAllowed = "copy";
       }}
       // Windows: HTML5 dnd never fires inside the Tauri webview, so rows also

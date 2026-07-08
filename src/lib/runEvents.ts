@@ -322,7 +322,7 @@ export function reduceRunEvents(
     );
   }
 
-  if (ev.type === "aios_stderr" && ev.text) {
+  if (ev.type === "osai_stderr" && ev.text) {
     return append(
       state,
       [{ type: "run.failed", id: nextId("run"), message: ev.text, at }],

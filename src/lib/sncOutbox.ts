@@ -10,7 +10,7 @@
  *  it" — the owner's Q3 answer, verbatim).
  *
  *  PURE — no tauri/fs import, so the node:test suite runs it directly.
- *  Persistence (one JSON file under `~/.aios/cache/snc/`, so a restart while
+ *  Persistence (one JSON file under `~/.osai/cache/snc/`, so a restart while
  *  offline loses nothing) lives in ./snc.ts with the rest of the I/O; the
  *  replay takes injected deps for the same reason. */
 

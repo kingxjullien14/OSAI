@@ -1,6 +1,6 @@
 // Project a list of chat turns → the API message array {role, content}[] for the
 // BYO-key tier (Tier 4). With branching the caller passes the ACTIVE root→leaf
-// path's turns, so the model only ever sees the active branch (AIOS owns + sends
+// path's turns, so the model only ever sees the active branch (OSAI owns + sends
 // the array). Pure + unit-tested.
 import type { ChatTurn } from "./chatStream";
 

@@ -6,8 +6,8 @@
  * the preserved pane keys, browsers reopen on their last url (browser-mem),
  * chats come back fresh in their cwd.
  *
- * Storage is localStorage (the layout convention — see aios.layout /
- * aios.grid.tracks). Palette commands are the UI: "save workspace…", one
+ * Storage is localStorage (the layout convention — see osai.layout /
+ * osai.grid.tracks). Palette commands are the UI: "save workspace…", one
  * "workspace: <name>" per saved entry, and a danger-marked delete each.
  */
 import type { PaneContent } from "./apps.ts";
@@ -27,7 +27,7 @@ export interface Workspace {
   tracks: { cols: number[]; rows: number[] } | null;
 }
 
-const KEY = "aios.workspaces.v1";
+const KEY = "osai.workspaces.v1";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

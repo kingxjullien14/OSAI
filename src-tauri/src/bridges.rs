@@ -1,7 +1,7 @@
-//! CHANNELS dispatch surface — every messaging channel AIOS speaks through, and
+//! CHANNELS dispatch surface — every messaging channel OSAI speaks through, and
 //! for the live ones, are they connected/ALIVE and what's flowing through them.
 //!
-//! AIOS is a superapp hub: one place to dispatch, monitor, and reply across ALL
+//! OSAI is a superapp hub: one place to dispatch, monitor, and reply across ALL
 //! channels — WhatsApp, Instagram, Threads, Google Chat, X/Twitter, Telegram,
 //! Gmail, iMessage, and more. Each channel is a `ChannelProbe` descriptor;
 //! `channel_probes()` returns the roster. Adding a channel = pushing one more.
@@ -13,7 +13,7 @@
 //!
 //!   1. process liveness — `/bin/ps -axo pid,etime,command`, matched against a
 //!      set of command substrings (e.g. `inbox-worker`, `push.js`,
-//!      `meta-webhook`, `aios-bridge`/`aios/bridge`). First match gives pid +
+//!      `meta-webhook`, `osai-bridge`/`osai/bridge`). First match gives pid +
 //!      elapsed time (uptime).
 //!   2. launchd — `/bin/launchctl list` lines whose label matches `*bridge*`
 //!      → loaded + running (has a live pid).
@@ -42,8 +42,8 @@ fn home() -> String {
 
 /// The bridge's personal-WA pairing script (wwebjs, 8-digit pairing code).
 const CONNECT_PERSONAL_CANDIDATES: &[&str] = &[
-    "Repo/aios/bridge/scripts/connect-personal-code.js",
-    "Repo/aios-bridge/scripts/connect-personal-code.js",
+    "Repo/osai/bridge/scripts/connect-personal-code.js",
+    "Repo/osai-bridge/scripts/connect-personal-code.js",
 ];
 
 /// Pairs the user's PERSONAL WhatsApp (the wwebjs session used by `send-as-personal`
@@ -55,7 +55,7 @@ const CONNECT_PERSONAL_CANDIDATES: &[&str] = &[
 #[tauri::command]
 pub fn pair_personal_wa() -> Value {
     let Some(script) = resolve_log(CONNECT_PERSONAL_CANDIDATES) else {
-        return json!({ "ok": false, "error": "connect-personal-code.js not found under ~/Repo/aios/bridge (or aios-bridge)." });
+        return json!({ "ok": false, "error": "connect-personal-code.js not found under ~/Repo/osai/bridge (or osai-bridge)." });
     };
 
     let mut child = match std::process::Command::new("node")
@@ -138,7 +138,7 @@ struct ChannelProbe {
     log_candidates: &'static [&'static str],
 }
 
-/// The roster of channels AIOS speaks through. WhatsApp is the live proof; the
+/// The roster of channels OSAI speaks through. WhatsApp is the live proof; the
 /// rest are connectors on the way — push more / promote to `Wiring::Live` as
 /// they get built.
 fn channel_probes() -> Vec<ChannelProbe> {
@@ -149,12 +149,12 @@ fn channel_probes() -> Vec<ChannelProbe> {
             name: "whatsapp",
             kind: "messaging",
             wiring: Wiring::Live,
-            proc_match: &["inbox-worker", "push.js", "meta-webhook", "aios-bridge", "aios/bridge"],
+            proc_match: &["inbox-worker", "push.js", "meta-webhook", "osai-bridge", "osai/bridge"],
             launchd_match: "bridge",
             log_candidates: &[
-                "Repo/aios/bridge/scripts/outbound-log.jsonl",
-                "Repo/aios-bridge/scripts/outbound-log.jsonl",
-                ".aios/state/outbound-log.jsonl",
+                "Repo/osai/bridge/scripts/outbound-log.jsonl",
+                "Repo/osai-bridge/scripts/outbound-log.jsonl",
+                ".osai/state/outbound-log.jsonl",
             ],
         },
         // ── connectors on the way (light footprint check, else `soon`) ──────
@@ -165,7 +165,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "instagram",
-            log_candidates: &[".aios/state/instagram-log.jsonl"],
+            log_candidates: &[".osai/state/instagram-log.jsonl"],
         },
         ChannelProbe {
             id: "threads",
@@ -174,7 +174,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "threads",
-            log_candidates: &[".aios/state/threads-log.jsonl"],
+            log_candidates: &[".osai/state/threads-log.jsonl"],
         },
         ChannelProbe {
             id: "gchat",
@@ -183,7 +183,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "gchat",
-            log_candidates: &[".aios/state/gchat-log.jsonl"],
+            log_candidates: &[".osai/state/gchat-log.jsonl"],
         },
         ChannelProbe {
             id: "x",
@@ -192,7 +192,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "twitter",
-            log_candidates: &[".aios/state/x-log.jsonl"],
+            log_candidates: &[".osai/state/x-log.jsonl"],
         },
         ChannelProbe {
             id: "telegram",
@@ -201,7 +201,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "telegram",
-            log_candidates: &[".aios/state/telegram-log.jsonl"],
+            log_candidates: &[".osai/state/telegram-log.jsonl"],
         },
         ChannelProbe {
             id: "gmail",
@@ -210,7 +210,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "gmail",
-            log_candidates: &[".aios/state/gmail-log.jsonl"],
+            log_candidates: &[".osai/state/gmail-log.jsonl"],
         },
         ChannelProbe {
             id: "imessage",
@@ -219,7 +219,7 @@ fn channel_probes() -> Vec<ChannelProbe> {
             wiring: Wiring::Soon,
             proc_match: &[],
             launchd_match: "imessage",
-            log_candidates: &[".aios/state/imessage-log.jsonl"],
+            log_candidates: &[".osai/state/imessage-log.jsonl"],
         },
     ]
 }
@@ -322,7 +322,7 @@ struct LaunchdHit {
 
 /// Runs `launchctl list` and finds the first job whose label contains the
 /// channel's `launchd_match` substring (case-insensitively). For WhatsApp the
-/// needle is `bridge`, which still matches its `*aios-bridge*` labels; for other
+/// needle is `bridge`, which still matches its `*osai-bridge*` labels; for other
 /// channels it's the connector slug (e.g. `telegram`). `running` = it has a live
 /// pid (not `-`). Best-effort → `None`.
 fn find_launchd(needle: &str) -> Option<LaunchdHit> {
@@ -580,7 +580,7 @@ fn probe_channel(p: &ChannelProbe) -> Value {
     })
 }
 
-/// Lists every channel AIOS speaks through, with `status` + (for the live ones)
+/// Lists every channel OSAI speaks through, with `status` + (for the live ones)
 /// health + recent activity. The whole call is best-effort: each source
 /// per-channel fails soft to an empty field, never an error.
 ///
@@ -602,7 +602,7 @@ pub fn list_bridges() -> Value {
 /// matching inbound source exists. Best-effort — missing files are skipped.
 fn inbound_candidates(id: &str) -> &'static [&'static str] {
     match id {
-        "whatsapp" => &[".aios/state/personal-wa-events.jsonl"],
+        "whatsapp" => &[".osai/state/personal-wa-events.jsonl"],
         _ => &[],
     }
 }

@@ -122,7 +122,7 @@ export function bindChatInList(
 
 // ── store (localStorage-backed; guarded; pub/sub) ────────────────────────────
 
-const STORAGE_KEY = "aios.worksessions.v1";
+const STORAGE_KEY = "osai.worksessions.v1";
 let cache: WorkSession[] | null = null;
 const listeners = new Set<() => void>();
 

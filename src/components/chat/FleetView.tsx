@@ -51,7 +51,7 @@ function FleetCard({ agent }: { agent: SubagentSummary }) {
         agent.status === "failed"
           ? "border-[var(--color-danger)]/45"
           : running
-            ? "border-[var(--color-accent)]/40 shadow-[var(--aios-glow-soft)]"
+            ? "border-[var(--color-accent)]/40 shadow-[var(--osai-glow-soft)]"
             : "border-[var(--color-border)] opacity-90"
       }`}
     >
@@ -59,7 +59,7 @@ function FleetCard({ agent }: { agent: SubagentSummary }) {
       {running && (
         <span
           aria-hidden
-          className="aios-fleet-sweep pointer-events-none absolute inset-x-0 top-0 h-px"
+          className="osai-fleet-sweep pointer-events-none absolute inset-x-0 top-0 h-px"
         />
       )}
       <div className="flex items-center gap-1.5">

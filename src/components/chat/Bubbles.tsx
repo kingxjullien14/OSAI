@@ -114,7 +114,7 @@ export function DaySeparator({ at }: { at: number }) {
 /** 02 Framed Turns — one assistant response = one glass card. The render loop
  *  groups the run of non-user blocks (thinking · activity · change · prose ·
  *  result) following a user message into a single frame; this draws the card
- *  chrome + the mono header strip (status dot · AIOS·model · worked/steps).
+ *  chrome + the mono header strip (status dot · OSAI·model · worked/steps).
  *  Non-positioned on purpose: the minimap reads child `offsetTop`, so a
  *  positioned wrapper would shift every marker. */
 export function TurnFrame({
@@ -139,13 +139,13 @@ export function TurnFrame({
       ? `worked ${fmtDuration(workedMs)}${stepLbl ? ` · ${stepLbl}` : ""}`
       : stepLbl;
   return (
-    <div className="aios-turn overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
+    <div className="osai-turn overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
       <div className="flex items-center gap-2 border-b border-[var(--color-border)]/70 px-3.5 py-2 font-mono text-[10.5px]">
         <span
           className="h-[7px] w-[7px] shrink-0 rounded-full"
           style={
             live
-              ? { background: "var(--color-accent)", boxShadow: "var(--aios-glow-soft)" }
+              ? { background: "var(--color-accent)", boxShadow: "var(--osai-glow-soft)" }
               : { background: "var(--color-success)", boxShadow: "0 0 7px var(--color-success-glow)" }
           }
         />
@@ -340,10 +340,10 @@ export function UserBubble({
         </span>
       )}
       {/* 02 framed turn — your message is a compact accent-glass card with a
-          mono YOU·time strip (matches the AIOS frame's header language). */}
-      <div className="w-fit max-w-[82%] overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent-soft)_82%,transparent)] shadow-[var(--aios-glow-soft)] backdrop-blur-md">
+          mono YOU·time strip (matches the OSAI frame's header language). */}
+      <div className="w-fit max-w-[82%] overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent-soft)_82%,transparent)] shadow-[var(--osai-glow-soft)] backdrop-blur-md">
         <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-3.5 py-1.5 font-mono text-[10.5px]">
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)]" />
           <span className="tracking-[0.05em] text-[var(--color-text-2)]">YOU</span>
           {variantNav && variantNav.count > 1 && (
             <span
@@ -451,7 +451,7 @@ export function UserBubble({
               src={lightbox}
               alt="attachment"
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[82vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--aios-shadow-pop)]"
+              className="max-h-[82vh] max-w-[88vw] rounded-2xl border border-[var(--color-border-strong)] object-contain shadow-[var(--osai-shadow-pop)]"
             />
           </div>,
           document.body,
@@ -562,7 +562,7 @@ function SaveToNotesButton({ text }: { text: string }) {
       onClick={() => {
         if (state !== "idle") return;
         setState("busy");
-        saveToNotes(text, { tags: ["from-aios", "chat"] })
+        saveToNotes(text, { tags: ["from-osai", "chat"] })
           .then(() => setState("done"))
           .catch(() => setState("err"));
       }}
@@ -645,7 +645,7 @@ export function AssistantBubble({
       label: "Save to notes",
       hint: "stone & chisel",
       onSelect: () =>
-        void saveToNotes(body, { tags: ["from-aios", "chat"] }).catch(() => {}),
+        void saveToNotes(body, { tags: ["from-osai", "chat"] }).catch(() => {}),
     },
     ...(onTogglePin
       ? [
@@ -687,7 +687,7 @@ export function AssistantBubble({
               type="button"
               disabled={disabled}
               onClick={() => onButton(label)}
-              className="rounded-[var(--aios-radius-pill)] border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-[var(--osai-radius-pill)] border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {label}
             </button>

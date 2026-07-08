@@ -1,12 +1,12 @@
 //! Error/diagnostics telemetry — the LOCAL-FIRST, ZERO-NETWORK store for the
-//! AIOS shell (Phase 0 + Phase 1 of TELEMETRY-PLAN.md).
+//! OSAI shell (Phase 0 + Phase 1 of TELEMETRY-PLAN.md).
 //!
 //! NOT to be confused with `telemetry.rs` (that's read-only Claude Code JSONL
 //! *usage* aggregation for the sidebar — a name collision only). This module
 //! owns *error* telemetry: it collects DiagEvents from the JS side (the 91
 //! formerly-silent `.catch(() => {})` sites, the React error boundary, global
 //! window handlers) plus Rust-side panics, and persists them to an append-only,
-//! size-capped JSONL under the Tauri **app-data dir** — never `~/.aios` (a fork
+//! size-capped JSONL under the Tauri **app-data dir** — never `~/.osai` (a fork
 //! has none of the user's infra; app-data is per-bundle-id and portable).
 //!
 //! Everything here is best-effort: a diag write must NEVER panic or surface an

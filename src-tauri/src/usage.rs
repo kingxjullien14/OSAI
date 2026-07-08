@@ -1,5 +1,5 @@
-//! Usage stats for the account menu. Reads `~/.aios/state/usage.json`, which the
-//! AIOS statusline hook refreshes on every claude-code tick (the ONLY source of
+//! Usage stats for the account menu. Reads `~/.osai/state/usage.json`, which the
+//! OSAI statusline hook refreshes on every claude-code tick (the ONLY source of
 //! the real 5h/7d rate-limit %, surfaced by claude only via statusLine stdin).
 
 use serde_json::{json, Value};
@@ -42,7 +42,7 @@ pub(crate) fn windowed(pct: Option<f64>, resets_at: Option<i64>) -> (Option<f64>
 #[tauri::command]
 pub fn usage_stats() -> Value {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
-    let path = format!("{home}/.aios/state/usage.json");
+    let path = format!("{home}/.osai/state/usage.json");
     match std::fs::read_to_string(&path) {
         Ok(s) => serde_json::from_str(&s).unwrap_or(Value::Null),
         Err(_) => Value::Null,
@@ -187,7 +187,7 @@ fn usage_cache_path() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    Some(std::path::PathBuf::from(home).join(".aios/state/usage-cache.json"))
+    Some(std::path::PathBuf::from(home).join(".osai/state/usage-cache.json"))
 }
 
 /// Reads the on-disk last-good usage — but only if recent (<6h). An older copy
@@ -284,7 +284,7 @@ pub fn claude_usage() -> Value {
         return live;
     }
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
-    let path = format!("{home}/.aios/state/usage.json");
+    let path = format!("{home}/.osai/state/usage.json");
     if !fresh_enough(&path) {
         return Value::Null;
     }

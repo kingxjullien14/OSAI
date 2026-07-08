@@ -14,7 +14,7 @@ const mkCreate = (tempId, content, extra = {}) => ({
   kind: "create",
   tempId,
   content,
-  tags: ["from-aios"],
+  tags: ["from-osai"],
   folderId: null,
   ts: 1,
   ...extra,

@@ -33,7 +33,7 @@ export function ShortcutHud({ open, onClose }: { open: boolean; onClose: () => v
         role="dialog"
         aria-modal="true"
         aria-label="keyboard shortcuts"
-        className="glass w-[660px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--aios-shadow-pop)]"
+        className="glass w-[660px] max-w-full overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-panel)]/95 shadow-[var(--osai-shadow-pop)]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") {

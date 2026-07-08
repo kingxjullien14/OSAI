@@ -11,16 +11,16 @@ import { invoke } from "./tauri";
  *   - "error" when fresh output contains error/panic/failed/Traceback
  *
  * Master awareness: the watcher mirrors live state to
- * `~/.aios/state/cockpit-monitors.json` and logs every notification to
- * `~/.aios/state/cockpit-monitor-events.jsonl`.
+ * `~/.osai/state/cockpit-monitors.json` and logs every notification to
+ * `~/.osai/state/cockpit-monitor-events.jsonl`.
  */
 
 /**
  * Start watching a tmux session. No-op if that session already has a live
  * watcher. Sends one "now watching <session>" WhatsApp on start.
  *
- * @param socket  tmux socket the session lives on (e.g. "aios").
- * @param session full tmux session name (e.g. "aios-agent").
+ * @param socket  tmux socket the session lives on (e.g. "osai").
+ * @param session full tmux session name (e.g. "osai-agent").
  */
 export async function monitorStart(socket: string, session: string): Promise<void> {
   return invoke<void>("monitor_start", { socket, session });

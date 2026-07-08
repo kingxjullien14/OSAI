@@ -225,7 +225,7 @@ export function RunCinema({
     >
       {/* header — what you're watching + its true cost (frosted, lit edge) */}
       <div className="relative flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] px-4 py-2.5 backdrop-blur-md">
-        <span className="grid h-7 w-7 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent)] shadow-[var(--aios-glow-soft)]">
+        <span className="grid h-7 w-7 place-items-center rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent)] shadow-[var(--osai-glow-soft)]">
           <Clapperboard size={14} />
         </span>
         <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-2)]">
@@ -274,7 +274,7 @@ export function RunCinema({
               </div>
             ) : r.kind === "action" ? (
               <div key={r.key} className="surface-card fade-in-up relative flex items-baseline gap-2 rounded-xl px-2.5 py-1.5 backdrop-blur">
-                <span aria-hidden className="absolute -left-[18px] top-[9px] h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)]" />
+                <span aria-hidden className="absolute -left-[18px] top-[9px] h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)]" />
                 <ChevronRight size={11} className="shrink-0 translate-y-[1px] text-[var(--color-accent)]" />
                 <span className="shrink-0 font-mono text-[11.5px] text-[var(--color-text-2)]">{r.name}</span>
                 <span className="min-w-0 truncate font-mono text-[10px] text-[var(--color-faint)]">{r.input}</span>
@@ -285,7 +285,7 @@ export function RunCinema({
                 <span className="min-w-0 truncate">{r.output || "done"}</span>
               </div>
             ) : r.kind === "permission" ? (
-              <div key={r.key} className="fade-in-up relative rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1.5 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--aios-glow-soft)] backdrop-blur">
+              <div key={r.key} className="fade-in-up relative rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-1.5 font-sans text-[11.5px] text-[var(--color-text)] shadow-[var(--osai-glow-soft)] backdrop-blur">
                 <span aria-hidden className="absolute -left-[18px] top-[9px] h-1.5 w-1.5 rounded-full bg-[var(--color-highlight)] shadow-[0_0_7px_var(--color-highlight)]" />
                 asked to run <span className="font-mono">{r.toolName}</span>
               </div>
@@ -311,7 +311,7 @@ export function RunCinema({
           {/* live playhead — a pulsing cursor at the head of the stream while playing */}
           {playing && !ended && (
             <div className="relative flex items-center gap-2 pt-0.5">
-              <span aria-hidden className="absolute -left-[20px] h-2 w-2 rounded-full bg-[var(--color-accent)] shadow-[var(--aios-glow-soft)] motion-safe:animate-ping" />
+              <span aria-hidden className="absolute -left-[20px] h-2 w-2 rounded-full bg-[var(--color-accent)] shadow-[var(--osai-glow-soft)] motion-safe:animate-ping" />
               <span aria-hidden className="absolute -left-[20px] h-2 w-2 rounded-full bg-[var(--color-accent)]" />
               <span className="font-mono text-[10px] tracking-[0.14em] text-[var(--color-faint)]">▌</span>
             </div>
@@ -355,7 +355,7 @@ export function RunCinema({
             setPlaying((p) => !p);
           }}
           aria-label={playing ? "pause (space)" : "play (space)"}
-          className="press grid h-8 w-8 place-items-center rounded-full bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--aios-accent-2)))] text-[var(--color-accent-fg)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] transition-transform hover:scale-105 active:scale-95"
+          className="press grid h-8 w-8 place-items-center rounded-full bg-[linear-gradient(135deg,var(--color-accent),color-mix(in_srgb,var(--color-accent)_50%,var(--osai-accent-2)))] text-[var(--color-accent-fg)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] transition-transform hover:scale-105 active:scale-95"
         >
           {playing ? <Pause size={14} /> : <Play size={14} className="translate-x-[1px]" />}
         </button>
@@ -380,7 +380,7 @@ export function RunCinema({
         <div className="relative flex min-w-0 flex-1 items-center">
           <div className="absolute inset-x-0 h-1 rounded-full bg-[var(--color-panel-2)]" />
           <div
-            className="absolute left-0 h-1 rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--aios-accent-2))] shadow-[0_0_10px_-1px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]"
+            className="absolute left-0 h-1 rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--osai-accent-2))] shadow-[0_0_10px_-1px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]"
             style={{ width: `${pct}%` }}
           />
           {ticks.map((tk, i) => (

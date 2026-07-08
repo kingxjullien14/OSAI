@@ -18,7 +18,7 @@ export interface WindowInfo {
   bundle_id: string;
 }
 
-/** Enumerate capturable windows (on-screen, non-trivial size, not AIOS itself).
+/** Enumerate capturable windows (on-screen, non-trivial size, not OSAI itself).
  *  The FIRST call triggers the macOS Screen Recording permission prompt. */
 export const appcastListWindows = () =>
   invoke<WindowInfo[]>("appcast_list_windows");

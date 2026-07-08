@@ -317,7 +317,7 @@ export function PetPane() {
           />
           <div
             className="absolute -bottom-16 -right-8 h-48 w-48 rounded-full blur-3xl"
-            style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--aios-accent-2) 14%, transparent), transparent 70%)" }}
+            style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--osai-accent-2) 14%, transparent), transparent 70%)" }}
           />
         </div>
 
@@ -332,7 +332,7 @@ export function PetPane() {
         {bubble && (
           <div
             key={bubble.id}
-            className="modal-in pointer-events-none absolute left-1/2 top-2 z-10 max-w-[240px] -translate-x-1/2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)] px-2.5 py-1.5 text-center text-[11px] leading-snug text-[var(--color-text-2)] shadow-[var(--aios-shadow-pop)]"
+            className="modal-in pointer-events-none absolute left-1/2 top-2 z-10 max-w-[240px] -translate-x-1/2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel)] px-2.5 py-1.5 text-center text-[11px] leading-snug text-[var(--color-text-2)] shadow-[var(--osai-shadow-pop)]"
           >
             {bubble.text}
           </div>
@@ -423,7 +423,7 @@ export function PetPane() {
               className="h-full rounded-full transition-[width] duration-500"
               style={{
                 width: `${Math.round(soul.bond)}%`,
-                background: "linear-gradient(90deg, var(--color-accent), var(--aios-accent-2))",
+                background: "linear-gradient(90deg, var(--color-accent), var(--osai-accent-2))",
               }}
             />
           </div>
@@ -450,7 +450,7 @@ export function PetPane() {
                       className="h-full rounded-full"
                       style={{
                         width: `${Math.max(4, Math.round((mins / affinityTotal) * 100))}%`,
-                        background: "var(--aios-accent-2)",
+                        background: "var(--osai-accent-2)",
                       }}
                     />
                   </div>

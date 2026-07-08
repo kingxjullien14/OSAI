@@ -4,11 +4,11 @@
 
 .DESCRIPTION
   *** LEGACY (Firaz-era) ***
-  Written when this tree tracked Firaz's AIOS and auto-merged his pushes. OSAI
+  Written when this tree tracked Firaz's OSAI and auto-merged his pushes. OSAI
   has diverged since (unrelated histories; upstream ideas are hand-ported, never
   merged), so this watcher has nothing meaningful to watch anymore. Kept for
   reference. If a scheduled task from `-Install` still exists, remove it with
-  `.\scripts\aios-watch.ps1 -Uninstall`. Its safety rails, for the record:
+  `.\scripts\osai-watch.ps1 -Uninstall`. Its safety rails, for the record:
     - never pushes (read + merge only)
     - on a real conflict it backs out and keeps watching
     - skips the merge if you have uncommitted work
@@ -29,9 +29,9 @@
   Remove the scheduled task.
 
 .EXAMPLE
-  .\scripts\aios-watch.ps1                 # watch in this terminal (5-min loop)
-  .\scripts\aios-watch.ps1 -Install        # run forever in the background
-  .\scripts\aios-watch.ps1 -Once           # one check (for the scheduler)
+  .\scripts\osai-watch.ps1                 # watch in this terminal (5-min loop)
+  .\scripts\osai-watch.ps1 -Install        # run forever in the background
+  .\scripts\osai-watch.ps1 -Once           # one check (for the scheduler)
 #>
 param(
   [int]$IntervalSeconds = 300,
@@ -42,8 +42,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
-$logFile = Join-Path $repo "scripts\aios-watch.log"
-$taskName = "AIOS-Watch-Upstream"
+$logFile = Join-Path $repo "scripts\osai-watch.log"
+$taskName = "OSAI-Watch-Upstream"
 
 function Log($msg) {
   $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
@@ -60,9 +60,9 @@ if ($Install) {
     -RepetitionInterval (New-TimeSpan -Minutes 15)
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Settings $settings -Description "Pull the upstream aios-shell updates every 15 min" -Force | Out-Null
+    -Settings $settings -Description "Pull the upstream osai-shell updates every 15 min" -Force | Out-Null
   Log "installed scheduled task '$taskName' (every 15 min). Log: $logFile"
-  Write-Host "Installed. It now syncs in the background. Remove with: .\scripts\aios-watch.ps1 -Uninstall" -ForegroundColor Green
+  Write-Host "Installed. It now syncs in the background. Remove with: .\scripts\osai-watch.ps1 -Uninstall" -ForegroundColor Green
   exit 0
 }
 if ($Uninstall) {
@@ -88,7 +88,7 @@ function Sync-Once {
 
   # Don't merge over uncommitted work - would risk clobbering you.
   if (git status --porcelain) {
-    Log "upstream has $incoming new commit(s) but you have uncommitted changes - skipping. Commit/stash, then run .\scripts\aios-sync.ps1"
+    Log "upstream has $incoming new commit(s) but you have uncommitted changes - skipping. Commit/stash, then run .\scripts\osai-sync.ps1"
     return
   }
 

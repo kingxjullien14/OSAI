@@ -1,4 +1,4 @@
-/** Typed, localStorage-backed sidebar store for the AIOS cockpit.
+/** Typed, localStorage-backed sidebar store for the OSAI cockpit.
  *  Mirrors src/lib/settings.ts exactly: plain load/save helpers + a tiny
  *  subscribe/notify emitter so the rail re-renders on change without a state
  *  lib. The ordered `items` array IS the render order. Persisted as JSON under
@@ -6,7 +6,7 @@
 
 import { SPAWN } from "./apps.ts";
 
-const STORAGE_KEY = "aios.sidebar";
+const STORAGE_KEY = "osai.sidebar";
 const SCHEMA_VERSION = 4;
 
 /** A space = a named, collapsible section of the rail. The three built-ins

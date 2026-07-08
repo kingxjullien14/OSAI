@@ -4,7 +4,7 @@
 //! holds the credential + the HTTP path. The access token (minted in S&C's
 //! account dialog → "Connected apps") lives in the OS keychain — same rule as
 //! apikeys.rs, never in localStorage or the settings blob. The base URL lives
-//! in `~/.aios/snc.json` so the control plane (N3) can reach notes without a
+//! in `~/.osai/snc.json` so the control plane (N3) can reach notes without a
 //! webview in the loop.
 //!
 //! Command surface is deliberately small: status / configure / disconnect plus
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use keyring::{Entry, Error as KeyringError};
 
-const SERVICE: &str = "aios-snc";
+const SERVICE: &str = "osai-snc";
 const ACCOUNT: &str = "token";
 pub const DEFAULT_BASE_URL: &str = "https://stone-n-chisel.vercel.app";
 
@@ -25,7 +25,7 @@ fn config_path() -> Option<PathBuf> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    Some(PathBuf::from(home).join(".aios").join("snc.json"))
+    Some(PathBuf::from(home).join(".osai").join("snc.json"))
 }
 
 fn read_base_url() -> String {
