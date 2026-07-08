@@ -32,7 +32,9 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Node 20 hit EOL (Apr 2026); build on the current LTS. This is the
+          # BUILD toolchain node, separate from the actions' own runtime.
+          node-version: 22
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
