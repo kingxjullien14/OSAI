@@ -227,7 +227,23 @@ pub fn run() {
         }
     }
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance guard (desktop only): the FIRST plugin, so it intercepts a
+    // second launch before the app boots and hands the argv/cwd to the RUNNING
+    // instance instead of opening a duplicate window. The callback just raises
+    // the existing window (show + unminimize + focus) — this is what makes
+    // relaunching the app while it's hidden in the tray restore the window that's
+    // already there instead of spawning another process. macOS gets the same
+    // guard for free but keeps its own Reopen/dock arms below.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main_window(app);
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::new())

@@ -1406,12 +1406,160 @@ select:focus-visible,
   to { transform: translateX(-50%); }
 }
 
-[data-reduce-motion="true"] :is(.osai-lock-star, .osai-lock-sat, .osai-lock-shoot, .osai-lock-fly, .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow) {
+/* ── night-sky richness (L4): moon · aurora curtains · nebula · deep parallax
+   dust · four-point sparkles · a constellation · a meteor shower. All
+   transform/opacity-only; screen-blended glows sit additively over the void.
+   Every animated class is stilled by the reduce-motion guards below. ─────── */
+
+/* deep dust drifts a hair slower/further than the fore-stars → parallax depth */
+.osai-lock-skydrift {
+  animation: osai-lock-skydrift 160s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes osai-lock-skydrift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-1.6%, 1.2%, 0); }
+}
+
+/* the moon — lit sphere + soft craters, under a breathing halo */
+.osai-lock-moon { z-index: 4; width: 62px; height: 62px; }
+.osai-lock-moon-body {
+  background:
+    radial-gradient(circle at 62% 66%, color-mix(in srgb, #0b0716 24%, transparent) 0 5px, transparent 6px),
+    radial-gradient(circle at 43% 74%, color-mix(in srgb, #0b0716 16%, transparent) 0 3.5px, transparent 4.5px),
+    radial-gradient(circle at 71% 41%, color-mix(in srgb, #0b0716 12%, transparent) 0 3px, transparent 4px),
+    radial-gradient(circle at 38% 34%, #fdfcff 0%, #ece9fb 40%, #cfc9ec 72%, #ada6d6 100%);
+  box-shadow:
+    0 0 34px 6px color-mix(in srgb, var(--osai-accent-2) 26%, transparent),
+    inset -9px -7px 20px color-mix(in srgb, #221d38 70%, transparent);
+}
+.osai-lock-moon-halo {
+  background: radial-gradient(circle, color-mix(in srgb, var(--osai-accent-2) 24%, transparent), transparent 66%);
+  filter: blur(12px);
+  animation: osai-lock-moon-halo 9s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes osai-lock-moon-halo {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.08); }
+}
+
+/* aurora curtains — soft elliptical light, screen-blended, slowly undulating */
+.osai-lock-aurora {
+  left: -25%;
+  right: -25%;
+  top: -6%;
+  height: 46%;
+  border-radius: 50%;
+  filter: blur(30px);
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+}
+.osai-lock-aurora-a {
+  background: linear-gradient(110deg, transparent 8%,
+    color-mix(in srgb, var(--color-accent) 42%, transparent) 34%,
+    color-mix(in srgb, var(--osai-accent-2) 46%, transparent) 58%, transparent 86%);
+  animation: osai-lock-aurora-a 26s ease-in-out infinite;
+}
+.osai-lock-aurora-b {
+  top: 2%;
+  height: 40%;
+  background: linear-gradient(80deg, transparent 12%,
+    color-mix(in srgb, var(--osai-accent-2) 40%, transparent) 40%,
+    color-mix(in srgb, var(--color-accent) 34%, transparent) 66%, transparent 88%);
+  animation: osai-lock-aurora-b 34s ease-in-out infinite;
+}
+@keyframes osai-lock-aurora-a {
+  0%, 100% { transform: translate3d(-4%, 0, 0) skewX(-8deg) scaleY(1); opacity: 0.32; }
+  50% { transform: translate3d(4%, 2%, 0) skewX(6deg) scaleY(1.18); opacity: 0.58; }
+}
+@keyframes osai-lock-aurora-b {
+  0%, 100% { transform: translate3d(3%, 1%, 0) skewX(7deg) scaleY(1.1); opacity: 0.26; }
+  50% { transform: translate3d(-5%, -1%, 0) skewX(-5deg) scaleY(0.9); opacity: 0.48; }
+}
+.osai-lock-nebula {
+  left: 40%;
+  top: 5%;
+  width: 46%;
+  height: 40%;
+  background: radial-gradient(circle at 50% 50%,
+    color-mix(in srgb, var(--osai-accent-2) 20%, transparent),
+    color-mix(in srgb, var(--color-accent) 10%, transparent) 45%, transparent 72%);
+  filter: blur(22px);
+  mix-blend-mode: screen;
+  animation: osai-lock-nebula 48s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes osai-lock-nebula {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-6%, 3%, 0) scale(1.12); }
+}
+
+/* four-point sparkle — a bright core with a slowly rotating cross-glint */
+.osai-lock-sparkle {
+  border-radius: 999px;
+  background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--osai-accent-2) 80%, transparent) 45%, transparent 72%);
+  animation: osai-lock-sparkle 5s ease-in-out var(--delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+.osai-lock-sparkle::before,
+.osai-lock-sparkle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.osai-lock-sparkle::before { width: 1.5px; height: 22px; background: linear-gradient(to bottom, transparent, #eaf6ff 50%, transparent); }
+.osai-lock-sparkle::after { width: 22px; height: 1.5px; background: linear-gradient(to right, transparent, #eaf6ff 50%, transparent); }
+@keyframes osai-lock-sparkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.7) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(90deg); }
+}
+
+/* one designed constellation — faint links + glowing vertices, fading in/out */
+.osai-lock-constellation {
+  z-index: 5;
+  animation: osai-lock-constellation 22s ease-in-out infinite;
+  will-change: opacity;
+}
+.osai-lock-constellation line { stroke: color-mix(in srgb, var(--osai-accent-2) 52%, transparent); stroke-width: 0.75; }
+.osai-lock-constellation circle {
+  fill: color-mix(in srgb, var(--color-text) 85%, var(--osai-accent-2));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--osai-accent-2) 70%, transparent));
+}
+@keyframes osai-lock-constellation {
+  0%, 100% { opacity: 0.1; }
+  45%, 55% { opacity: 0.5; }
+}
+
+/* meteor shower — near-parallel streaks radiating from the upper-right */
+.osai-lock-meteor {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, white 88%, transparent), transparent);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--osai-accent-2) 70%, transparent));
+  opacity: 0;
+  animation: osai-lock-meteor var(--dur, 7s) ease-in var(--delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+@keyframes osai-lock-meteor {
+  0% { transform: translate(0, 0) rotate(18deg) scaleX(0.3); opacity: 0; }
+  4% { opacity: 1; }
+  26% { transform: translate(-32vw, 10vw) rotate(18deg) scaleX(1); opacity: 0; }
+  100% { transform: translate(-32vw, 10vw) rotate(18deg) scaleX(1); opacity: 0; }
+}
+
+[data-reduce-motion="true"] :is(.osai-lock-star, .osai-lock-sat, .osai-lock-shoot, .osai-lock-fly, .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow, .osai-lock-skydrift, .osai-lock-moon-halo, .osai-lock-aurora-a, .osai-lock-aurora-b, .osai-lock-nebula, .osai-lock-sparkle, .osai-lock-constellation, .osai-lock-meteor) {
   animation: none !important;
 }
+[data-reduce-motion="true"] :is(.osai-lock-shoot, .osai-lock-fly, .osai-lock-meteor) { opacity: 0 !important; }
 @media (prefers-reduced-motion: reduce) {
   .osai-lock-star, .osai-lock-sat, .osai-lock-shoot, .osai-lock-fly,
-  .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow {
+  .osai-lock-ridge-a, .osai-lock-ridge-b, .osai-horizon-flow,
+  .osai-lock-skydrift, .osai-lock-moon-halo, .osai-lock-aurora-a, .osai-lock-aurora-b,
+  .osai-lock-nebula, .osai-lock-sparkle, .osai-lock-constellation, .osai-lock-meteor {
     animation: none !important;
   }
+  .osai-lock-shoot, .osai-lock-fly, .osai-lock-meteor { opacity: 0 !important; }
 }

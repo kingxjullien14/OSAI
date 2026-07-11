@@ -216,13 +216,7 @@ import {
   onPetUsage,
   onPetUserMessage,
 } from "../lib/pet";
-import {
-  AUTOSCROLL_STICK_THRESHOLD_PX,
-  distanceFromBottom,
-  nextAutoscrollPaused,
-  shouldAutoscroll,
-  type ScrollIntent,
-} from "../lib/chatScroll";
+import { atBottom, distanceFromBottom } from "../lib/chatScroll";
 import { dayBoundaries, fmtTickTime, markerStyle, nearestTick } from "../lib/chatTimeline";
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { playCue } from "../lib/sound";
@@ -2361,7 +2355,7 @@ export function ChatPane({
                   readChatHistory(resumeId)
                     .then((page) => {
                       if (disposed || !page.lines.length) return;
-                      forceBottomRef.current = true;
+                      stickRef.current = true;
                       setTurns(replayHistoryToTurns(page.lines, uid));
                     })
                     .catch(() => {});
@@ -2516,166 +2510,123 @@ export function ChatPane({
     dispatchRef.current(next.text);
   }, [streaming, started, claudeReady]);
 
-  // autoscroll on new content — but with a STICKY pause. The moment you scroll
-  // up (wheel, scrollbar, touch) we stop yanking you down and hold there until
-  // you ride back to the very bottom OR tap the "jump to latest" pill. Sticky is
-  // the fix for the old behavior: a small up-scroll fell back inside the bottom
-  // threshold and the next token re-pinned, so it felt like it ignored you.
-  const pausedRef = useRef(false);
-  // set just before we programmatically pin, so the scroll event our own pin
-  // fires isn't misread as the user moving the viewport.
-  const programmaticRef = useRef(false);
-  const lastScrollHeightRef = useRef(0);
-  const lastScrollTopRef = useRef(0);
+  // ── autoscroll (rebuilt from scratch) ────────────────────────────────────────
+  // ONE source of truth: `stickRef` = "keep the view pinned to the newest
+  // message?". It is a pure function of scroll POSITION (near the bottom ⇒ stick)
+  // and flips ONLY on the user's own scrolling — never inferred from scroll
+  // direction "intent" or a programmatic-vs-user flag (the old model's fragile
+  // parts). A ResizeObserver on the transcript re-pins on EVERY size change (new
+  // turns, streamed tokens, markdown/code that highlights a beat later, images,
+  // tool cards), so the view can neither fall off a growing bottom nor open
+  // stranded above it. Our own pin lands at distance ≈ 0, so the scroll event it
+  // fires simply re-confirms "stuck"; overflow-anchor:none on the scroller keeps
+  // reflow from moving scrollTop under us.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
   const lastArrowDownRef = useRef(0);
-  // one-shot: a bulk repaint (open-from-history / resume) sets this so the next
-  // layout jumps to the BOTTOM — the latest message — instead of the first.
-  const forceBottomRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
-  // while you're reading up (paused), count the blocks that land below — the
-  // jump pill wears the number so "something new arrived" is visible without
-  // yanking the viewport. Baseline = block count when the pause began; cleared
-  // by jump/unpause.
-  const pauseBaselineRef = useRef<number | null>(null);
   const [newBelow, setNewBelow] = useState(0);
-  // render-time mirror of blocks.length for the (stable) setPaused callback —
-  // assigned right after the blocks memo below.
+  // block count captured when the user detached from the bottom → the jump pill's
+  // "N new" counts everything that has landed since.
+  const newBaselineRef = useRef(0);
+  // render-time mirror of blocks.length (assigned right after the blocks memo).
   const blocksCountRef = useRef(0);
-  // current scroll position as content-space fractions → the custom rail thumb.
-  // (The native scrollbar is hidden; the rail is the single scroll indicator.)
-  // Updated on every scroll via syncJumpVisibility; the thumb has no CSS position
-  // transition, so it tracks the scroll 1:1 instead of easing in late. Declared
-  // up here (not with the minimap) because syncJumpVisibility writes it and the
-  // minimap effect reads its size in a deps array — TDZ order matters.
+  // scroll position as content-space fractions → the custom rail thumb (native
+  // scrollbar hidden). State-driven so the thumb tracks 1:1 with no CSS easing.
   const [railWin, setRailWin] = useState<{ top: number; size: number } | null>(null);
-  const syncJumpVisibility = useCallback((el: HTMLDivElement | null, paused = pausedRef.current) => {
+
+  // pin to the live bottom now (imperative; changes scrollTop only, never SIZE —
+  // so it can never retrigger the ResizeObserver into a loop).
+  const pinBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  // reflect the current position into the chrome: jump-pill visibility, its
+  // "N new" badge, and the rail-thumb window. Reads stickRef, never writes it.
+  const syncChrome = useCallback(() => {
+    const el = scrollRef.current;
     if (!el) {
-      setShowJump(paused);
+      setShowJump(false);
+      setNewBelow(0);
       setRailWin(null);
       return;
     }
-    setShowJump(
-      paused ||
-        distanceFromBottom({
-          scrollHeight: el.scrollHeight,
-          scrollTop: el.scrollTop,
-          clientHeight: el.clientHeight,
-        }) > 24,
-    );
-    // content-space scroll window driving the custom rail thumb (native bar
-    // hidden). State-driven so the thumb re-renders to the new position on every
-    // scroll; the thumb has NO CSS position transition (see its className), so each
-    // update lands instantly — that easing is what made it "follow late" before.
+    const stuck = stickRef.current;
+    const dist = distanceFromBottom({
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+      clientHeight: el.clientHeight,
+    });
+    setShowJump(!stuck && dist > 24);
+    setNewBelow(stuck ? 0 : Math.max(0, blocksCountRef.current - newBaselineRef.current));
     setRailWin(
       el.scrollHeight > el.clientHeight + 1
         ? { top: el.scrollTop / el.scrollHeight, size: el.clientHeight / el.scrollHeight }
         : null,
     );
   }, []);
-  const setPaused = useCallback((p: boolean) => {
-    // arm/clear the "N new below" counter on pause transitions (see newBelow).
-    if (p && !pausedRef.current) pauseBaselineRef.current = blocksCountRef.current;
-    if (!p) {
-      pauseBaselineRef.current = null;
-      setNewBelow(0);
-    }
-    pausedRef.current = p;
-    syncJumpVisibility(scrollRef.current, p);
-  }, [syncJumpVisibility]);
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    // a freshly loaded conversation jumps straight to the bottom (latest message),
-    // bypassing the near-bottom check — one-shot, then normal autoscroll resumes.
-    const forceBottom = forceBottomRef.current;
-    if (forceBottom) forceBottomRef.current = false;
-    if (
-      el &&
-      (forceBottom ||
-        shouldAutoscroll(
-          {
-            scrollHeight: el.scrollHeight,
-            scrollTop: el.scrollTop,
-            clientHeight: el.clientHeight,
-            previousScrollHeight: lastScrollHeightRef.current || undefined,
-          },
-          pausedRef.current,
-          // wide stick threshold so a fast token stream can't overshoot the bottom
-          // and silently fall off; the scroll/wheel handlers still pause the moment
-          // the user scrolls up, so this only affects auto-pinning.
-          AUTOSCROLL_STICK_THRESHOLD_PX,
-        ))
-    ) {
-      programmaticRef.current = true;
-      el.scrollTop = el.scrollHeight;
-      if (forceBottom) pausedRef.current = false;
-    }
-    if (el) {
-      lastScrollHeightRef.current = el.scrollHeight;
-      lastScrollTopRef.current = el.scrollTop;
-      syncJumpVisibility(el);
-    } else {
-      lastScrollHeightRef.current = 0;
-      lastScrollTopRef.current = 0;
-      syncJumpVisibility(null);
-    }
-    // `now` deliberately DROPPED from deps: it ticks every second from the 1Hz
-    // timer and re-ran this layout effect (thrashing layout) without new content.
-    // Content/stream changes already re-fire this; the running clock must not.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turns, streaming, liveStart, syncJumpVisibility]);
-  // Scroll handling rides the element's React onScroll/onWheel props (bound to the
-  // LIVE node on every render), NOT a one-shot addEventListener that captured the
-  // element at mount — that stale capture is why the rail thumb never tracked
-  // wheel-scrolls (drag worked only because it calls syncJumpVisibility directly).
-  const handleScroll = useCallback(() => {
+
+  // the ONLY place stick flips: derive it from the current scroll POSITION.
+  // Detaching snapshots the block baseline so "N new" counts from where you left.
+  const setStickFromPosition = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // our own programmatic pins shouldn't be read as a user "scroll up" intent,
-    // but the rail thumb must STILL track them.
-    const wasProgrammatic = programmaticRef.current;
-    programmaticRef.current = false;
-    if (wasProgrammatic) {
-      lastScrollHeightRef.current = el.scrollHeight;
-      lastScrollTopRef.current = el.scrollTop;
-      syncJumpVisibility(el);
-      return;
+    const stuck = atBottom({
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+      clientHeight: el.clientHeight,
+    });
+    if (stuck !== stickRef.current) {
+      stickRef.current = stuck;
+      if (!stuck) newBaselineRef.current = blocksCountRef.current;
     }
-    const intent: ScrollIntent =
-      el.scrollTop < lastScrollTopRef.current ? "up" : el.scrollTop > lastScrollTopRef.current ? "down" : "unknown";
-    const nextPaused = nextAutoscrollPaused(
-      pausedRef.current,
-      { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight },
-      intent,
-    );
-    setPaused(nextPaused);
-    lastScrollHeightRef.current = el.scrollHeight;
-    lastScrollTopRef.current = el.scrollTop;
-    syncJumpVisibility(el, nextPaused);
-  }, [setPaused, syncJumpVisibility]);
-  // scrolling up = user taking the wheel → pause immediately, even before the
-  // distance math catches up (mid-stream the content keeps growing below).
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (e.deltaY < 0) setPaused(true);
-    },
-    [setPaused],
-  );
+    syncChrome();
+  }, [syncChrome]);
+
+  // USER scroll (wheel / drag / touch / keys / momentum) — pure position → stick.
+  // Our own pins fire this too, but land at distance ≈ 0 so they keep it stuck.
+  const onScroll = useCallback(() => {
+    setStickFromPosition();
+  }, [setStickFromPosition]);
+
+  // "go to latest" (the pill + double-tap ↓): re-attach and pin. The
+  // ResizeObserver then holds it at the bottom through the streaming that follows.
   const jumpToLatest = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) {
-      programmaticRef.current = true;
-      // user-initiated jump GLIDES to the bottom (the streaming auto-pin
-      // elsewhere stays instant — smooth would lag behind tokens).
-      const reduce =
-        document.documentElement.dataset.reduceMotion === "true" ||
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-      lastScrollHeightRef.current = el.scrollHeight;
-      lastScrollTopRef.current = el.scrollTop;
-    }
-    setPaused(false);
-    syncJumpVisibility(el ?? null, false);
-  }, [setPaused, syncJumpVisibility]);
+    stickRef.current = true;
+    pinBottom();
+    syncChrome();
+  }, [pinBottom, syncChrome]);
+
+  // INSTANT pin on known content changes (new turn / token / stream flip) so a
+  // just-sent message lands its bubble immediately — pre-paint, no flicker. The
+  // ResizeObserver below then keeps it pinned through async growth.
+  useLayoutEffect(() => {
+    if (stickRef.current) pinBottom();
+    syncChrome();
+    // `now` intentionally excluded — the 1Hz clock must not thrash the layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns, streaming, liveStart]);
+
+  // the robust half: re-pin whenever the transcript OR the scroller changes size —
+  // streamed highlighting, images loading, tool cards expanding, the composer or
+  // pane resizing. This is what makes "open at the bottom" and "follow live"
+  // reliable no matter WHEN content actually lays out.
+  useEffect(() => {
+    const content = contentRef.current;
+    const scroller = scrollRef.current;
+    if (!content || !scroller) return;
+    const ro = new ResizeObserver(() => {
+      if (stickRef.current) pinBottom();
+      syncChrome();
+    });
+    ro.observe(content);
+    ro.observe(scroller);
+    return () => ro.disconnect();
+    // `empty` matters: the transcript (and contentRef) is early-returned away in
+    // the empty hero, so the observer must RE-attach when the first message flips
+    // the pane into the scrolling transcript.
+  }, [pinBottom, syncChrome, empty]);
 
   // autosize textarea. Also re-measures on box resize: a pane mounted inside a
   // display:none host (a toggled-away canvas conversation in the windowed
@@ -2903,7 +2854,7 @@ export function ChatPane({
       // sending always snaps to the bottom — your just-sent message must be in
       // view even if you'd scrolled up to read history (one-shot, consumed by the
       // autoscroll layout effect; it also clears the paused flag).
-      forceBottomRef.current = true;
+      stickRef.current = true;
       setStreaming(true);
       setBackendBusy(true);
       streamingTurnId.current = null;
@@ -3197,7 +3148,7 @@ export function ChatPane({
         .then(() => {
           removeQueued(queuedId);
           // steering is a send — snap to your injected message and resume following.
-          forceBottomRef.current = true;
+          stickRef.current = true;
           setTurns((prev) => [...prev, { kind: "user", id: uid(), text: item.text, steered: true, createdAt: Date.now() }]);
         })
         .catch((e) => reportDiag("chat.steer", e, { action: "queued" })); // no active turn yet → keep queued for automatic send
@@ -3308,7 +3259,7 @@ export function ChatPane({
     chatSteer(id, text)
       .then(() => {
         // steering is a send — snap to your injected message and resume following.
-        forceBottomRef.current = true;
+        stickRef.current = true;
         setTurns((prev) => [...prev, { kind: "user", id: uid(), text, steered: true, createdAt: Date.now() }]);
         setInput("");
         setOverlay(null);
@@ -3689,7 +3640,7 @@ export function ChatPane({
       readChatTranscript(id)
         .then((rows) => {
           if (rows.length) {
-            forceBottomRef.current = true;
+            stickRef.current = true;
             setTurns(transcriptToTurns(rows));
             deepLink();
           }
@@ -3699,7 +3650,7 @@ export function ChatPane({
       readChatHistory(id)
         .then((page) => {
           if (page.lines.length) {
-            forceBottomRef.current = true;
+            stickRef.current = true;
             setTurns(replayHistoryToTurns(page.lines, uid));
             deepLink();
           } else void fromTranscript();
@@ -3712,7 +3663,7 @@ export function ChatPane({
         .then((json) => {
           const tree = json ? deserializeTree(json) : null;
           if (tree) {
-            forceBottomRef.current = true;
+            stickRef.current = true;
             setTurns(tree.turns);
             setTreeNodes(tree.nodes);
             setTreeSel(tree.selection);
@@ -3772,7 +3723,7 @@ export function ChatPane({
       readChatHistory(session.id)
         .then((page) => {
           if (page.lines.length) {
-            forceBottomRef.current = true;
+            stickRef.current = true;
             setTurns(replayHistoryToTurns(page.lines, uid));
           } else {
             void repaintFromTranscript();
@@ -5383,12 +5334,12 @@ export function ChatPane({
     return out;
   }, [visibleTurns]);
   blocksCountRef.current = blocks.length;
-  // while paused, surface how many blocks landed below the fold (the jump pill
-  // wears the number); cleared when the pause lifts (setPaused).
+  // keep the jump pill's "N new" fresh as blocks land while detached. (The
+  // ResizeObserver re-syncs on growth too; this guarantees the count tracks the
+  // block list even if a new block adds no measurable height.)
   useEffect(() => {
-    if (pauseBaselineRef.current == null) return;
-    setNewBelow(Math.max(0, blocks.length - pauseBaselineRef.current));
-  }, [blocks.length]);
+    syncChrome();
+  }, [blocks.length, syncChrome]);
 
   // P4d — every file the AI edited/created this chat, aggregated for the roll-up.
   const changedFiles = useMemo(() => {
@@ -5644,7 +5595,6 @@ export function ChatPane({
     const frac = railFrac(clientY);
     const root = scrollRef.current;
     if (root) {
-      programmaticRef.current = true;
       // map the cursor fraction straight to the scroll window's TOP so the thumb
       // tracks the pointer 1:1 (scrollbar feel), not offset by half a viewport
       // (the old "center the point" math felt laggy/disconnected when dragging).
@@ -5652,17 +5602,10 @@ export function ChatPane({
         0,
         Math.min(frac * root.scrollHeight, root.scrollHeight - root.clientHeight),
       );
-      // sync the thumb synchronously from the new scrollTop (don't wait on the
-      // async scroll event, which is what made the drag feel sluggish).
-      // Dragging INTO the bottom zone re-arms following (same contract as
-      // wheel-scrolling back down); anywhere else pauses.
-      setPaused(
-        distanceFromBottom({
-          scrollHeight: root.scrollHeight,
-          scrollTop: root.scrollTop,
-          clientHeight: root.clientHeight,
-        }) > AUTOSCROLL_STICK_THRESHOLD_PX,
-      );
+      // derive stick from the dragged-to position — synchronously, so the thumb +
+      // pill don't lag the drag (the scroll event it fires would do it, later).
+      // Dragging INTO the bottom zone re-arms following; anywhere else detaches.
+      setStickFromPosition();
     }
     railBubbleAt(frac);
   };
@@ -5929,13 +5872,17 @@ export function ChatPane({
       </div>
       <div
         ref={scrollRef}
-        className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        // overflow-anchor:none — WE own the scroll position. Browser scroll-
+        // anchoring otherwise nudges scrollTop when a mid-transcript block resizes
+        // (tool cards, thinking) and fires a phantom scroll that would flip the
+        // stick flag off, silently stopping the follow. Disabling it keeps the
+        // position honest so `stickRef` is driven only by real user scrolls.
+        className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onMouseUp={onTranscriptMouseUp}
         onScroll={() => {
-          handleScroll();
+          onScroll();
           if (snipTip) setSnipTip(null);
         }}
-        onWheel={handleWheel}
       >
         {/* floating selection affordance — attach as context, or jump straight
             into a follow-up about exactly this passage. */}
@@ -5978,7 +5925,7 @@ export function ChatPane({
             </button>
           </div>
         )}
-        <div className="chat-col mx-auto flex flex-col gap-4 px-6 py-7">
+        <div ref={contentRef} className="chat-col mx-auto flex flex-col gap-4 px-6 py-7">
           {resumedTitle && (
             <div className="flex justify-center">
               <ResumedNote title={resumedTitle} onClear={() => setResumedTitle(null)} />

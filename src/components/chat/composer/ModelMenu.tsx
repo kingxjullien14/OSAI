@@ -148,6 +148,16 @@ export function ModelMenu({
   useEffect(() => {
     setSel((s) => Math.min(s, Math.max(0, navRows.length - 1)));
   }, [navRows.length]);
+  // open with the keyboard cursor resting on the CURRENT model, so exactly one
+  // row is lit — not the cursor on row 0 PLUS the current highlighted elsewhere.
+  useEffect(() => {
+    const idx = navRows.findIndex(
+      (m) => m.id === currentId && (m.engine ?? "claude") === currentEngine,
+    );
+    if (idx >= 0) setSel(idx);
+    // once, on open — later navigation moves the cursor freely.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -171,7 +181,8 @@ export function ModelMenu({
     return (
       <MenuItem
         key={modelKey(m)}
-        active={isCurrent(m) || (navIdx >= 0 && navIdx === sel)}
+        active={isCurrent(m)}
+        highlighted={navIdx >= 0 && navIdx === sel}
         title={m.note}
         onClick={() => onPick(m)}
       >

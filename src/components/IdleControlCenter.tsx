@@ -403,9 +403,71 @@ const STARS: Array<{ x: number; y: number; s: number; d: number; dur: number; hi
   { x: 12, y: 46, s: 1.5, d: 1.8, dur: 6.0, hi: 0.35 },
 ];
 
+/** Far, faint dust — a deep layer that gives the sky real depth. Lives inside
+ *  the slow-drifting <StarDust> wrapper so it parallaxes against the brighter
+ *  foreground stars. Deterministic (no per-render randomness), like STARS. */
+const DUST: Array<{ x: number; y: number; s: number; d: number; dur: number }> = [
+  { x: 3, y: 4, s: 1, d: 0.4, dur: 6.2 }, { x: 7, y: 15, s: 0.8, d: 2.1, dur: 7.0 },
+  { x: 11, y: 38, s: 1, d: 1.3, dur: 6.6 }, { x: 16, y: 5, s: 0.8, d: 3.0, dur: 7.4 },
+  { x: 21, y: 24, s: 1.2, d: 0.7, dur: 5.8 }, { x: 26, y: 47, s: 0.8, d: 2.6, dur: 7.8 },
+  { x: 30, y: 3, s: 1, d: 1.8, dur: 6.4 }, { x: 34, y: 33, s: 0.8, d: 3.4, dur: 7.2 },
+  { x: 41, y: 12, s: 1.2, d: 0.9, dur: 6.0 }, { x: 45, y: 40, s: 0.8, d: 2.3, dur: 7.6 },
+  { x: 49, y: 25, s: 1, d: 1.5, dur: 6.8 }, { x: 53, y: 51, s: 0.8, d: 3.2, dur: 7.0 },
+  { x: 59, y: 6, s: 1.2, d: 0.5, dur: 5.6 }, { x: 63, y: 37, s: 0.8, d: 2.8, dur: 7.4 },
+  { x: 68, y: 19, s: 1, d: 1.1, dur: 6.2 }, { x: 72, y: 44, s: 0.8, d: 3.6, dur: 7.8 },
+  { x: 77, y: 4, s: 1.2, d: 0.3, dur: 6.6 }, { x: 81, y: 31, s: 0.8, d: 2.0, dur: 7.2 },
+  { x: 86, y: 16, s: 1, d: 1.6, dur: 6.0 }, { x: 90, y: 42, s: 0.8, d: 3.1, dur: 7.6 },
+  { x: 94, y: 9, s: 1.2, d: 0.8, dur: 6.4 }, { x: 98, y: 28, s: 0.8, d: 2.4, dur: 7.0 },
+  { x: 5, y: 52, s: 0.8, d: 1.9, dur: 8.0 }, { x: 38, y: 55, s: 0.8, d: 3.5, dur: 8.2 },
+  { x: 66, y: 54, s: 0.8, d: 1.2, dur: 8.4 }, { x: 88, y: 53, s: 0.8, d: 2.7, dur: 8.0 },
+  { x: 14, y: 29, s: 1, d: 0.6, dur: 6.8 }, { x: 56, y: 14, s: 1, d: 3.3, dur: 6.2 },
+];
+
+/** A few bright, four-point sparkle stars — the glint that makes a night sky
+ *  read as jeweled. Placed clear of the moon (right ~88%) and the clock. */
+const SPARKLES: Array<{ x: number; y: number; s: number; delay: number }> = [
+  { x: 6, y: 12, s: 3, delay: 0 },
+  { x: 52, y: 6, s: 2.5, delay: 1.6 },
+  { x: 46, y: 16, s: 2, delay: 3.1 },
+  { x: 70, y: 30, s: 2.5, delay: 2.2 },
+  { x: 13, y: 44, s: 2, delay: 4.0 },
+];
+
+/** Meteor shower — near-parallel streaks radiating from the upper-right on
+ *  staggered lazy cycles, so a shower drifts by every so often (never a
+ *  constant rain). Same transform family as the old lone shooting star. */
+const METEORS: Array<{ x: number; y: number; len: number; delay: number; dur: number }> = [
+  { x: 92, y: 2, len: 90, delay: 0, dur: 7.0 },
+  { x: 78, y: 8, len: 130, delay: 2.4, dur: 8.0 },
+  { x: 96, y: 20, len: 70, delay: 4.1, dur: 6.5 },
+  { x: 66, y: 4, len: 110, delay: 5.7, dur: 7.5 },
+  { x: 84, y: 26, len: 95, delay: 1.3, dur: 8.5 },
+  { x: 58, y: 13, len: 120, delay: 3.6, dur: 7.0 },
+  { x: 99, y: 12, len: 80, delay: 6.8, dur: 6.8 },
+  { x: 72, y: 30, len: 100, delay: 8.2, dur: 8.0 },
+];
+
+/** One designed asterism, drawn in a fixed 220×150 local space (so nothing
+ *  distorts with the viewport). Faint links + glowing vertices, breathing in
+ *  and out of view on a long cycle. */
+const CONSTEL_PTS: Array<[number, number]> = [
+  [18, 26], [64, 14], [104, 44], [150, 30], [196, 62], [128, 84], [74, 70],
+];
+const CONSTEL_LINKS: Array<[number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 4], [2, 6], [6, 5], [5, 4],
+];
+
 function SkyField() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-[5]" style={{ height: `${HORIZON}%` }}>
+      {/* aurora curtains + a nebula bloom, painted behind the stars (screen-blend
+          so they glow additively over the void) */}
+      <AuroraSky />
+
+      {/* deep parallax dust — the Milky Way's faint backing layer */}
+      <StarDust />
+
+      {/* the bright, hand-placed twinkling stars (the mid layer) */}
       {STARS.map((st, i) => (
         <span
           key={i}
@@ -423,14 +485,104 @@ function SkyField() {
           }}
         />
       ))}
+
+      {/* four-point sparkles + one constellation — the "designed" jewelry */}
+      {SPARKLES.map((sp, i) => (
+        <span
+          key={i}
+          className="osai-lock-sparkle absolute"
+          style={{ left: `${sp.x}%`, top: `${sp.y}%`, width: sp.s, height: sp.s, ["--delay" as string]: `${sp.delay}s` }}
+        />
+      ))}
+      <Constellation />
+
+      {/* the moon — the sky's anchor: glowing halo, soft craters */}
+      <Moon />
+
       {/* satellites — slow, straight, faint */}
       <span className="osai-lock-sat absolute left-0 top-[10%] h-[2px] w-[2px] rounded-full bg-[var(--color-text)] opacity-40" />
       <span
         className="osai-lock-sat absolute left-0 top-[24%] h-[2px] w-[2px] rounded-full bg-[var(--osai-accent-2)] opacity-30"
         style={{ animationDuration: "150s", animationDelay: "38s" }}
       />
-      {/* one shooting star, top-right, on a lazy cycle */}
-      <span className="osai-lock-shoot absolute right-[8%] top-[9%] h-px w-24" />
+
+      {/* the shower streaking across the top */}
+      <MeteorShower />
+    </div>
+  );
+}
+
+/** The moon: a lit sphere (radial highlight + inset shadow for volume, stacked
+ *  radial-gradients for craters) under a slow-breathing halo. */
+function Moon() {
+  return (
+    <div aria-hidden className="osai-lock-moon absolute" style={{ right: "11%", top: "12%" }}>
+      <span className="osai-lock-moon-halo absolute rounded-full" style={{ inset: -28 }} />
+      <span className="osai-lock-moon-body relative block rounded-full" style={{ width: 62, height: 62 }} />
+    </div>
+  );
+}
+
+/** Two undulating aurora ribbons + a drifting nebula bloom (screen-blended). */
+function AuroraSky() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="osai-lock-aurora osai-lock-aurora-a absolute" />
+      <div className="osai-lock-aurora osai-lock-aurora-b absolute" />
+      <div className="osai-lock-nebula absolute" />
+    </div>
+  );
+}
+
+/** Far dust in a very slowly drifting wrapper → parallax against the fore-stars. */
+function StarDust() {
+  return (
+    <div className="osai-lock-skydrift absolute inset-0">
+      {DUST.map((d, i) => (
+        <span
+          key={i}
+          className="osai-lock-star absolute rounded-full"
+          style={{
+            left: `${d.x}%`,
+            top: `${d.y}%`,
+            width: d.s,
+            height: d.s,
+            background: "color-mix(in srgb, var(--color-text) 62%, var(--osai-accent-2))",
+            ["--delay" as string]: `${d.d}s`,
+            ["--dur" as string]: `${d.dur}s`,
+            ["--hi" as string]: 0.34,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MeteorShower() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {METEORS.map((m, i) => (
+        <span
+          key={i}
+          className="osai-lock-meteor absolute"
+          style={{ left: `${m.x}%`, top: `${m.y}%`, width: m.len, ["--delay" as string]: `${m.delay}s`, ["--dur" as string]: `${m.dur}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function Constellation() {
+  return (
+    <div className="osai-lock-constellation absolute" style={{ left: "21%", top: "7%", width: 220, height: 150 }}>
+      <svg width="220" height="150" viewBox="0 0 220 150" fill="none">
+        {CONSTEL_LINKS.map(([a, b], i) => (
+          <line key={i} x1={CONSTEL_PTS[a][0]} y1={CONSTEL_PTS[a][1]} x2={CONSTEL_PTS[b][0]} y2={CONSTEL_PTS[b][1]} />
+        ))}
+        {CONSTEL_PTS.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.9 : 1.2} />
+        ))}
+      </svg>
     </div>
   );
 }

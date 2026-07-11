@@ -28,6 +28,7 @@ import { PaneMenu, type PaneMenuEntry } from "../PaneMenu";
 import { CadencedShimmer } from "./ThinkingBlock";
 import { fmtClock, fmtDuration } from "./format";
 import { Markdown } from "./Markdown";
+import { useTypewriter } from "./useTypewriter";
 
 type Turn = ChatTurn;
 
@@ -626,10 +627,16 @@ export function AssistantBubble({
   pinned?: boolean;
   onTogglePin?: () => void;
 }) {
-  // Don't render the sentinel as a half-baked pill while still streaming in —
-  // wait for the full message so we don't flicker partial `[[btn:` text.
-  const { body, buttons } = turn.streaming
-    ? { body: turn.text, buttons: [] as string[] }
+  // Smooth typewriter reveal while the answer streams in (and until it catches up
+  // after the stream ends): the visible body is a growing prefix, so bursts flow
+  // out instead of spawning. `animating` = still streaming OR not yet caught up;
+  // buttons/actions/caret all gate on it so they surface only once settled.
+  const tw = useTypewriter(turn.text, turn.streaming);
+  const animating = turn.streaming || !tw.done;
+  // Don't render the `[[btn: …]]` sentinel as a half-baked pill mid-reveal — wait
+  // for the settled full message.
+  const { body, buttons } = animating
+    ? { body: tw.text, buttons: [] as string[] }
     : parseButtons(turn.text);
   // right-click menu (W3) — copy the SOURCE markdown or pin, sans hover-hunt.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -661,7 +668,7 @@ export function AssistantBubble({
     <div
       className="group flex flex-col items-start gap-1"
       onContextMenu={(e) => {
-        if (turn.streaming) return;
+        if (animating) return;
         if (window.getSelection()?.toString()) return;
         // code fences own their right-click (run/copy) — let them win.
         if ((e.target as HTMLElement).closest("pre")) return;
@@ -675,7 +682,7 @@ export function AssistantBubble({
       )}
       <div className="max-w-[92%] font-sans text-[14.5px] leading-relaxed text-[var(--color-text-2)]">
         <Markdown text={body} onOpenUrl={onOpenUrl} />
-        {turn.streaming && (
+        {animating && (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-[var(--color-accent)]" />
         )}
       </div>
@@ -694,7 +701,7 @@ export function AssistantBubble({
           ))}
         </div>
       )}
-      {!turn.streaming && body.trim() && (
+      {!animating && body.trim() && (
         <div
           className={`flex items-center gap-0.5 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${
             pinned ? "opacity-100" : "opacity-0"

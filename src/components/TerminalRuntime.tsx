@@ -511,12 +511,32 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
       }
     };
 
+    // R7: is the host actually on screen? A minimized FloatingWindow sets
+    // `display:none` but keeps the pane MOUNTED, so the host measures 0×0. Fitting
+    // then makes FitAddon propose its MINIMUM_COLS (2) geometry, and shipping that
+    // to the backend reflows the WHOLE tmux/psmux session into a 2-column ribbon —
+    // the "terminal is garbled after I restore it" bug. clientWidth/Height are 0
+    // while display:none (this also covers an OS-window minimize that zeroes the
+    // webview layout); offsetParent is null under any display:none ancestor.
+    const hostVisible = () =>
+      host.clientWidth >= 2 && host.clientHeight >= 2 && host.offsetParent !== null;
+    // Was the host hidden at the last observation? Drives the on-restore repaint.
+    let wasHidden = false;
+
     (async () => {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
-      try {
-        fit.fit();
-      } catch {
-        /* host not measured yet */
+      // Only fit from a REAL measurement. If this pane mounted while hidden
+      // (restoring a saved layout whose terminal window is minimized), leave xterm
+      // at its 80×24 default and let the first on-show resize fit it — never spawn
+      // psmux at the degenerate 2-col geometry.
+      if (hostVisible()) {
+        try {
+          fit.fit();
+        } catch {
+          /* host not measured yet */
+        }
+      } else {
+        wasHidden = true;
       }
       const cols = Math.max(1, term.cols);
       const rows = Math.max(1, term.rows);
@@ -617,9 +637,38 @@ export function TerminalPane({ kind, paneKey }: { kind: PaneKind; paneKey?: stri
     // Coalesce to a single trailing fit+resize ~60ms after motion settles.
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const applyResize = () => {
+      // Skip while hidden (see R7 above): a 0×0 host must never reflow the backend
+      // to 2 columns. Leave the PTY at its last good size until the pane is shown.
+      if (!hostVisible()) {
+        wasHidden = true;
+        return;
+      }
       try {
+        // Guard the degenerate fit: if FitAddon can't measure sane cell metrics
+        // yet, don't ship a resize (proposeDimensions floors at MINIMUM_COLS = 2).
+        const dims = fit.proposeDimensions();
+        if (
+          !dims ||
+          !Number.isFinite(dims.cols) ||
+          !Number.isFinite(dims.rows) ||
+          dims.cols < 2 ||
+          dims.rows < 1
+        ) {
+          return;
+        }
         fit.fit();
         if (sessionId != null) ptyResize(sessionId, term.cols, term.rows).catch((e) => reportDiag("terminal.resize", e, { action: "resize" }));
+        // Just restored from hidden: the WebGL canvas may have been blanked (or its
+        // context dropped) while display:none — repaint the full viewport from
+        // xterm's intact buffer so the pane returns clean, not stale/black.
+        if (wasHidden) {
+          wasHidden = false;
+          try {
+            term.refresh(0, term.rows - 1);
+          } catch {
+            /* renderer mid-teardown — the next frame repaints anyway */
+          }
+        }
       } catch {
         /* ignore */
       }

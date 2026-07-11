@@ -28,6 +28,9 @@
 import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
+import { m } from "motion/react";
+
+import { windowPop } from "./fx/motionTokens";
 import {
   applyResize,
   clampDockWidth,
@@ -245,8 +248,13 @@ export function FloatingWindow({
     : HANDLES;
 
   return (
-    <div
+    // m.div: a spring pop-in on open / shrink-out on close (windowPop), scale +
+    // opacity ONLY — the gesture owns left/top/width/height, so motion and the
+    // drag never write the same properties. `layout` is intentionally OFF (it
+    // would fight the direct-style gesture writes).
+    <m.div
       ref={rootRef}
+      {...windowPop()}
       onPointerDownCapture={onActivate}
       className={`pointer-events-auto absolute transition-[left,top,width,height,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
         win.dock ? "" : "rounded-lg"
@@ -273,6 +281,6 @@ export function FloatingWindow({
           style={{ cursor: h.cursor, touchAction: "none" }}
         />
       ))}
-    </div>
+    </m.div>
   );
 }

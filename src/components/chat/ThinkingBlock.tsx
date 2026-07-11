@@ -9,6 +9,7 @@ import { Brain, ChevronDown } from "lucide-react";
 
 import type { ChatTurn } from "../../lib/chatStream";
 import { estTokens, fmtDuration } from "./format";
+import { useTypewriter } from "./useTypewriter";
 
 /** Word-cadence shimmer for live labels ("thinking", "streaming"). Also used
  *  by ChatPane's activity headers — exported with the block it decorates. */
@@ -62,6 +63,8 @@ export function ThinkingBlock({
   }, [turn.streaming]);
   const elapsedMs = turn.streaming ? Math.max(0, now - startRef.current) : turn.durationMs;
   const tok = estTokens(turn.text);
+  // reveal the thought with the same fluid typewriter as the answer prose.
+  const tw = useTypewriter(turn.text, turn.streaming);
 
   return (
     <div
@@ -97,7 +100,10 @@ export function ThinkingBlock({
       </button>
       {open && (
         <div className="max-h-72 overflow-y-auto border-t border-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-3 py-2 font-sans text-[12.5px] italic leading-relaxed whitespace-pre-wrap break-words text-[var(--color-muted)] [scrollbar-width:thin]">
-          {turn.text}
+          {tw.text}
+          {(turn.streaming || !tw.done) && (
+            <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-[var(--color-accent)] align-middle" />
+          )}
         </div>
       )}
     </div>

@@ -474,16 +474,23 @@ export function Dropdown({
 export function MenuItem({
   children,
   active,
+  highlighted,
   disabled,
   title,
   onClick,
 }: {
   children: React.ReactNode;
+  /** The SELECTED item — draws the checkmark (and the lit background). */
   active?: boolean;
+  /** Keyboard/hover CURSOR — lit background only, NO checkmark, so a navigated
+   *  row never reads as a second selection (the model picker's two-checkmarks
+   *  bug). When omitted, `active` alone drives both, as before. */
+  highlighted?: boolean;
   disabled?: boolean;
   title?: string;
   onClick: () => void;
 }) {
+  const lit = (active || highlighted) && !disabled;
   return (
     <button
       type="button"
@@ -491,15 +498,16 @@ export function MenuItem({
       onClick={onClick}
       disabled={disabled}
       role="menuitem"
+      aria-current={active ? "true" : undefined}
       className={`relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors ${
         disabled
           ? "cursor-not-allowed text-[var(--color-faint)]"
-          : active
+          : lit
             ? "bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-text)] shadow-[inset_0_0_24px_-14px_var(--color-accent)]"
             : "text-[var(--color-text-2)] hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
       }`}
     >
-      {active && !disabled && (
+      {lit && (
         <span
           aria-hidden
           className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] shadow-[var(--osai-glow-soft)]"

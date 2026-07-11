@@ -1,6 +1,6 @@
 [package]
 name = "osai"
-version = "2.1.2"
+version = "2.2.0"
 description = "OSAI — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"
@@ -80,6 +80,10 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # RELEASING.md for the build-sign-publish flow.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
+# Single-instance guard: a second launch of the app focuses the EXISTING window
+# instead of spawning a whole new process. Desktop-only (same gate as updater);
+# registered FIRST in lib.rs so it intercepts before the app boots.
+tauri-plugin-single-instance = "2"
 
 # macOS-only: flip the WKWebView element-fullscreen preference (off by default)
 # so YouTube/video fullscreen works inside browser panes. Pinned to the same

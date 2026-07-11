@@ -18,6 +18,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
+import { AnimatePresence } from "motion/react";
+
 import {
   bringToFront,
   clampDockWidth,
@@ -238,26 +240,32 @@ export function WindowLayer({
           style={{ left: ghost.x, top: ghost.y, width: ghost.w, height: ghost.h }}
         />
       )}
-      {vp &&
-        wins?.map((win) => {
-          if (!paneKeys.includes(win.id)) return null;
-          return (
-            <FloatingWindow
-              key={win.id}
-              win={win}
-              vp={vp}
-              active={activeKey === win.id}
-              hidden={hiddenKeys.includes(win.id)}
-              onActivate={() => onActivate(win.id)}
-              onCommitRect={(rect) => commitRect(win.id, rect)}
-              onCommitMove={(dragged, cx, cy) => commitMove(win.id, dragged, cx, cy)}
-              onMovePointer={movePointer}
-              onCommitDockW={(w) => commitDockW(win.id, w)}
-            >
-              {(startMove) => renderPane(win.id, startMove)}
-            </FloatingWindow>
-          );
-        })}
+      {/* AnimatePresence lets a closed window play its shrink-out (windowPop.exit)
+          before it unmounts; `initial={false}` skips the enter beat for windows
+          already present when the layer first mounts (only freshly-opened ones
+          pop in). Filtering (not returning null) keeps the children a clean
+          keyed list so presence tracking stays stable. */}
+      <AnimatePresence initial={false}>
+        {vp &&
+          wins
+            ?.filter((win) => paneKeys.includes(win.id))
+            .map((win) => (
+              <FloatingWindow
+                key={win.id}
+                win={win}
+                vp={vp}
+                active={activeKey === win.id}
+                hidden={hiddenKeys.includes(win.id)}
+                onActivate={() => onActivate(win.id)}
+                onCommitRect={(rect) => commitRect(win.id, rect)}
+                onCommitMove={(dragged, cx, cy) => commitMove(win.id, dragged, cx, cy)}
+                onMovePointer={movePointer}
+                onCommitDockW={(w) => commitDockW(win.id, w)}
+              >
+                {(startMove) => renderPane(win.id, startMove)}
+              </FloatingWindow>
+            ))}
+      </AnimatePresence>
     </div>
   );
 }

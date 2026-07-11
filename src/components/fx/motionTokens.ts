@@ -140,6 +140,32 @@ export function toastPop() {
   };
 }
 
+/** Floating WINDOW open/close (the windowed workspace): a spring pop-in, quick
+ *  shrink-out. SCALE + OPACITY ONLY — the window's geometry (left/top/width/
+ *  height) stays owned by its own pointer gesture + CSS glide, so motion never
+ *  writes the same properties the drag does and can't fight it. Reduce-motion
+ *  collapses to a zero-duration opacity cut. */
+export function windowPop() {
+  const reduce = prefersReducedMotion();
+  const c = clocks();
+  if (reduce) {
+    return {
+      initial: { opacity: 0 },
+      animate: { opacity: 1, transition: { duration: 0 } },
+      exit: { opacity: 0, transition: { duration: 0 } },
+    };
+  }
+  return {
+    initial: { opacity: 0, scale: 0.94 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      transition: { type: "spring" as const, stiffness: 420, damping: 30, mass: 0.7 },
+    },
+    exit: { opacity: 0, scale: 0.96, transition: { duration: c.durFast, ease: c.easeIn } },
+  };
+}
+
 /** Pane close (the old `.pane-exit` beat): shrink away under the grid's CSS
  *  track glide. Exit-only — pane ENTRANCES stay on the CSS `fade-in-up`
  *  (mount-time), so each property keeps a single owner per phase. */

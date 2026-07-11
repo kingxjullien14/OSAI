@@ -639,19 +639,32 @@ test("shell exposes running mac apps as attachable pane targets", () => {
   assert.match(lib, /mac_apps::mac_capture_app/);
 });
 
-test("chatpane autoscroll follows live output until user scrolls away", () => {
+test("chatpane autoscroll: a stick flag + ResizeObserver keep the view pinned to the newest message", () => {
   const chatPane = read("src/components/ChatPane.tsx");
   const scroll = read("src/lib/chatScroll.ts");
 
+  // ONE source of truth (stick), re-pinned on EVERY content resize — not inferred
+  // from scroll-direction intent, a programmatic-vs-user flag, or an rAF settle.
+  assert.match(chatPane, /stickRef/);
+  assert.match(chatPane, /new ResizeObserver/);
+  assert.match(chatPane, /contentRef/);
   assert.match(chatPane, /useLayoutEffect/);
-  assert.match(chatPane, /nextAutoscrollPaused/);
-  assert.match(chatPane, /syncJumpVisibility/);
-  assert.match(chatPane, /distanceFromBottom/);
+  // stick is a pure function of POSITION (near the bottom ⇒ follow) …
+  assert.match(chatPane, /atBottom\(/);
+  // … and the browser must not fight our scrollTop (scroll-anchoring off).
+  assert.match(chatPane, /\[overflow-anchor:none\]/);
+  // the jump-to-latest affordances stay: the pill + double-tap ↓.
   assert.match(chatPane, /scroll to bottom/);
   assert.match(chatPane, /lastArrowDownRef/);
   assert.match(chatPane, /e\.key === "ArrowDown" && !overlay/);
   assert.match(chatPane, /jumpToLatest\(\)/);
-  assert.match(scroll, /nextAutoscrollPaused/);
+  // the old intent/pause machinery is fully retired.
+  assert.doesNotMatch(chatPane, /nextAutoscrollPaused/);
+  assert.doesNotMatch(chatPane, /programmaticRef/);
+  assert.doesNotMatch(chatPane, /forceBottomRef/);
+  // pure, unit-tested helpers back the position math.
+  assert.match(scroll, /export function atBottom/);
+  assert.match(scroll, /export function distanceFromBottom/);
 });
 
 test("chatpane pending steer queue stays attached to the shared composer", () => {
