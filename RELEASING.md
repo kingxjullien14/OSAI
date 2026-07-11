@@ -33,66 +33,78 @@ npx tauri signer generate -w "$env:USERPROFILE\.aios\keys\aios-updater.key" --ci
 
 ## Cutting a release
 
-1. **Bump the version** in all three (keep them in lockstep):
-   - `src-tauri/tauri.conf.json` → `version`
-   - `src-tauri/Cargo.toml` → `version`
-   - `package.json` → `version`
-   - and the two version literals in `src/components/Settings.tsx` (`v… · Jul.Nazz`
-     — the about hero + the sidebar footer).
+Releases are built, signed, and published by **CI** (`.github/workflows/build.yml`)
+on a `v*` tag push — no local build needed. `tauri-action` compiles Windows +
+macOS, signs the updater artifacts with the `TAURI_SIGNING_PRIVATE_KEY` Actions
+secret, generates `latest.json` (all platforms), and creates a **draft** Release.
 
-2. **Stage the psmux sidecar** (Windows builds — the bundled "native Windows
-   tmux" that powers persistent/detachable terminal panes). Fetches the latest
-   psmux release into `src-tauri/resources/` (gitignored), which the
-   `bundle.resources` glob then packages:
+1. **Bump the version** (keep them in lockstep):
+   - `package.json` → `version` — `tauri.conf.json` reads it via `"version": "../package.json"`, so it needs no separate bump
+   - `src-tauri/Cargo.toml` → `version` (and the `osai` entry in `src-tauri/Cargo.lock`)
+   - the two `v… · Jul.Nazz` literals in `src/components/Settings.tsx` (about hero + sidebar footer)
 
-   ```pwsh
-   pwsh scripts/fetch-psmux.ps1            # latest, host arch (x64/arm64)
-   ```
+2. **Commit** the version bump together with the release's changes.
 
-   Skip-able: if you omit this, the app still bundles fine (the glob just packs
-   the `.gitkeep`) and falls back to a PATH-installed psmux or a non-persistent
-   PTY at runtime — but bundling guarantees persistence works out-of-the-box.
-
-3. **Build, signed.** Point Tauri at the private key so it emits the `.sig`:
+3. **Annotate the tag WITH THE CHANGELOG.** The tag's message *body* is the single
+   source of the release notes: the workflow feeds it to `tauri-action` as
+   `releaseBody`, which lands in BOTH the GitHub release body **and**
+   `latest.json`'s `notes` — the text shown in the in-app **Settings › about ›
+   software update** panel. That panel renders **plain text** (`whitespace-pre-line`),
+   so write plain prose + bullets (e.g. `•`), not markdown headings.
 
    ```pwsh
-   $env:TAURI_SIGNING_PRIVATE_KEY          = "$env:USERPROFILE\.aios\keys\aios-updater.key"
-   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""   # passwordless key
-   npm run tauri build
+   # put the changelog in a file, then annotate the tag with it:
+   git tag -a v<version> -F notes.txt
    ```
 
-   Output (Windows): `src-tauri/target/release/bundle/nsis/OSAI_<version>_x64-setup.exe`
-   plus a matching `…-setup.exe.sig`. (`createUpdaterArtifacts: true` in the config
-   is what makes Tauri produce the `.sig`.)
+   > A lightweight tag (or an annotation with no body) falls back to the tag's
+   > subject line — the in-app notes will be one terse line. Always annotate with
+   > the full changelog.
 
-4. **Generate the manifest:**
+4. **Push** — the tag is what triggers the release build:
 
    ```pwsh
-   pwsh scripts/make-latest-json.ps1 -Notes "short changelog line"
+   git push origin main
+   git push origin v<version>
    ```
 
-   Writes `latest.json` at the repo root, pointing at the v`<version>` release asset.
-
-5. **Publish** (uploads the installer **and** the manifest to the release; the
-   script prints these exact commands too):
+5. **Publish the draft** once CI is green. The build only *drafts* the release;
+   publishing is the user-facing step that lets installs auto-update:
 
    ```pwsh
-   gh release create v<version> `
-     "src-tauri/target/release/bundle/nsis/OSAI_<version>_x64-setup.exe" `
-     "latest.json" -t "v<version>" -n "short changelog line"
+   gh release edit v<version> --draft=false --latest
    ```
 
-   Re-publishing to an existing tag? `gh release upload v<version> <files> --clobber`.
+   Then confirm the endpoint resolves to the new version **with** notes:
 
-That's it — open an older OSAI install and within a few seconds of launch it'll
-offer the new version, or check on demand in **Settings › about**.
+   ```pwsh
+   curl -sL https://github.com/kingxjullien14/OSAI/releases/latest/download/latest.json
+   ```
+
+That's it — an older install offers the new version (with the changelog) within a
+few seconds of launch, or on demand in **Settings › about**.
 
 ## Notes / gotchas
 
-- **Only Windows is wired** in `latest.json` (`windows-x86_64`). To also self-update
-  macOS/Linux, build on those platforms and add their `.app.tar.gz`/`AppImage` +
-  `.sig` entries to the `platforms` map (extend `make-latest-json.ps1`).
-- `latest.json` is **git-ignored** — it's a per-release artifact, regenerated each
-  time and uploaded, not source.
+- **Notes source = the annotated tag.** If a release ships with empty in-app notes,
+  the tag wasn't annotated with a message body (step 3). Fix after the fact by
+  patching `notes` in the release's `latest.json` and re-uploading it
+  (`gh release upload v<version> latest.json --clobber`).
+- **Both platforms self-update.** CI builds + signs Windows *and* macOS, so
+  `latest.json` carries `windows-x86_64` + `darwin-aarch64` entries. (Linux / x64
+  macOS aren't in the matrix yet — add runners to extend.)
+- `latest.json` is **git-ignored** — a per-release artifact built by CI and
+  attached to the release, never source.
 - The endpoint needs the repo's releases to be **public** (or the updater can't
   fetch the asset). Private repos need a token-bearing endpoint instead.
+
+## Building locally (optional)
+
+Not needed for a release, but to produce a signed build by hand:
+
+```pwsh
+pwsh scripts/fetch-psmux.ps1   # bundle the Windows psmux sidecar (persistent terminals)
+$env:TAURI_SIGNING_PRIVATE_KEY          = "$env:USERPROFILE\.aios\keys\aios-updater.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""   # passwordless key
+npm run tauri build
+```

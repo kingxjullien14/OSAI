@@ -27,6 +27,10 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v7
+        with:
+          # full history + annotated tags so the "release notes from tag" step
+          # below can read the tag's message body (a shallow clone omits it).
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 
@@ -51,6 +55,29 @@ jobs:
         run: |
           node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.bundle.macOS.signingIdentity='-';fs.writeFileSync(p,JSON.stringify(c,null,2));"
 
+      # Release notes for BOTH the GitHub release body AND the in-app updater
+      # (latest.json → `notes`, shown in Settings › about › software update) come
+      # from the ANNOTATED TAG's message body — so annotate the release tag with
+      # the changelog (`git tag -a vX.Y.Z -F notes.md`; see RELEASING.md).
+      # tauri-action bakes releaseBody into latest.json at build time, which is why
+      # this must exist BEFORE the build (setting the release body afterwards would
+      # not reach the manifest).
+      - name: release notes from tag
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          body="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:body)')"
+          # lightweight tag / empty body → fall back to the tag's subject line
+          if [ -z "${body//[[:space:]]/}" ]; then
+            body="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:subject)')"
+          fi
+          {
+            echo "body<<__OSAI_NOTES_EOF__"
+            echo "$body"
+            echo "__OSAI_NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
       - name: build (tauri)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -66,6 +93,9 @@ jobs:
           # only cut a Release on a tag push; plain pushes just build
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && 'OSAI __VERSION__' || '' }}
+          # changelog from the annotated tag → the GitHub release body AND,
+          # crucially, latest.json's `notes` (the in-app "software update" panel).
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
 
       - name: upload installers
