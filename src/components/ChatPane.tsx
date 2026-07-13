@@ -1181,15 +1181,27 @@ export function ChatPane({
   const [streaming, setStreaming] = useState(false);
   const [backendBusy, setBackendBusy] = useState(false);
   const [started, setStarted] = useState(false);
+  // Background sub-agents still working AFTER the main turn ended (run_in_background
+  // agents keep going once the model's turn closes). Tracked from the engine's
+  // `system/task_*` lifecycle events so the pane can show "still running" even
+  // though `streaming`/`backendBusy` are false. Keyed by task_id; a task is
+  // dropped when its completion/cancel notification arrives. Reattach replays the
+  // same events through this handler, so the set self-corrects.
+  const [bgTasks, setBgTasks] = useState<
+    { id: string; description: string; subagentType?: string; lastLine?: string }[]
+  >([]);
   // transient pre-session status shown inline in the hero (queued-send notice,
   // startup failure) — never a transcript turn, so the empty state stays calm.
   const [startupNote, setStartupNote] = useState<string | null>(null);
   // activity glow: report this pane's live run to the shell (chrome breathes).
+  // Background sub-agents count as "busy" too — so the tab dot stays lit while a
+  // run_in_background fan-out keeps working after the main turn closed.
+  const bgActive = bgTasks.length > 0;
   useEffect(() => {
     if (!paneKey) return;
-    setChatBusy(paneKey, streaming);
+    setChatBusy(paneKey, streaming || bgActive);
     return () => setChatBusy(paneKey, false);
-  }, [paneKey, streaming]);
+  }, [paneKey, streaming, bgActive]);
   // claude's init event arrived (session_id known) — gates the seed auto-send
   const [claudeReady, setClaudeReady] = useState(false);
 
@@ -1906,6 +1918,57 @@ export function ChatPane({
 
   const handleEvent = useCallback((ev: ChatEvent) => {
     setRunEventState((state) => reduceRunEvents(state, ev));
+    // ---- background sub-agent lifecycle ---------------------------------------
+    // run_in_background Task agents keep working AFTER the main turn closes; the
+    // engine narrates them via `system/task_*` events (no turn to render). Track
+    // the live set so the pane/tab can show "still running in the background" even
+    // though `streaming` is false. task_started/progress upsert; the completion
+    // notification (status completed/failed/cancelled) drops the task.
+    if (ev.type === "system") {
+      const st = ev.subtype;
+      if (st === "task_started" || st === "task_progress") {
+        const tid = typeof ev.task_id === "string" ? ev.task_id : "";
+        if (tid) {
+          const desc = typeof ev.description === "string" ? ev.description : "";
+          const sub = typeof ev.subagent_type === "string" ? ev.subagent_type : undefined;
+          setBgTasks((prev) => {
+            const i = prev.findIndex((t) => t.id === tid);
+            if (i < 0) {
+              return [
+                ...prev,
+                {
+                  id: tid,
+                  description: desc || "background agent",
+                  subagentType: sub,
+                  lastLine: st === "task_progress" ? desc || undefined : undefined,
+                },
+              ];
+            }
+            const next = [...prev];
+            next[i] = {
+              ...next[i],
+              description: next[i].description || desc || "background agent",
+              subagentType: next[i].subagentType ?? sub,
+              lastLine: st === "task_progress" && desc ? desc : next[i].lastLine,
+            };
+            return next;
+          });
+        }
+        return;
+      }
+      if (st === "task_notification" || st === "task_updated") {
+        const tid = typeof ev.task_id === "string" ? ev.task_id : "";
+        const patch = (ev.patch ?? {}) as { status?: unknown };
+        const status = String(ev.status ?? patch.status ?? "").toLowerCase();
+        const done =
+          status === "completed" ||
+          status === "failed" ||
+          status === "cancelled" ||
+          status === "canceled";
+        if (tid && done) setBgTasks((prev) => prev.filter((t) => t.id !== tid));
+        return;
+      }
+    }
     // ---- interactive-tool hold (AskUserQuestion / ExitPlanMode) --------------
     // Headless claude auto-dismisses both tools the instant they're called, and
     // the model reads that as "the user isn't answering" — it then proceeds on
@@ -2157,9 +2220,15 @@ export function ChatPane({
         });
         // soundscape (opt-in, default off): a soft cue when the run lands
         playCue(ev.is_error ? "fail" : "done");
+        // A turn woken by a background agent finishing carries an `origin`
+        // (task-notification). Tag its result so the variant segmenter stacks it
+        // as its own segment instead of folding it into the previous prompt's
+        // ‹N/M› switcher (which used to HIDE each background completion behind the
+        // last one).
+        const continuation = ev.origin != null;
         setTurns((prev) => [
           ...prev,
-          { kind: "result", id: uid(), text: foot, cost: costNum, tokens, durationMs, ok: !Boolean(ev.is_error) },
+          { kind: "result", id: uid(), text: foot, cost: costNum, tokens, durationMs, ok: !Boolean(ev.is_error), ...(continuation ? { continuation: true } : {}) },
         ]);
         return;
       }
@@ -2273,6 +2342,7 @@ export function ChatPane({
     setStarted(false);
     setClaudeReady(false);
     setCtxTokens(null);
+    setBgTasks([]); // a fresh/restarted session has no carried-over background work
     if (webChatRuntime) {
       sessionIdRef.current = 0;
       claudeSessionIdRef.current = `web-${paneKey ?? "chat"}`;
@@ -4686,6 +4756,25 @@ export function ChatPane({
               e.target.value = "";
             }}
           />
+          {bgActive && (
+            <div
+              className="flex items-center gap-2 px-4 pt-2 font-mono text-[11px] text-[var(--color-muted)]"
+              title={bgTasks.map((t) => t.description).join("\n")}
+            >
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-accent)] opacity-70" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+              </span>
+              <span className="shrink-0 text-[var(--color-text-2)]">
+                {bgTasks.length} background agent{bgTasks.length === 1 ? "" : "s"} running
+              </span>
+              {bgTasks[bgTasks.length - 1]?.lastLine && (
+                <span className="min-w-0 truncate text-[var(--color-faint)]">
+                  · {bgTasks[bgTasks.length - 1]!.lastLine}
+                </span>
+              )}
+            </div>
+          )}
           {voiceNote && (
             <button
               type="button"

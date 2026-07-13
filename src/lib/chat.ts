@@ -104,6 +104,13 @@ export async function recordChatSession(
   });
 }
 
+/** Manually rename a conversation (History / tab rename). Persists the title to
+ *  the /resume index AND locks it, so History shows the new name and a later
+ *  auto-title upsert won't revert it. */
+export async function renameChatSession(id: string, title: string): Promise<void> {
+  return invoke("rename_chat_session", { id, title });
+}
+
 /** A past turn loaded from a transcript, to repaint a resumed conversation. */
 export interface ChatTurnInfo {
   role: "user" | "assistant";
@@ -185,6 +192,11 @@ export interface ChatEvent {
   num_turns?: number;
   total_cost_usd?: number;
   usage?: Record<string, unknown>;
+  // What TRIGGERED this turn. A user-typed turn has none; a turn woken by a
+  // BACKGROUND agent finishing carries `{ kind: "task-notification" }`. Used to
+  // keep such continuation turns as their own stacked segment instead of folding
+  // them into the previous prompt's ‹N/M› regenerate switcher.
+  origin?: { kind?: string; [key: string]: unknown } | null;
   // init / general
   session_id?: string;
   model?: string;

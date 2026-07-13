@@ -105,3 +105,55 @@ test("real prompts still variant normally after a truncated root prefix", () => 
   assert.equal(info.countByUser.get(ROOT_USER), 1);
   assert.equal(info.countByUser.get("u1"), 2, "regenerate still works");
 });
+
+// ── background sub-agents (the "2/2 opens a new path when an agent finishes" bug) ──
+
+const rc = (id: string) => ({ kind: "result", id, continuation: true });
+const child = (id: string, parentId: string) => ({ kind: "tool", id, parentId });
+
+test("a background continuation is a STANDALONE segment, not a variant of the prompt", () => {
+  // user asks → main spawns background agents, ends its turn (r1). Each agent that
+  // finishes wakes the model for a continuation run (rc). Those must NOT become
+  // ‹2/2›, ‹3/3› alternates of u1 that hide each other — they stack.
+  const turns = [
+    u("u1"), a("spawn"), r("r1"),
+    a("agentA done"), rc("rcA"),
+    a("agentB done"), rc("rcB"),
+  ];
+  const info = computeResponseVariants(turns);
+  assert.equal(info.countByUser.get("u1"), 1, "the prompt still has ONE response");
+  // continuation turns are standalone (ROOT_USER bucket, variant 0) → never hidden
+  assert.deepEqual(info.byTurnId.get("agentA done"), { userId: ROOT_USER, variant: 0 });
+  assert.deepEqual(info.byTurnId.get("agentB done"), { userId: ROOT_USER, variant: 0 });
+  assert.equal(hiddenVariantTurnIds(info, {}).size, 0, "nothing hidden");
+});
+
+test("a still-streaming sub-agent child tool call never opens a phantom variant", () => {
+  // after the main turn's result, a background agent's child tool calls keep
+  // arriving (parentId set). They are nested under their Agent row, not top-level
+  // responses — so they must not be counted as a regenerate of u1.
+  const turns = [
+    u("u1"), tool("agent1"), r("r1"),
+    child("c1", "agent1"), child("c2", "agent1"),
+  ];
+  const info = computeResponseVariants(turns);
+  assert.equal(info.countByUser.get("u1"), 1, "no phantom 2nd variant from children");
+  assert.equal(info.byTurnId.has("c1"), false, "child turns are excluded from segmentation");
+  assert.equal(info.byTurnId.has("c2"), false);
+});
+
+test("regenerate still works even when background continuations are interleaved", () => {
+  // u1 answered (v0), a background agent finishes (continuation), then the user
+  // regenerates u1 (v1). v0 and v1 are the two alternates; the continuation is
+  // standalone in between.
+  const turns = [
+    u("u1"), a("v0"), r("r0"),
+    a("bg done"), rc("rcBg"),
+    a("v1"), r("r1"),
+  ];
+  const info = computeResponseVariants(turns);
+  assert.equal(info.countByUser.get("u1"), 2, "two real variants of u1");
+  assert.equal(info.byTurnId.get("v0")!.variant, 0);
+  assert.equal(info.byTurnId.get("v1")!.variant, 1);
+  assert.deepEqual(info.byTurnId.get("bg done"), { userId: ROOT_USER, variant: 0 });
+});

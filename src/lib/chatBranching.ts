@@ -11,10 +11,17 @@
 // no extra persistence. The model's own context still contains every variant (they
 // were all generated in one session); switching only changes what YOU see.
 
-/** Minimal turn shape — only `kind` and `id` matter for segmentation. */
+/** Minimal turn shape for segmentation. `kind`/`id` drive it; `parentId` marks a
+ *  sub-agent child turn (excluded); `continuation` marks a result that closes a
+ *  background-triggered run (a segment boundary, not a regenerate). */
 export interface BranchTurnLike {
   kind: string;
   id: string;
+  /** set on tool turns made BY a sub-agent — never counted as a top-level run. */
+  parentId?: string;
+  /** set on a `result` turn that closes a background/task-notification
+   *  continuation — its run stacks as its own segment, not a ‹N/M› alternate. */
+  continuation?: boolean;
 }
 
 export interface VariantInfo {
@@ -28,38 +35,70 @@ export interface VariantInfo {
 export const ROOT_USER = "__root__";
 
 /**
- * Segment a transcript into response variants. Walks turns in order: each `user`
- * turn opens a new prompt; the non-user turns after it form variant 0; once a
- * `result` closes that run, the next non-user turn opens variant 1, and so on.
- * Pure + allocation-light; safe to call on every render (memoize on `turns`).
+ * Segment a transcript into response variants — the data behind the ‹N/M›
+ * switcher. Two passes:
+ *
+ *  1. Group top-level turns into RUNS. A run is the non-user turns following a
+ *     user turn (or a prior run), delimited by a `result`. Sub-agent child turns
+ *     (`parentId`) are skipped entirely — a still-streaming sub-agent tool call is
+ *     not a top-level response and must not open a phantom variant. Each run notes
+ *     whether its closing result was a background CONTINUATION.
+ *
+ *  2. Bucket the runs. Successive runs under the SAME user prompt are regenerate
+ *     alternates → variant 0,1,2… (the switcher). But a CONTINUATION run (a
+ *     background agent finished and woke the model) and any ROOT run (turns before
+ *     the first user prompt — e.g. a buffer-truncated replay) get their OWN
+ *     single-variant bucket, so they always render, stacked, never hidden behind
+ *     the previous prompt's switcher.
+ *
+ * This is what stops parallel/background sub-agents from fragmenting one reply
+ * into phantom ‹2/2› alternates that hide each other. Pure; memoize on `turns`.
  */
 export function computeResponseVariants(turns: BranchTurnLike[]): VariantInfo {
   const byTurnId = new Map<string, { userId: string; variant: number }>();
   const countByUser = new Map<string, number>();
+
+  interface Run {
+    userId: string;
+    ids: string[];
+    continuation: boolean;
+  }
+  const runs: Run[] = [];
   let userId = ROOT_USER;
-  let variant = 0;
-  let sawResult = false;
+  let cur: Run | null = null;
   for (const t of turns) {
+    if (t.parentId) continue; // nested sub-agent work — never a top-level run
     if (t.kind === "user") {
       userId = t.id;
-      variant = 0;
-      sawResult = false;
+      cur = null; // a user turn closes any open run
       continue;
     }
-    // a non-user turn arriving after a completed run begins the next variant —
-    // but ONLY under a real user prompt. Turns bucketed under ROOT (a transcript
-    // whose leading user turns are missing, e.g. a replay truncated by the
-    // buffer cap) are sequential context, never alternates: variant-ifying them
-    // hid the whole conversation behind a phantom ‹N/M› switcher.
-    if (sawResult) {
-      if (userId !== ROOT_USER) variant += 1;
-      sawResult = false;
+    if (!cur) {
+      cur = { userId, ids: [], continuation: false };
+      runs.push(cur);
     }
-    byTurnId.set(t.id, { userId, variant });
-    if (variant + 1 > (countByUser.get(userId) ?? 0)) {
-      countByUser.set(userId, variant + 1);
+    cur.ids.push(t.id);
+    if (t.kind === "result") {
+      if (t.continuation) cur.continuation = true;
+      cur = null; // the result closes this run
     }
-    if (t.kind === "result") sawResult = true;
+  }
+
+  for (const run of runs) {
+    if (run.continuation || run.userId === ROOT_USER) {
+      // Standalone runs — background-agent continuations and any pre-first-user
+      // context (truncated replay). They render on their own, stacked, and are
+      // NEVER hidden. Bucket them under ROOT_USER at variant 0 so countByUser
+      // stays 1 (no ‹N/M› switcher). This is what stops a background sub-agent
+      // finishing from spawning a phantom ‹2/2› that hides the prior answer.
+      for (const id of run.ids) byTurnId.set(id, { userId: ROOT_USER, variant: 0 });
+      if (!countByUser.has(ROOT_USER)) countByUser.set(ROOT_USER, 1);
+    } else {
+      // Successive runs under the SAME user prompt are regenerate alternates.
+      const variant = countByUser.get(run.userId) ?? 0;
+      for (const id of run.ids) byTurnId.set(id, { userId: run.userId, variant });
+      countByUser.set(run.userId, variant + 1);
+    }
   }
   return { byTurnId, countByUser };
 }

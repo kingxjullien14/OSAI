@@ -276,6 +276,23 @@ static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 /// Monotonic counter for control_request `request_id`s (interrupts, decisions).
 static NEXT_REQ: AtomicU64 = AtomicU64::new(1);
 
+/// Serializes every read-modify-write of the on-disk chat-session index
+/// (`~/.osai/state/chat-sessions.json`). Tauri commands run on a thread pool, so
+/// two panes recording / renaming / fork-pointer-updating concurrently would
+/// otherwise race `load_store → modify → save_store` and silently lose an entry —
+/// the "I opened a second chat in the same directory and lost the first one"
+/// data-loss bug. Shared with `chat_history.rs` (delete/restore mutate the same
+/// file). Coarse-grained, but index writes are infrequent so contention is nil.
+static STORE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Runs `f` while holding the index write lock. Wrap ANY
+/// `load_store → save_store` (or `load_sessions_index → save_sessions_index`)
+/// sequence in this so concurrent writers can't clobber each other.
+pub(crate) fn with_store_lock<R>(f: impl FnOnce() -> R) -> R {
+    let _guard = STORE_LOCK.lock();
+    f()
+}
+
 /// Runs `f` against the (lazily-initialised) session map.
 fn with_sessions<R>(f: impl FnOnce(&mut HashMap<u32, Arc<ChatSession>>) -> R) -> R {
     let mut guard = SESSIONS.lock();
@@ -3070,6 +3087,12 @@ pub struct ChatSessionInfo {
     /// the events.jsonl key, star key, and pane binding never churn with forks.
     #[serde(default)]
     pub resume_id: String,
+    /// True once the user manually RENAMED this conversation (rename_chat_session).
+    /// A locked title is never overwritten by the auto-derived first-message title
+    /// on a later `record_chat_session` upsert — so a rename sticks across resume /
+    /// reopen instead of snapping back to the opener text.
+    #[serde(default)]
+    pub title_locked: bool,
 }
 
 /// One rendered turn loaded from a transcript, to repaint a resumed conversation.
@@ -3145,13 +3168,15 @@ fn resolve_resume_pointer(store_id: &str) -> String {
 /// at the fork point). Called from `ingest_line` when a resumed session's init
 /// reports a session_id different from the identity we seeded.
 fn update_resume_pointer(store_id: &str, new_id: &str) {
-    let mut store = load_store();
-    if let Some(entry) = store.iter_mut().find(|s| s.id == store_id) {
-        if entry.resume_id != new_id {
-            entry.resume_id = new_id.to_string();
-            save_store(&store);
+    with_store_lock(|| {
+        let mut store = load_store();
+        if let Some(entry) = store.iter_mut().find(|s| s.id == store_id) {
+            if entry.resume_id != new_id {
+                entry.resume_id = new_id.to_string();
+                save_store(&store);
+            }
         }
-    }
+    });
 }
 
 /// Records (upserts) a chat-pane session so `/resume` can list ONLY the chats
@@ -3176,7 +3201,6 @@ pub fn record_chat_session(
         return Ok(());
     }
     let bump_mtime = bump_mtime.unwrap_or(true);
-    let mut store = load_store();
     let trimmed = {
         let t = title.trim().replace('\n', " ");
         if t.chars().count() > 90 {
@@ -3187,35 +3211,82 @@ pub fn record_chat_session(
             t
         }
     };
-    let now = now_secs();
-    if let Some(existing) = store.iter_mut().find(|s| s.id == id) {
-        if bump_mtime {
-            existing.mtime = now;
+    with_store_lock(|| {
+        let mut store = load_store();
+        let now = now_secs();
+        if let Some(existing) = store.iter_mut().find(|s| s.id == id) {
+            if bump_mtime {
+                existing.mtime = now;
+            }
+            // never clobber a user-renamed (locked) title with the auto-derived one.
+            if !title.trim().is_empty() && !existing.title_locked {
+                existing.title = trimmed;
+            }
+            if let Some(engine) = engine.as_deref().filter(|s| !s.is_empty()) {
+                existing.engine = engine.to_string();
+            }
+            if let Some(model) = model.as_deref().filter(|s| !s.is_empty()) {
+                existing.model = model.to_string();
+            }
+        } else {
+            store.push(ChatSessionInfo {
+                id,
+                title: trimmed,
+                cwd: cwd.unwrap_or_default(),
+                mtime: now,
+                engine: engine.unwrap_or_default(),
+                model: model.unwrap_or_default(),
+                last_user: String::new(),
+                resume_id: String::new(),
+                title_locked: false,
+            });
         }
-        if !title.trim().is_empty() {
-            existing.title = trimmed;
-        }
-        if let Some(engine) = engine.as_deref().filter(|s| !s.is_empty()) {
-            existing.engine = engine.to_string();
-        }
-        if let Some(model) = model.as_deref().filter(|s| !s.is_empty()) {
-            existing.model = model.to_string();
-        }
-    } else {
-        store.push(ChatSessionInfo {
-            id,
-            title: trimmed,
-            cwd: cwd.unwrap_or_default(),
-            mtime: now,
-            engine: engine.unwrap_or_default(),
-            model: model.unwrap_or_default(),
-            last_user: String::new(),
-            resume_id: String::new(),
-        });
+        store.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+        store.truncate(200);
+        save_store(&store);
+    });
+    Ok(())
+}
+
+/// Manually rename a conversation (History / tab rename). Sets a custom title and
+/// LOCKS it so later auto-title upserts won't revert it. Upserts a minimal entry
+/// if the id isn't indexed yet (rare — a rename before the first send recorded it).
+#[tauri::command]
+pub fn rename_chat_session(id: String, title: String) -> Result<(), String> {
+    if id.trim().is_empty() {
+        return Ok(());
     }
-    store.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-    store.truncate(200);
-    save_store(&store);
+    let trimmed = {
+        let t = title.trim().replace('\n', " ");
+        if t.chars().count() > 90 {
+            format!("{}…", t.chars().take(90).collect::<String>())
+        } else {
+            t
+        }
+    };
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    with_store_lock(|| {
+        let mut store = load_store();
+        if let Some(existing) = store.iter_mut().find(|s| s.id == id) {
+            existing.title = trimmed;
+            existing.title_locked = true;
+        } else {
+            store.push(ChatSessionInfo {
+                id,
+                title: trimmed,
+                cwd: String::new(),
+                mtime: now_secs(),
+                engine: String::new(),
+                model: String::new(),
+                last_user: String::new(),
+                resume_id: String::new(),
+                title_locked: true,
+            });
+        }
+        save_store(&store);
+    });
     Ok(())
 }
 
@@ -3235,6 +3306,17 @@ pub fn list_chat_sessions(limit: Option<u32>) -> Vec<ChatSessionInfo> {
                 store.push(session);
             }
         }
+    }
+    // Self-heal: surface any OSAI-owned durable log (chat-history/<id>) that isn't
+    // in the index — e.g. an entry lost to a concurrent-write race before the
+    // STORE_LOCK, or a crash between first-event and the frontend's record call.
+    // The durable log is the real conversation; the index is just a pointer, so a
+    // chat with a log should ALWAYS be reachable from History. (Trashed chats live
+    // under .trash/ and are physically excluded, so they never resurrect here.)
+    let known: std::collections::HashSet<String> =
+        store.iter().map(|s| s.id.clone()).collect();
+    for session in discover_osai_history_sessions(&known) {
+        store.push(session);
     }
     store.sort_by(|a, b| b.mtime.cmp(&a.mtime));
     store.truncate(limit.unwrap_or(40) as usize);
@@ -3403,6 +3485,108 @@ fn find_codex_rollout_in_home(home: &std::path::Path, id: &str) -> Option<std::p
         .find_map(|rel| find_codex_rollout(&home.join(rel), id))
 }
 
+/// Rebuild `ChatSessionInfo`s from OSAI-owned durable logs whose id is NOT in
+/// `known` (the index + codex discovery). This makes History self-healing: a chat
+/// whose index pointer was lost still surfaces from its `events.jsonl`. Only the
+/// orphans are parsed (indexed ids are skipped), and only each log's HEAD is read
+/// (title/cwd/model live in the first turns), so this stays cheap.
+fn discover_osai_history_sessions(known: &std::collections::HashSet<String>) -> Vec<ChatSessionInfo> {
+    let Some(root) = crate::chat_history::history_root() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(id) = entry.file_name().to_str().map(String::from) else {
+            continue;
+        };
+        if id == ".trash" || known.contains(&id) {
+            continue;
+        }
+        let log = path.join("events.jsonl");
+        let Ok(file) = std::fs::File::open(&log) else {
+            continue;
+        };
+        // mtime → recency; created (best-effort) is unused here.
+        let mtime = std::fs::metadata(&log)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        // read only the HEAD — the opener + init carry title/cwd/model.
+        let mut title = String::new();
+        let mut cwd = String::new();
+        let mut model = String::new();
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(file).lines().take(80).map_while(Result::ok) {
+            let Ok(v) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("system") => {
+                    if cwd.is_empty() {
+                        if let Some(c) = v.get("cwd").and_then(|c| c.as_str()) {
+                            cwd = c.to_string();
+                        }
+                    }
+                    if model.is_empty() {
+                        if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
+                            model = m.to_string();
+                        }
+                    }
+                }
+                Some("user") if v.get("isSynthetic").and_then(|b| b.as_bool()) != Some(true) => {
+                    if title.is_empty() {
+                        if let Some(t) = crate::chat_history::line_to_api_message(&line)
+                            .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(String::from))
+                        {
+                            let t = t.trim().replace('\n', " ");
+                            title = if t.chars().count() > 90 {
+                                format!("{}…", t.chars().take(90).collect::<String>())
+                            } else {
+                                t
+                            };
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if !title.is_empty() && !cwd.is_empty() && !model.is_empty() {
+                break;
+            }
+        }
+        if title.is_empty() {
+            title = "(recovered chat)".to_string();
+        }
+        // `api-<provider>-<n>` ids came from the BYO-key tier; everything else with
+        // a durable OSAI log is a claude chat (codex is discovered from ~/.codex).
+        let engine = if let Some(rest) = id.strip_prefix("api-") {
+            rest.rsplit_once('-').map(|(p, _)| p.to_string()).unwrap_or_default()
+        } else {
+            "claude".to_string()
+        };
+        out.push(ChatSessionInfo {
+            id,
+            title,
+            cwd,
+            mtime,
+            engine,
+            model,
+            last_user: String::new(),
+            resume_id: String::new(),
+            title_locked: false,
+        });
+    }
+    out
+}
+
 fn discover_codex_sessions(home: &std::path::Path, limit: usize) -> Vec<ChatSessionInfo> {
     let mut sessions = Vec::new();
     for rel in [".codex-chat/sessions", ".codex/sessions"] {
@@ -3517,6 +3701,7 @@ fn codex_session_info_from_rollout(path: &std::path::Path) -> Option<ChatSession
         model,
         last_user: String::new(),
         resume_id: String::new(),
+        title_locked: false,
     })
 }
 

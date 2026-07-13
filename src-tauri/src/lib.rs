@@ -486,6 +486,7 @@ pub fn run() {
             chat::list_chat_live,
             chat::list_chat_sessions,
             chat::record_chat_session,
+            chat::rename_chat_session,
             chat::read_chat_transcript,
             chat_history::read_chat_history,
             chat_history::chat_history_meta,

@@ -52,6 +52,11 @@ export type ChatTurn =
       /** false = a failure (renders as a danger footer with a retry), undefined/
        *  true = a benign completion footer. */
       ok?: boolean;
+      /** true when this result closes a turn TRIGGERED BY a background agent
+       *  finishing (`origin.kind === "task-notification"`), not a user prompt or a
+       *  regenerate. The variant segmenter treats such a run as its own stacked
+       *  segment instead of a ‹N/M› alternate of the previous prompt. */
+      continuation?: boolean;
     }
   | {
       kind: "compaction";
@@ -318,6 +323,16 @@ export function reduceChatStreamEvent(
   options: ChatStreamReduceOptions,
 ): ChatStreamReduceResult {
   if (ev.type === "stream_event") {
+    // Sub-agent token deltas carry the parent Task's id. They must NOT append to
+    // the main assistant/thinking bubble — a sub-agent's prose belongs to the
+    // sub-agent (its settled text/thinking is already dropped in
+    // reduceAssistantEvent; the fleet strip narrates its progress). Without this,
+    // parallel sub-agents' tokens interleave into the main reply mid-stream — the
+    // "it becomes messed up when subagents run" report. Swallow (handled) so the
+    // main stream is untouched.
+    if (typeof ev.parent_tool_use_id === "string" && ev.parent_tool_use_id) {
+      return { handled: true, state };
+    }
     const event = ev.event;
     // A new content block begins → the prior thinking phase is over. claude
     // streams a whole server-tool turn (think → web_search → think → …) as ONE
@@ -578,9 +593,11 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
     if (ev.type === "result") {
       const ok = !ev.is_error;
       const text = ok ? "" : ev.result ?? "";
+      const continuation = ev.origin != null;
       // skip empty success footers (e.g. the compaction turn's own result) — the
-      // grouping drops text-less results anyway.
-      if (text || !ok) {
+      // grouping drops text-less results anyway. A background-continuation result
+      // (origin set) is kept even when empty so its run stays a segment boundary.
+      if (text || !ok || continuation) {
         push({
           kind: "result",
           id: uid(),
@@ -588,6 +605,7 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
           cost: typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : undefined,
           durationMs: typeof ev.duration_ms === "number" ? ev.duration_ms : undefined,
           ok,
+          ...(continuation ? { continuation: true } : {}),
         });
       }
       continue;

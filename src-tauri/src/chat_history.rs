@@ -461,6 +461,12 @@ pub fn delete_chats(ids: Vec<String>) {
     if ids.is_empty() {
         return;
     }
+    // Serialize with every other chat-sessions.json writer (record/rename/fork) so
+    // a concurrent upsert can't clobber the index right as we rewrite it here.
+    crate::chat::with_store_lock(|| delete_chats_locked(ids));
+}
+
+fn delete_chats_locked(ids: Vec<String>) {
     let id_set: HashSet<String> = ids.iter().cloned().collect();
     let mut manifest = load_manifest();
     let already: HashSet<String> = manifest.iter().map(|r| r.id.clone()).collect();
@@ -527,6 +533,10 @@ pub fn restore_chats(ids: Vec<String>) {
     if ids.is_empty() {
         return;
     }
+    crate::chat::with_store_lock(|| restore_chats_locked(ids));
+}
+
+fn restore_chats_locked(ids: Vec<String>) {
     let id_set: HashSet<String> = ids.into_iter().collect();
     let mut manifest = load_manifest();
     let mut index = load_sessions_index();

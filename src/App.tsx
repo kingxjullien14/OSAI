@@ -100,6 +100,7 @@ import { appshot, deleteOracle, listOracles, reapTerminals, type OracleInfo } fr
 import {
   listChatLive,
   listChatSessions,
+  renameChatSession,
   baseModelId,
   codexShellCommand,
   engineForProvider,
@@ -1809,11 +1810,30 @@ function App() {
   useEffect(() => {
     focusPaneRef.current = focusPane;
   }, [focusPane]);
-  // Rename a pane (double-click its OPEN-rail row) — persists via the layout save.
+  // Rename a pane (double-click its OPEN-rail row, or a chat tab) — persists via
+  // the layout save. For a CHAT with a recorded conversation, also persist the
+  // title to the /resume index (rename_chat_session) so History shows the new
+  // name and it sticks across resume, and stamp it onto the pane's resume record
+  // so the saved layout reopens under the renamed title.
   const renamePane = useCallback((key: string, label: string) => {
     const v = label.trim();
     if (!v) return;
-    setPanes((p) => p.map((x) => (x.key === key ? { ...x, label: v } : x)));
+    setPanes((p) =>
+      p.map((x) => {
+        if (x.key !== key) return x;
+        if (x.kind.type === "chat" && x.kind.resume) {
+          return { ...x, label: v, kind: { ...x.kind, resume: { ...x.kind.resume, title: v } } };
+        }
+        return { ...x, label: v };
+      }),
+    );
+    const meta = chatMetaByPaneKey.current.get(key);
+    if (meta?.id) {
+      chatMetaByPaneKey.current.set(key, { ...meta, title: v });
+      void renameChatSession(meta.id, v)
+        .then(() => window.dispatchEvent(new Event("osai:history-changed")))
+        .catch(() => {});
+    }
   }, []);
   const handleTranscript = useCallback(
     (text: string) => {
