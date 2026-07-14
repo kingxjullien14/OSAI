@@ -18,6 +18,26 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { isTauriRuntime } from "./tauri";
 import { reportDiag } from "./diag";
 
+/** Version the user chose "skip this version" for. Shared by the launch dialog
+ *  and Settings so both honor the same skip. A NEWER version still surfaces. */
+export const SKIPPED_UPDATE_KEY = "osai.update.skipped";
+
+export function isVersionSkipped(version: string): boolean {
+  try {
+    return localStorage.getItem(SKIPPED_UPDATE_KEY) === version;
+  } catch {
+    return false;
+  }
+}
+
+export function skipVersion(version: string): void {
+  try {
+    localStorage.setItem(SKIPPED_UPDATE_KEY, version);
+  } catch {
+    /* private mode / quota — worst case it asks again next launch */
+  }
+}
+
 /** Coarse phase a caller can render. `pct` is null when the server didn't send
  *  a Content-Length (rare) — show an indeterminate bar then. */
 export type UpdatePhase =

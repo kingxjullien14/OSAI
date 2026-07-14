@@ -12,7 +12,19 @@ export type ChatTurn =
       /** selection snippets attached to THIS turn (rendered as expandable chips). */
       snippets?: { id: string; text: string }[];
     }
-  | { kind: "assistant"; id: string; text: string; streaming: boolean; createdAt?: number }
+  | {
+      kind: "assistant";
+      id: string;
+      text: string;
+      streaming: boolean;
+      createdAt?: number;
+      /** engine model id that GENERATED this turn (from the event's
+       *  `message.model`) — so the frame header shows the model each answer was
+       *  actually produced by, not whatever the composer is set to NOW. Undefined
+       *  while streaming (stamped when the settled `assistant` event lands) and on
+       *  turns from older logs that predate this field. */
+      model?: string;
+    }
   | {
       kind: "thinking";
       id: string;
@@ -176,6 +188,18 @@ function reduceAssistantEvent(
 ): ChatStreamState {
   let next = settleThinking(state, options.now);
   const turns = [...next.turns];
+  // the model that produced THIS turn (rides on every assistant event) — stamped
+  // onto the assistant turn(s) so the frame header reflects it per-turn.
+  const msgModel =
+    typeof ev.message?.model === "string" && ev.message.model ? ev.message.model : undefined;
+  // the live streaming turn (built from token deltas) that this settled event
+  // closes — captured before we clear streamingTurnId, so we can stamp its model.
+  const streamId = next.streamingTurnId;
+  // did this event carry assistant prose? (used to decide whether to stamp a
+  // trailing turn's model when the streaming-id bookkeeping has desynced.)
+  const hadText = (ev.message?.content ?? []).some(
+    (b) => b.type === "text" && (b.text ?? "").trim(),
+  );
   // sub-agent (Task) events carry the parent Task's tool_use id here → nest.
   const parentId =
     typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
@@ -211,12 +235,19 @@ function reduceAssistantEvent(
             id: trailing[0].id,
             text: full,
             streaming: false,
+            ...(msgModel ? { model: msgModel } : {}),
           });
         } else {
           const lastAssistant = trailing[trailing.length - 1];
           const isDuplicate = lastAssistant != null && lastAssistant.text.trim() === full;
           if (!isDuplicate) {
-            turns.push({ kind: "assistant", id: options.uid(), text: full, streaming: false });
+            turns.push({
+              kind: "assistant",
+              id: options.uid(),
+              text: full,
+              streaming: false,
+              ...(msgModel ? { model: msgModel } : {}),
+            });
           }
         }
       }
@@ -275,6 +306,30 @@ function reduceAssistantEvent(
           break;
         }
       }
+    }
+  }
+  // Streaming tier (claude): the turn was built by token deltas and carries no
+  // model yet — stamp it now from this settling event so its header shows the
+  // model that produced it (not the composer's current model). Prefer the turn
+  // this event actually settles (streamId); if that id desynced (fast local
+  // streams can split a turn — see appendAssistantDelta's self-heal), fall back
+  // to the most recent still-unstamped assistant turn, but ONLY when this event
+  // carried prose (a tool-only assistant event must not backfill a prior turn).
+  if (msgModel) {
+    let idx = streamId
+      ? turns.findIndex((t) => t.id === streamId && t.kind === "assistant")
+      : -1;
+    if (idx < 0 && hadText) {
+      for (let i = turns.length - 1; i >= 0; i--) {
+        const t = turns[i];
+        if (t.kind === "assistant" && !t.model) {
+          idx = i;
+          break;
+        }
+      }
+    }
+    if (idx >= 0) {
+      turns[idx] = { ...(turns[idx] as Extract<ChatTurn, { kind: "assistant" }>), model: msgModel };
     }
   }
   next = { turns, streamingTurnId: null, thinkingTurnId: null };

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { PaneEmpty } from "./ui";
-import { cleanSessionLabel } from "../lib/chat";
+import { cleanSessionLabel, renameChatSession } from "../lib/chat";
 import { PaneMenu, type PaneMenuEntry } from "./PaneMenu";
 import {
   deleteChats,
@@ -82,6 +82,8 @@ export function HistoryPane({ onOpenChat }: Props) {
   const [cleanupMenu, setCleanupMenu] = useState<{ x: number; y: number } | null>(null);
   const [confirm, setConfirm] = useState<{ ids: string[]; label: string } | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // inline rename: which row is being edited + its working title.
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -213,6 +215,30 @@ export function HistoryPane({ onOpenChat }: Props) {
       flash("export failed");
     }
   };
+  // Commit an inline rename: persist to the /resume index (locks the title so a
+  // later auto-title upsert can't revert it) and reflect it optimistically. The
+  // row is keyed by its OWN id, so this always targets the right conversation —
+  // no dependence on a pane→session binding (which a mid-chat model switch could
+  // leave stale). Empty / unchanged → just close the editor.
+  const commitRename = () => {
+    const r = renaming;
+    setRenaming(null);
+    if (!r) return;
+    const v = r.value.trim();
+    const cur = entries.find((e) => e.id === r.id);
+    if (!v || (cur && cleanSessionLabel(cur.title) === v)) return;
+    setEntries((prev) => prev.map((x) => (x.id === r.id ? { ...x, title: v } : x)));
+    renameChatSession(r.id, v)
+      .then(() => {
+        flash("renamed");
+        window.dispatchEvent(new Event("osai:history-changed"));
+      })
+      .catch(() => {
+        flash("rename failed — try again");
+        refresh();
+      });
+  };
+
   const startCleanup = (months: number, label: string) => {
     const ids = selectForCleanup(entries, monthsAgoCutoff(Date.now(), months), true);
     if (!ids.length) {
@@ -249,6 +275,11 @@ export function HistoryPane({ onOpenChat }: Props) {
       label: "Open conversation",
       onSelect: () => onOpenChat(e, searching ? query.trim() : undefined),
     },
+    {
+      key: "rename",
+      label: "Rename",
+      onSelect: () => setRenaming({ id: e.id, value: cleanSessionLabel(e.title) || "" }),
+    },
     { key: "star", label: e.starred ? "Unstar" : "Star", onSelect: () => toggleStar(e) },
     { key: "export", label: "Export markdown", onSelect: () => void doExport([e.id]) },
     { key: "sep", separator: true },
@@ -261,6 +292,46 @@ export function HistoryPane({ onOpenChat }: Props) {
   ];
   const row = (e: ResultEntry) => {
     const isSel = selected.has(e.id);
+    // inline rename editor — replaces the whole row while active (clean markup,
+    // no interactive nesting inside the open button). Enter saves, Esc / blur…
+    if (renaming?.id === e.id) {
+      return (
+        <div
+          key={e.id}
+          className="flex items-center gap-2 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] px-2.5 py-2 shadow-[var(--osai-glow-soft)]"
+        >
+          <RotateCcw size={13} className="shrink-0" style={{ color: engineColor(e.engine) }} />
+          <input
+            autoFocus
+            value={renaming.value}
+            onChange={(ev) => setRenaming({ id: e.id, value: ev.target.value })}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") {
+                ev.preventDefault();
+                commitRename();
+              } else if (ev.key === "Escape") {
+                ev.preventDefault();
+                setRenaming(null);
+              }
+            }}
+            onBlur={commitRename}
+            placeholder="conversation name"
+            spellCheck={false}
+            className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]/80 px-2 py-1 font-sans text-[12.5px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+          />
+          {/* mousedown (not click) so it fires before the input's blur cancels it */}
+          <button
+            type="button"
+            onMouseDown={(ev) => ev.preventDefault()}
+            onClick={commitRename}
+            title="save name"
+            className={`${headerBtn} text-[var(--color-accent)] hover:bg-[var(--color-panel-2)]`}
+          >
+            save
+          </button>
+        </div>
+      );
+    }
     return (
       <div
         key={e.id}
@@ -316,7 +387,15 @@ export function HistoryPane({ onOpenChat }: Props) {
           />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-sans text-[12.5px] leading-tight text-[var(--color-text)]">
+              <span
+                onDoubleClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  setRenaming({ id: e.id, value: cleanSessionLabel(e.title) || "" });
+                }}
+                title="double-click to rename"
+                className="truncate font-sans text-[12.5px] leading-tight text-[var(--color-text)]"
+              >
                 {cleanSessionLabel(e.title) || "(untitled chat)"}
               </span>
               <span

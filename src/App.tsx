@@ -192,7 +192,9 @@ import { buildAppCommands } from "./lib/appCommands";
 import type { AgentAction } from "./lib/agentActions";
 import { invoke, isTauriRuntime } from "./lib/tauri";
 import { reportDiag, reportUsage } from "./lib/diag";
-import { checkForUpdate } from "./lib/updater";
+import { checkForUpdate, isVersionSkipped, skipVersion } from "./lib/updater";
+import { UpdateDialog } from "./components/UpdateDialog";
+import type { Update } from "@tauri-apps/plugin-updater";
 import {
   ensureMirrorPairing,
   mirrorPairingFromLocation,
@@ -638,6 +640,9 @@ function App() {
   // mission-control-style pane overview: fan out every open pane to switch.
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // an available self-update, surfaced as a launch dialog (changelog + update/
+  // skip) instead of a miss-able toast. Null = no update pending / dismissed.
+  const [updateDialog, setUpdateDialog] = useState<Update | null>(null);
   // pane key pending a close-confirm (busy chat: keep-running vs kill).
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
   // pane currently under a native OS file drag OR a reorder-drag (drop highlight).
@@ -963,6 +968,11 @@ function App() {
   const chatMetaByPaneKey = useRef<
     Map<string, { id: string; cwd?: string; title: string; engine?: string; model?: string }>
   >(new Map());
+  // Renames applied to a chat BEFORE it had a session id (a brand-new chat named
+  // then closed before its first turn recorded a session). Keyed by pane key; the
+  // title is flushed as a locked rename the moment the session records, so the
+  // name reaches History instead of being lost to the auto-derived title.
+  const pendingRenameByPaneKey = useRef<Map<string, string>>(new Map());
   const handleSessionRecorded = useCallback(
     (info: { paneKey?: string; sessionId: string; title: string; cwd?: string; engine?: string; model?: string }) => {
       if (!info.paneKey) return;
@@ -970,6 +980,7 @@ function App() {
       // forget the binding so a restart doesn't resurrect the dropped thread.
       if (!info.sessionId) {
         chatMetaByPaneKey.current.delete(info.paneKey);
+        pendingRenameByPaneKey.current.delete(info.paneKey);
         setPanes((ps) =>
           ps.map((p) =>
             p.key === info.paneKey && p.kind.type === "chat" && p.kind.resume
@@ -979,10 +990,21 @@ function App() {
         );
         return;
       }
+      // A rename that landed before this session existed → flush it now as a
+      // locked rename so History shows the chosen name (not the auto-title). It
+      // also becomes this pane's persisted resume title below.
+      const pendingRename = pendingRenameByPaneKey.current.get(info.paneKey);
+      if (pendingRename) {
+        pendingRenameByPaneKey.current.delete(info.paneKey);
+        void renameChatSession(info.sessionId, pendingRename)
+          .then(() => window.dispatchEvent(new Event("osai:history-changed")))
+          .catch(() => {});
+      }
+      const effectiveTitle = pendingRename || info.title;
       chatMetaByPaneKey.current.set(info.paneKey, {
         id: info.sessionId,
         cwd: info.cwd,
-        title: info.title,
+        title: effectiveTitle,
         engine: info.engine,
         model: info.model,
       });
@@ -994,14 +1016,18 @@ function App() {
         ps.map((p) => {
           if (p.key !== info.paneKey || p.kind.type !== "chat") return p;
           const cur = p.kind.resume;
-          if (cur?.id === info.sessionId && (!info.title || cur?.title === info.title)) return p;
+          if (cur?.id === info.sessionId && (!effectiveTitle || cur?.title === effectiveTitle))
+            return p;
           return {
             ...p,
+            // a flushed pending rename also becomes the pane label so the tab
+            // shows the chosen name immediately.
+            ...(pendingRename ? { label: pendingRename } : {}),
             kind: {
               ...p.kind,
               resume: {
                 id: info.sessionId,
-                title: info.title || cur?.title || p.label,
+                title: effectiveTitle || cur?.title || p.label,
                 engine: info.engine,
                 model: info.model,
               },
@@ -1227,7 +1253,11 @@ function App() {
     const t = setTimeout(() => {
       checkForUpdate()
         .then((u) => {
-          if (!cancelled && u) flash(`update ${u.version} available — Settings › about`);
+          if (cancelled || !u) return;
+          // don't re-nag a version the user explicitly skipped (a NEWER one
+          // still surfaces). "Later" doesn't persist, so it returns next launch.
+          if (isVersionSkipped(u.version)) return;
+          setUpdateDialog(u);
         })
         .catch(() => {
           /* offline / transient — the manual check in Settings surfaces real errors */
@@ -1237,7 +1267,7 @@ function App() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [flash]);
+  }, []);
 
   const spawn = useCallback((kind: PaneContent, label: string): string => {
     const key = nextKey();
@@ -1827,12 +1857,29 @@ function App() {
         return { ...x, label: v };
       }),
     );
+    // Persist the rename to the /resume index so it shows in History and sticks
+    // (locked) across resume — same as the History-pane rename. Resolve the
+    // session id from the meta binding OR, if that hasn't landed yet (a resumed
+    // pane the user renames before sending), the pane's own resume id. Without
+    // the fallback, renaming a reopened conversation from the tab bar did nothing.
     const meta = chatMetaByPaneKey.current.get(key);
-    if (meta?.id) {
-      chatMetaByPaneKey.current.set(key, { ...meta, title: v });
-      void renameChatSession(meta.id, v)
+    const pane = panesRef.current.find((p) => p.key === key);
+    const sid =
+      meta?.id ??
+      (pane?.kind.type === "chat" ? pane.kind.resume?.id : undefined) ??
+      undefined;
+    if (sid) {
+      pendingRenameByPaneKey.current.delete(key);
+      if (meta) chatMetaByPaneKey.current.set(key, { ...meta, title: v });
+      void renameChatSession(sid, v)
         .then(() => window.dispatchEvent(new Event("osai:history-changed")))
         .catch(() => {});
+    } else {
+      // No session yet (a brand-new chat renamed before its first turn). Remember
+      // the name; handleSessionRecorded flushes it as a locked rename once the
+      // session records — so closing the chat still lands the chosen name in
+      // History instead of the auto-derived title.
+      pendingRenameByPaneKey.current.set(key, v);
     }
   }, []);
   const handleTranscript = useCallback(
@@ -4155,6 +4202,18 @@ function App() {
         </m.div>
       )}
       </AnimatePresence>
+
+      {/* launch-time update dialog — changelog + update/skip (replaces the toast) */}
+      {updateDialog && (
+        <UpdateDialog
+          update={updateDialog}
+          onClose={() => setUpdateDialog(null)}
+          onSkip={(version) => {
+            skipVersion(version);
+            setUpdateDialog(null);
+          }}
+        />
+      )}
 
       {/* minimized panes now live in the sidebar "OPEN" list (OpenPanesList) —
           no floating overlay. Restore / hide / close all happen from the rail. */}

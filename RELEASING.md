@@ -48,9 +48,15 @@ secret, generates `latest.json` (all platforms), and creates a **draft** Release
 3. **Annotate the tag WITH THE CHANGELOG.** The tag's message *body* is the single
    source of the release notes: the workflow feeds it to `tauri-action` as
    `releaseBody`, which lands in BOTH the GitHub release body **and**
-   `latest.json`'s `notes` — the text shown in the in-app **Settings › about ›
-   software update** panel. That panel renders **plain text** (`whitespace-pre-line`),
-   so write plain prose + bullets (e.g. `•`), not markdown headings.
+   `latest.json`'s `notes` — the text shown in the in-app update dialog (on launch
+   and via **Settings › about › software update**). Since v2.3.0 that dialog
+   renders **light markdown**, so write it like a proper changelog and it looks
+   good in both places: `##`/`###` section headings (emoji fine), `-`/`*`/`•`
+   bullets, and `**bold**` lead-ins. Keep it to those — no tables/links/images.
+
+   > Installs OLDER than v2.3.0 have the previous plain-text panel, so on the
+   > jump TO 2.3.0 they'll show the raw `##`/`**` markers once; every release
+   > after renders in the new dialog.
 
    ```pwsh
    # put the changelog in a file, then annotate the tag with it:

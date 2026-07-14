@@ -1310,6 +1310,26 @@ export function ChatPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [configuredApi, catalogRev],
   );
+  // Resolve a raw engine model id (as it rode on an assistant event's
+  // `message.model`) to a friendly label for the turn-frame header. Covers the
+  // CLI catalog + live anthropic lineup + configured API models; the current
+  // composer model is folded in too (a just-picked model may not be in a picker
+  // yet). Falls back to a de-slugged id so an unknown model still reads cleanly.
+  const modelLabelFor = useCallback(
+    (id: string): string => {
+      if (!id) return model.label;
+      const hit =
+        pickerModels.find((m) => m.id === id) ??
+        apiModels.find((m) => m.id === id) ??
+        (model.id === id ? model : undefined);
+      if (hit) return hit.label;
+      // "claude-sonnet-5" → "claude sonnet 5"; keep it lowercase (the header
+      // uppercases it) and drop a date-stamp suffix if present.
+      return id.replace(/-\d{8}$/, "").replace(/[-_]/g, " ");
+    },
+    [pickerModels, apiModels, model],
+  );
+
   // The "retry with ▾" menu list: installed CLI models + the configured API models
   // (so it isn't just the static CLI catalog — the reported "can't see the models"
   // was partly the menu omitting API models too). CLI entries are limited to the
@@ -1596,6 +1616,17 @@ export function ChatPane({
   // re-recording on the next send used to RENAME the session to whatever you
   // typed next. Reset on /clear and set by the /resume picker.
   const recordedRef = useRef(Boolean(resume?.id));
+  // A first-turn record that couldn't run because the engine session id hadn't
+  // arrived yet: a send proceeds the moment the BACKEND session id is known
+  // (chat_start resolves), which is BEFORE claude emits its `init` (the source of
+  // claudeSessionIdRef). Sending in that window left the chat unrecorded — only
+  // ever surfaced later by History's self-heal, with an auto-title that can't be
+  // renamed durably. Stashed here on send, flushed by the init effect below.
+  const pendingFirstRecordRef = useRef<{
+    title: string;
+    engine: string;
+    model: string;
+  } | null>(null);
   // Codex openers are often just "hi". Keep its title promotable until the
   // first meaningful prompt lands, then leave the topic stable.
   const codexTitleLockedRef = useRef(Boolean(resume));
@@ -3293,6 +3324,13 @@ export function ChatPane({
         // Label the backend session for the background tray + done-notification.
         if (sessionIdRef.current != null)
           chatSetTitle(sessionIdRef.current, stableTitle).catch((e) => reportDiag("chat.title", e, { action: "setTitle" }));
+      } else if (!sid && firstRecord) {
+        // Sent before claude's init landed → the engine session id isn't known
+        // yet. Remember this first record; the init effect flushes it the moment
+        // the id arrives, so the chat still lands in History (recordable +
+        // renamable) instead of only being self-healed with an auto-title.
+        recordedRef.current = true;
+        pendingFirstRecordRef.current = { title: stableTitle, engine, model: model.id };
       }
       setInput("");
       setImages((prev) => {
@@ -3505,6 +3543,42 @@ export function ChatPane({
       regenerate(text);
     }
   }, [started, claudeReady, streaming, regenerate]);
+  // Flush a deferred first-turn record once the engine session id lands (the
+  // send raced ahead of claude's init — see pendingFirstRecordRef). Records the
+  // chat into the /resume index + reports the id to App (which binds the pane and
+  // flushes any pending tab/History rename). Without this, a fast first send was
+  // never recorded — only self-healed later with an unrenamable auto-title.
+  useEffect(() => {
+    const pending = pendingFirstRecordRef.current;
+    if (!openSessionId || !pending) return;
+    pendingFirstRecordRef.current = null;
+    recordChatSession(openSessionId, pending.title, cwd ?? null, pending.engine, pending.model)
+      .then(() => window.dispatchEvent(new Event("osai:history-changed")))
+      .catch(() => {
+        // let a later send retry if this persist failed
+        recordedRef.current = false;
+      });
+    onSessionRecorded?.({
+      paneKey,
+      sessionId: openSessionId,
+      title: pending.title,
+      cwd: cwd ?? undefined,
+      engine: pending.engine,
+      model: pending.model,
+    });
+    if (agentId) {
+      saveScheduledAgentChatSession(agentId, {
+        sessionId: openSessionId,
+        title: pending.title,
+        updatedAt: Date.now(),
+      });
+    }
+    if (sessionIdRef.current != null)
+      chatSetTitle(sessionIdRef.current, pending.title).catch((e) =>
+        reportDiag("chat.title", e, { action: "setTitle" }),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSessionId]);
 
   // edit-and-resend: load a past message back into the composer to tweak + send.
   const editMessage = useCallback(
@@ -4681,11 +4755,21 @@ export function ChatPane({
               <b className="font-semibold">goal</b> — {goal}
             </ArmedStrip>
           )}
-          {activeRun && runEventCount > 0 && (
-            <ArmedStrip icon={<Waypoints size={12} className="animate-pulse" />}>
-              run: {runPhase}
-            </ArmedStrip>
-          )}
+          {/* Live run strip: ONLY while the phase is genuinely in-flight. Between
+              turns the phase lingers on its terminal value ("completed"/"failed")
+              and the events aren't cleared, so without this gate a fresh turn
+              showed a stale "run: completed" until its first event landed — very
+              visible on a resumed chat whose first token is slow. */}
+          {activeRun &&
+            runEventCount > 0 &&
+            (runPhase === "thinking" ||
+              runPhase === "writing" ||
+              runPhase === "acting" ||
+              runPhase === "waiting") && (
+              <ArmedStrip icon={<Waypoints size={12} className="animate-pulse" />}>
+                run: {runPhase}
+              </ArmedStrip>
+            )}
           {/* ── attachment tray ── images (click to preview before sending),
               quoted text snippets, and attached memories — one consistent row. */}
           {(images.length > 0 || snippets.length > 0 || attachedMemories.length > 0) && (
@@ -5082,6 +5166,19 @@ export function ChatPane({
                 }}
                 onToggleHidden={toggleHiddenModel}
                 onPick={(m) => {
+                  // Mid-conversation model switch: RESUME the live conversation
+                  // under the new model instead of starting a fresh session. The
+                  // session effect keys on model.id, so setModel restarts it; if
+                  // we don't hand it the resume id, the restart spawns a brand-new
+                  // engine session with its own durable log — which self-heal then
+                  // surfaces as a SECOND History row for the same thread (the
+                  // reported "changing model splits the conversation"). Mirrors
+                  // retryWithModel: set resumeId first so both setState calls batch
+                  // into one resuming restart that keeps context + one history
+                  // entry. Only when there's a live conversation to continue.
+                  if (m.id !== model.id && claudeSessionIdRef.current != null) {
+                    setResumeId(claudeSessionIdRef.current);
+                  }
                   setModel(m);
                   // Picking a model sets the global default (sticks across
                   // panes + restarts). For API providers we persist the bare
@@ -5455,11 +5552,17 @@ export function ChatPane({
     return [...map.values()];
   }, [turns]);
 
-  // index of the final activity group — only IT shows the live "Working…" timer
-  // while streaming (so an earlier group in a multi-step turn never double-spins)
+  // index of the final activity group IN THE CURRENT TURN — only IT shows the
+  // live "Working…" timer while streaming (so an earlier group in a multi-step
+  // turn never double-spins). Scan stops at the last user block: an activity
+  // group from a PREVIOUS turn must not be treated as live. Without this, opening
+  // a conversation whose last run left an unclosed activity group (no durationMs)
+  // pinned the live timer to that stale, off-screen group — so a new reply showed
+  // no "Working…" indication near the composer at all (owner-reported on resume).
   const lastActivityIdx = useMemo(() => {
     for (let i = blocks.length - 1; i >= 0; i--) {
       if (blocks[i].kind === "activity") return i;
+      if (blocks[i].kind === "user") return -1;
     }
     return -1;
   }, [blocks]);
@@ -6072,6 +6175,7 @@ export function ChatPane({
               workedMs: number;
               hasResult: boolean;
               hasContent: boolean; // a block that actually renders (prose/thinking w/ text, tools/change/ask/approval)
+              model?: string; // model that produced this turn (from its assistant blocks)
             } | null = null;
             const flushGroup = (isTail = false) => {
               if (!group) return;
@@ -6130,7 +6234,7 @@ export function ChatPane({
               out.push(
                 <TurnFrame
                   key={`turn-${g.firstId}`}
-                  modelLabel={model.label}
+                  modelLabel={g.model ? modelLabelFor(g.model) : model.label}
                   steps={g.steps}
                   workedMs={g.workedMs}
                   live={live}
@@ -6305,6 +6409,11 @@ export function ChatPane({
                   const emptyText =
                     (b.kind === "assistant" || b.kind === "thinking") && !b.turn.text.trim();
                   if (!emptyText) group.hasContent = true;
+                  // the header model = the model the assistant turn was generated
+                  // with (first one wins; a turn group is one model).
+                  if (!group.model && b.kind === "assistant" && b.turn.model) {
+                    group.model = b.turn.model;
+                  }
                   if (b.kind === "activity") {
                     group.steps += b.tools.length;
                     if (b.durationMs != null) group.workedMs += b.durationMs;

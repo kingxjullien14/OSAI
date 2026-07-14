@@ -142,8 +142,9 @@ import { refreshModelCatalog } from "../lib/modelCatalog";
 import { applyDynamicCatalog } from "../lib/providers";
 import { API_PROVIDERS, type ApiProviderId } from "../lib/providers";
 import { setApiKey, deleteApiKey, listConfiguredProviders } from "../lib/apiKeys";
-import { checkForUpdate, installUpdate, type UpdatePhase } from "../lib/updater";
+import { checkForUpdate, skipVersion, type UpdatePhase } from "../lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
+import { UpdateDialog } from "./UpdateDialog";
 
 
 /* ── control primitives ─────────────────────────────────────────────── */
@@ -784,11 +785,11 @@ function kindClass(kind: string): string {
 function UpdateCard() {
   const [phase, setPhase] = useState<UpdatePhase>({ kind: "idle" });
   const [update, setUpdate] = useState<Update | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   if (!isTauriRuntime()) return null;
 
-  const busy =
-    phase.kind === "checking" || phase.kind === "downloading" || phase.kind === "installing";
+  const busy = phase.kind === "checking";
 
   const runCheck = async () => {
     setPhase({ kind: "checking" });
@@ -801,20 +802,11 @@ function UpdateCard() {
       }
       setUpdate(u);
       setPhase({ kind: "available", version: u.version, notes: u.body ?? null });
+      // surface the changelog + download/install/relaunch in the SAME dialog the
+      // launch check opens — one update surface, no cramped inline flow to miss.
+      setDialogOpen(true);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const runInstall = async () => {
-    if (!update) return;
-    // installUpdate drives setPhase through downloading → installing → ready,
-    // then relaunches (the promise usually never resolves). It folds any error
-    // into the phase itself, so the catch here is just to keep the await tidy.
-    try {
-      await installUpdate(update, setPhase);
-    } catch {
-      /* phase already === error */
     }
   };
 
@@ -826,12 +818,6 @@ function UpdateCard() {
         return "you're on the latest version";
       case "available":
         return `version ${phase.version} is available`;
-      case "downloading":
-        return phase.pct == null ? "downloading…" : `downloading… ${phase.pct}%`;
-      case "installing":
-        return "installing…";
-      case "ready":
-        return "installed — restarting…";
       case "error":
         return `couldn't update: ${phase.message}`;
       default:
@@ -843,14 +829,13 @@ function UpdateCard() {
     <div className="surface-card mt-1 w-full max-w-[360px] p-3 text-left">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] font-medium text-[var(--color-text)]">software update</span>
-        {phase.kind === "available" ? (
+        {phase.kind === "available" && update ? (
           <button
             type="button"
-            onClick={runInstall}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] disabled:opacity-50"
+            onClick={() => setDialogOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
           >
-            <DownloadCloud size={13} /> install v{phase.version}
+            <DownloadCloud size={13} /> view update v{phase.version}
           </button>
         ) : (
           <button
@@ -870,18 +855,17 @@ function UpdateCard() {
       >
         {status}
       </p>
-      {phase.kind === "downloading" && (
-        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
-          <div
-            className="h-full rounded-full bg-[var(--color-accent)] transition-[width] duration-300"
-            style={{ width: phase.pct == null ? "100%" : `${phase.pct}%` }}
-          />
-        </div>
-      )}
-      {phase.kind === "available" && phase.notes && (
-        <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-line text-[11px] leading-snug text-[var(--color-text-2)]">
-          {phase.notes}
-        </p>
+      {dialogOpen && update && (
+        <UpdateDialog
+          update={update}
+          onClose={() => setDialogOpen(false)}
+          onSkip={(version) => {
+            skipVersion(version);
+            setDialogOpen(false);
+            setUpdate(null);
+            setPhase({ kind: "idle" });
+          }}
+        />
       )}
     </div>
   );
@@ -2227,7 +2211,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            OSAI · v2.2.1 · Jul.Nazz
+            OSAI · v2.3.0 · Jul.Nazz
           </div>
         </nav>
 
@@ -2755,7 +2739,7 @@ export function Settings({
                       OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v2.2.1 · Jul.Nazz
+                      v2.3.0 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">
