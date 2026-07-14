@@ -59,13 +59,22 @@ secret, generates `latest.json` (all platforms), and creates a **draft** Release
    > after renders in the new dialog.
 
    ```pwsh
-   # put the changelog in a file, then annotate the tag with it:
-   git tag -a v<version> -F notes.txt
+   # put the changelog in a file, then annotate the tag with it.
+   # --cleanup=verbatim is REQUIRED: git's default strips every line starting
+   # with `#`, which would silently delete your `##` section headings (this bit
+   # v2.3.0 — the notes shipped as a flat bullet list). verbatim keeps them.
+   git tag -a v<version> --cleanup=verbatim -F notes.txt
    ```
 
    > A lightweight tag (or an annotation with no body) falls back to the tag's
    > subject line — the in-app notes will be one terse line. Always annotate with
    > the full changelog.
+   >
+   > After pushing + building, sanity-check the headings actually survived:
+   > `git tag -l --format='%(contents)' v<version>` should still show your
+   > `## …` lines. If a release already shipped flattened, fix it in place
+   > without a rebuild: `gh release edit v<version> --notes-file notes.md`, then
+   > patch `latest.json`'s `notes` and `gh release upload v<version> latest.json --clobber`.
 
 4. **Push** — the tag is what triggers the release build:
 
