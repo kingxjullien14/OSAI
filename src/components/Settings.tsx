@@ -93,7 +93,7 @@ import {
   applyFontScale,
   applyReduceMotion,
 } from "../lib/appearance";
-import { isApple } from "../lib/platform";
+import { isApple, isWindows } from "../lib/platform";
 import { shortcutGroups } from "../lib/shortcuts";
 
 import {
@@ -2059,6 +2059,20 @@ export function Settings({
   /** Persist + update local state in one move. */
   const patch = (p: Partial<AppSettings>) => setS(saveSettings(p));
 
+  // The GPU preference is read by the backend only at launch (the webview's GPU
+  // is fixed once, when its environment is created), so toggling it needs a
+  // restart. Track that a change happened this session to surface a "restart
+  // now" affordance. See lib.rs apply_gpu_preference + settings.ts.
+  const [gpuRestartPending, setGpuRestartPending] = useState(false);
+  const relaunchApp = async () => {
+    try {
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch {
+      /* not in the Tauri runtime, or relaunch unavailable — no-op */
+    }
+  };
+
   /** Reset behavioral / appearance / notification prefs to defaults — but keep
    *  identity, engine choice, and onboarding state so a reset never re-triggers
    *  first-run or forgets who you are. */
@@ -2211,7 +2225,7 @@ export function Settings({
 
           {/* footer — build line, mono + faint, capped by a hairline */}
           <div className="border-t border-[var(--color-border)] px-4 py-3 font-mono text-[10px] tracking-wide text-[var(--color-faint)]">
-            OSAI · v2.4.1 · Jul.Nazz
+            OSAI · v2.5.0 · Jul.Nazz
           </div>
         </nav>
 
@@ -2284,6 +2298,32 @@ export function Settings({
                         onChange={(v) => patch({ minimizeToTray: v })}
                       />
                     </Row>
+                    {isWindows && (
+                      <Row
+                        label="prefer discrete GPU"
+                        sub="render on the high-performance (discrete) GPU instead of the battery-saving integrated one — takes effect after a restart"
+                      >
+                        <div className="flex items-center gap-2">
+                          {gpuRestartPending && (
+                            <button
+                              type="button"
+                              onClick={relaunchApp}
+                              title="relaunch OSAI so the GPU change takes effect"
+                              className="press flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-accent-fg)]"
+                            >
+                              <RefreshCw size={13} /> restart to apply
+                            </button>
+                          )}
+                          <Toggle
+                            checked={s.preferHighPerformanceGpu}
+                            onChange={(v) => {
+                              patch({ preferHighPerformanceGpu: v });
+                              setGpuRestartPending(true);
+                            }}
+                          />
+                        </div>
+                      </Row>
+                    )}
                   </Card>
 
                   <Card label="panes & oracles">
@@ -2739,7 +2779,7 @@ export function Settings({
                       OSAI cockpit
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
-                      v2.4.1 · Jul.Nazz
+                      v2.5.0 · Jul.Nazz
                     </div>
                   </div>
                   <p className="text-[12px] text-[var(--color-text-2)]">

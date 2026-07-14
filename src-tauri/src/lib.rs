@@ -213,6 +213,103 @@ fn startup_open_pane() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Steer WebView2's GPU selection from the persisted `preferHighPerformanceGpu`
+/// setting, BEFORE any window (and thus the WebView2 environment) is created.
+///
+/// WHY HERE, NOT VIA A COMMAND: Chromium picks the GPU once, when the webview
+/// environment is created — it can't be changed for the life of the process. The
+/// frontend keeps settings in webview localStorage, which doesn't exist yet at
+/// this point, so we read the on-disk mirror (`~/.osai/state/ui-state.json`,
+/// written by lib/uiMirror.ts) directly. When the flag is on we append
+/// Chromium's `--force_high_performance_gpu` switch via
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`; the WebView2 runtime COMBINES that
+/// env var with wry's own args (smart-screen/autoplay disables), so this adds to
+/// them rather than replacing them. On a hybrid laptop this is what nudges the
+/// discrete GPU instead of the battery-saving integrated one. Toggling the
+/// setting only takes effect after a restart (see settings.ts). Windows only —
+/// the flag is a Chromium/WebView2 concept; macOS/Linux use WebKit.
+#[cfg(windows)]
+fn apply_gpu_preference() {
+    // ~/.osai/state/ui-state.json → { "osai.settings": "<json string>", ... }.
+    // HOME is aliased to %USERPROFILE% just above, so this resolves correctly.
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let path = std::path::Path::new(&home).join(".osai/state/ui-state.json");
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return; // no mirror yet (fresh install) → OS default GPU
+    };
+    if !mirror_prefers_high_performance_gpu(&raw) {
+        return;
+    }
+    // Append (don't clobber) any pre-existing value a launcher/env might set.
+    const FLAG: &str = "--force_high_performance_gpu";
+    let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+    let merged = match std::env::var(key) {
+        Ok(existing) if !existing.trim().is_empty() => {
+            if existing.contains(FLAG) {
+                existing
+            } else {
+                format!("{existing} {FLAG}")
+            }
+        }
+        _ => FLAG.to_string(),
+    };
+    std::env::set_var(key, merged);
+}
+
+/// Pure core of [`apply_gpu_preference`]: given the raw `ui-state.json` mirror,
+/// decide whether the user asked for the high-performance GPU. The mirror maps
+/// localStorage keys to their string values, so the settings blob is a JSON
+/// string nested under `"osai.settings"`. Any malformed/missing layer → false
+/// (fall back to the OS default GPU). Split out so it can be unit-tested without
+/// touching the filesystem or the process environment.
+#[cfg(windows)]
+fn mirror_prefers_high_performance_gpu(raw: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|mirror| {
+            let blob = mirror.get("osai.settings")?.as_str()?.to_string();
+            serde_json::from_str::<serde_json::Value>(&blob).ok()
+        })
+        .and_then(|settings| settings.get("preferHighPerformanceGpu")?.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(all(test, windows))]
+mod gpu_pref_tests {
+    use super::mirror_prefers_high_performance_gpu;
+
+    /// The blob is a JSON *string* nested in the mirror — the double-encoding
+    /// this test pins is exactly what bit real reads before.
+    fn mirror_with(settings_json: &str) -> String {
+        serde_json::json!({ "osai.settings": settings_json }).to_string()
+    }
+
+    #[test]
+    fn flag_on_returns_true() {
+        let m = mirror_with(r#"{"userName":"x","preferHighPerformanceGpu":true}"#);
+        assert!(mirror_prefers_high_performance_gpu(&m));
+    }
+
+    #[test]
+    fn flag_off_or_absent_returns_false() {
+        assert!(!mirror_prefers_high_performance_gpu(&mirror_with(
+            r#"{"preferHighPerformanceGpu":false}"#
+        )));
+        assert!(!mirror_prefers_high_performance_gpu(&mirror_with(r#"{"userName":"x"}"#)));
+    }
+
+    #[test]
+    fn malformed_inputs_return_false() {
+        assert!(!mirror_prefers_high_performance_gpu("not json"));
+        assert!(!mirror_prefers_high_performance_gpu("{}"));
+        // osai.settings present but not a string / not valid inner json
+        assert!(!mirror_prefers_high_performance_gpu(r#"{"osai.settings":42}"#));
+        assert!(!mirror_prefers_high_performance_gpu(r#"{"osai.settings":"{bad"}"#));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Windows has no $HOME, but nearly every data source here keys off it (usage
@@ -226,6 +323,12 @@ pub fn run() {
             std::env::set_var("HOME", profile);
         }
     }
+
+    // Steer WebView2's GPU choice from the persisted setting before the webview
+    // environment is created (it can't be changed afterwards). Must run before
+    // the first window builds. Windows-only; no-op elsewhere.
+    #[cfg(windows)]
+    apply_gpu_preference();
 
     let mut builder = tauri::Builder::default();
 

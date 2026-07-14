@@ -79,6 +79,16 @@ export interface AppSettings {
   // and being carried silence it regardless. ON by default.
   petVoice: boolean;
 
+  // preferHighPerformanceGpu — Windows only. When ON, OSAI asks WebView2 to
+  // render on the discrete/high-performance GPU (Chromium's
+  // `--force_high_performance_gpu`) instead of letting Windows pick the
+  // power-saving integrated GPU. Off by default (matches the OS default; easier
+  // on battery). The GPU is chosen once when the webview environment is created
+  // at launch, so a change only takes effect after an app RESTART — the backend
+  // reads this flag from the on-disk settings mirror (~/.osai/state/ui-state.json)
+  // at startup, before the window exists (lib.rs). No effect on macOS/Linux.
+  preferHighPerformanceGpu: boolean;
+
   // minimizeToTray — when ON, closing the window (X) hides OSAI to the system
   // tray and keeps it running (the tray icon's Show/Quit bring it back or
   // exit) instead of quitting. OFF by default → X quits. macOS keeps its dock
@@ -181,6 +191,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   funFx: true,
   petRoam: true,
   petVoice: true,
+  preferHighPerformanceGpu: false,
   minimizeToTray: false,
   showCodexUsage: true,
   regenerateContextOnChange: false,
