@@ -1204,6 +1204,16 @@ export function ChatPane({
     setChatBusy(paneKey, streaming || bgActive);
     return () => setChatBusy(paneKey, false);
   }, [paneKey, streaming, bgActive]);
+  // Unified fleet model — the single source of truth for sub-agent rendering
+  // (transcript nesting + composer dock). Computed over the FULL `turns` (a safe
+  // superset of the tree-filtered visibleTurns) and declared HIGH in the body so
+  // the composer dock (built before visibleTurns) can read it without a TDZ.
+  //   · childrenByAgent/childIds — global parent→children map so a sub-agent's
+  //     children nest under its Agent row wherever they landed (no detached block).
+  //   · dock — currently-running background agents (run_in_background).
+  //   · backgroundMemberIds — tool ids kept OUT of the transcript while their
+  //     background agent runs (re-enter, collapsed, when it finishes).
+  const fleet = useFleet(turns, bgTasks);
   // claude's init event arrived (session_id known) — gates the seed auto-send
   const [claudeReady, setClaudeReady] = useState(false);
 
@@ -5438,14 +5448,6 @@ export function ChatPane({
     () => (hiddenTurnIds.size === 0 ? treeTurns : treeTurns.filter((t) => !hiddenTurnIds.has(t.id))),
     [treeTurns, hiddenTurnIds],
   );
-
-  // Unified fleet model — the single source of truth for sub-agent rendering
-  // (transcript nesting + composer dock). `childrenByAgent`/`childIds`: global
-  // parent→children map so a sub-agent's children nest under its Agent row no
-  // matter which group they landed in (fixes the detached flat "18 steps").
-  // `dock`: currently-running background agents. `backgroundMemberIds`: tool ids
-  // to keep OUT of the transcript while their background agent runs.
-  const fleet = useFleet(visibleTurns, bgTasks);
 
   const blocks = useMemo<RenderBlock[]>(() => {
     const { childIds, backgroundMemberIds } = fleet;
