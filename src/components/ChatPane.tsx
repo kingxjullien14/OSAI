@@ -163,8 +163,10 @@ import {
   type ChatTurn,
 } from "../lib/chatStream";
 import { readChatHistory, saveChatTree, loadChatTree } from "../lib/chatHistory";
-import { partitionTools, deriveFleet, isAgentTurn } from "../lib/subagentFleet";
+import { deriveFleet, isAgentTurn } from "../lib/subagentFleet";
+import { useFleet } from "../lib/useFleet";
 import { FleetView } from "./chat/FleetView";
+import { FleetDock } from "./chat/FleetDock";
 import { CadencedShimmer, ThinkingBlock } from "./chat/ThinkingBlock";
 import { baseName, ellipsizeMid, fmtClock, fmtDuration } from "./chat/format";
 import {
@@ -1188,7 +1190,7 @@ export function ChatPane({
   // dropped when its completion/cancel notification arrives. Reattach replays the
   // same events through this handler, so the set self-corrects.
   const [bgTasks, setBgTasks] = useState<
-    { id: string; description: string; subagentType?: string; lastLine?: string }[]
+    { id: string; toolUseId?: string; description: string; subagentType?: string; lastLine?: string }[]
   >([]);
   // transient pre-session status shown inline in the hero (queued-send notice,
   // startup failure) — never a transcript turn, so the empty state stays calm.
@@ -1962,6 +1964,10 @@ export function ChatPane({
         if (tid) {
           const desc = typeof ev.description === "string" ? ev.description : "";
           const sub = typeof ev.subagent_type === "string" ? ev.subagent_type : undefined;
+          // the spawning Agent tool_use id — links this live task to its turn in
+          // the transcript (exact, provided by the CLI) so the dock card can pull
+          // the agent's nested steps + fold it back into the transcript on finish.
+          const tuid = typeof ev.tool_use_id === "string" ? ev.tool_use_id : undefined;
           setBgTasks((prev) => {
             const i = prev.findIndex((t) => t.id === tid);
             if (i < 0) {
@@ -1969,6 +1975,7 @@ export function ChatPane({
                 ...prev,
                 {
                   id: tid,
+                  toolUseId: tuid,
                   description: desc || "background agent",
                   subagentType: sub,
                   lastLine: st === "task_progress" ? desc || undefined : undefined,
@@ -1978,6 +1985,7 @@ export function ChatPane({
             const next = [...prev];
             next[i] = {
               ...next[i],
+              toolUseId: next[i].toolUseId ?? tuid,
               description: next[i].description || desc || "background agent",
               subagentType: next[i].subagentType ?? sub,
               lastLine: st === "task_progress" && desc ? desc : next[i].lastLine,
@@ -4840,25 +4848,10 @@ export function ChatPane({
               e.target.value = "";
             }}
           />
-          {bgActive && (
-            <div
-              className="flex items-center gap-2 px-4 pt-2 font-mono text-[11px] text-[var(--color-muted)]"
-              title={bgTasks.map((t) => t.description).join("\n")}
-            >
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-accent)] opacity-70" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-              </span>
-              <span className="shrink-0 text-[var(--color-text-2)]">
-                {bgTasks.length} background agent{bgTasks.length === 1 ? "" : "s"} running
-              </span>
-              {bgTasks[bgTasks.length - 1]?.lastLine && (
-                <span className="min-w-0 truncate text-[var(--color-faint)]">
-                  · {bgTasks[bgTasks.length - 1]!.lastLine}
-                </span>
-              )}
-            </div>
-          )}
+          {/* background-agent dock — persistent live fleet for run_in_background
+              agents that keep working after the reply landed (replaces the old
+              one-line pill; the transcript stays out of it). */}
+          <FleetDock agents={fleet.dock} />
           {voiceNote && (
             <button
               type="button"
@@ -5446,7 +5439,16 @@ export function ChatPane({
     [treeTurns, hiddenTurnIds],
   );
 
+  // Unified fleet model — the single source of truth for sub-agent rendering
+  // (transcript nesting + composer dock). `childrenByAgent`/`childIds`: global
+  // parent→children map so a sub-agent's children nest under its Agent row no
+  // matter which group they landed in (fixes the detached flat "18 steps").
+  // `dock`: currently-running background agents. `backgroundMemberIds`: tool ids
+  // to keep OUT of the transcript while their background agent runs.
+  const fleet = useFleet(visibleTurns, bgTasks);
+
   const blocks = useMemo<RenderBlock[]>(() => {
+    const { childIds, backgroundMemberIds } = fleet;
     const out: RenderBlock[] = [];
     let pending: ToolTurn[] = [];
 
@@ -5468,10 +5470,16 @@ export function ChatPane({
 
     for (const t of visibleTurns) {
       if (t.kind === "tool") {
-        // A sub-agent's OWN tool calls (parentId set) always stay inside the
-        // activity group so they nest under their Agent row — never hoisted out as
-        // a top-level ask/change card (that's what made the flat "mess"). Only the
-        // MAIN agent's asks/edits get promoted to their own prominent cards.
+        // A sub-agent's OWN tool calls are owned by their Agent row (via the
+        // global childrenByAgent map) — pull them OUT of the linear stream
+        // entirely so they cluster under the agent wherever it lives, and can't
+        // form a detached flat group or get promoted to a top-level card.
+        // A RUNNING background agent's whole subtree (its Agent row + children)
+        // also leaves the transcript — it lives in the composer dock until it
+        // finishes, then re-enters here as a collapsed, done AgentStep.
+        if (childIds.has(t.id) || backgroundMemberIds.has(t.id)) continue;
+        // a dangling-parent child (parent Agent absent — mid-replay) keeps the
+        // old degrade-to-flat path and is never promoted.
         const isChild = t.parentId != null;
         // AskUserQuestion is an INTERACTIVE prompt, not background activity — it
         // gets its own prominent card (with answer buttons) instead of being
@@ -5518,7 +5526,7 @@ export function ChatPane({
     }
     flushTools();
     return out;
-  }, [visibleTurns]);
+  }, [visibleTurns, fleet]);
   blocksCountRef.current = blocks.length;
   // keep the jump pill's "N new" fresh as blocks land while detached. (The
   // ResizeObserver re-syncs on growth too; this guarantees the count tracks the
@@ -6261,6 +6269,7 @@ export function ChatPane({
                 b.kind === "activity" ? (
                   <ActivityGroup
                     tools={b.tools}
+                    childrenByAgent={fleet.childrenByAgent}
                     durationMs={b.durationMs}
                     // live only on the final activity group, while a turn is in
                     // flight and it hasn't been closed by a result yet
@@ -6855,6 +6864,7 @@ function RunRail({ phase }: { phase: RunPhase }) {
 
 function ActivityGroup({
   tools,
+  childrenByAgent,
   durationMs,
   live,
   elapsedMs,
@@ -6863,6 +6873,9 @@ function ActivityGroup({
   onReplay,
 }: {
   tools: ToolTurn[];
+  /** GLOBAL parent→children map (from the whole turn), so an Agent row owns ALL
+   *  its children even ones that streamed into a later group. */
+  childrenByAgent: Map<string, ToolTurn[]>;
   durationMs?: number;
   live: boolean;
   elapsedMs: number;
@@ -6878,24 +6891,22 @@ function ActivityGroup({
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
   const open = forceOpen || (userToggled ?? live);
 
-  // split sub-agent (Task) children out of the flat list so each nests under its
-  // Agent row instead of dumping flat (the old "mess"). topLevel = the main
-  // agent's own calls + the Agent rows; childrenById = each agent's tool calls.
-  const { topLevel, childrenById } = useMemo(() => partitionTools(tools), [tools]);
-  // per-sub-agent summaries for the live fleet strip (the at-a-glance dashboard).
-  const fleet = useMemo(() => deriveFleet(tools), [tools]);
+  // Sub-agent children are already pulled out of `tools` upstream (they live in
+  // the global childrenByAgent map), so `tools` here is exactly what renders at
+  // this group's level: the main agent's own calls + the Agent rows. Each Agent
+  // row pulls its children (wherever they arrived) from the global map.
+  const fleet = useMemo(() => deriveFleet(tools, childrenByAgent), [tools, childrenByAgent]);
 
   // dedup artifacts by path (an Edit + later Write on the same file → one card).
-  // top-level only — a sub-agent's edits show inline in its nested rows, so they
-  // don't also pile up as loose cards down here.
+  // a sub-agent's edits show inline in its nested rows, so they don't pile up here.
   const artifacts = useMemo(() => {
     const seen = new Map<string, Artifact>();
-    for (const t of topLevel) {
+    for (const t of tools) {
       const a = artifactFromTool(t);
       if (a) seen.set(a.path, a);
     }
     return [...seen.values()];
-  }, [topLevel]);
+  }, [tools]);
 
   // a sub-agent (Task) → a nested AgentStep carrying its children (recursive, so
   // deeper fan-outs nest too); every other tool → a leaf ActivityStep.
@@ -6903,7 +6914,7 @@ function ActivityGroup({
     isAgentTurn(t) ? (
       <AgentStep
         turn={t}
-        childTools={childrenById.get(t.id) ?? []}
+        childTools={childrenByAgent.get(t.id) ?? []}
         live={live}
         renderChild={renderNode}
       />
@@ -6975,7 +6986,7 @@ function ActivityGroup({
           {/* live fleet glance while a fan-out is in flight; the nested Agent rows
               below are the permanent record. */}
           {live && fleet.length > 0 && <FleetView agents={fleet} />}
-          {topLevel.map((t) => (
+          {tools.map((t) => (
             <div key={t.id}>{renderNode(t)}</div>
           ))}
         </div>

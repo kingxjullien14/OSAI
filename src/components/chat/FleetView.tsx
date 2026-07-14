@@ -43,7 +43,7 @@ export function FleetView({ agents }: { agents: SubagentSummary[] }) {
   );
 }
 
-function FleetCard({ agent }: { agent: SubagentSummary }) {
+export function FleetCard({ agent }: { agent: SubagentSummary }) {
   const running = agent.status === "running";
   return (
     <div

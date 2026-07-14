@@ -26,9 +26,11 @@ export function AgentStep({
   const failed = turn.isError === true;
   const running = turn.result == null && !failed;
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  // running agents open themselves while live; a failed one always opens so you
-  // can see what it did; otherwise user-controlled.
-  const open = userToggled ?? ((live && running) || failed);
+  // A running agent opens itself so you watch it work — even if its enclosing
+  // group has already settled (a background fan-out keeps running after the main
+  // turn's result). Failed always opens; a finished one collapses to a rollup.
+  const open = userToggled ?? (running || failed);
+  void live;
 
   const label = agentLabel(turn);
   const subType =

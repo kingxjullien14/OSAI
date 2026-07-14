@@ -1,6 +1,6 @@
 [package]
 name = "osai"
-version = "2.3.0"
+version = "2.4.0"
 description = "OSAI — your AI co-founder's command deck"
 authors = ["Jul.Nazz"]
 edition = "2021"

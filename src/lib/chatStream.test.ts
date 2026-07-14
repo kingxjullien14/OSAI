@@ -60,6 +60,41 @@ test("reduceChatStreamEvent settles thinking and adds tool cards on assistant fi
   assert.equal(final.thinkingTurnId, null);
 });
 
+test("a sub-agent Task tool_use keeps run_in_background + parentId on its turn", () => {
+  // classification (isBackgroundAgent) + nesting (parentId) both read straight off
+  // the tool turn's copied input/envelope — lock that the reducer preserves them.
+  const bg = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "ag-1",
+            name: "Agent",
+            input: { description: "build", subagent_type: "builder", run_in_background: true },
+          },
+        ],
+      },
+    },
+    { now: 0, uid },
+  ).state;
+  assert.equal(bg.turns[0].input.run_in_background, true);
+
+  // a child event tagged with the parent Task's id → parentId on the child turn.
+  const child = reduceChatStreamEvent(
+    bg,
+    {
+      type: "assistant",
+      parent_tool_use_id: "ag-1",
+      message: { content: [{ type: "tool_use", id: "c-1", name: "Edit", input: { file_path: "x.html" } }] },
+    },
+    { now: 1, uid },
+  ).state;
+  assert.equal(child.turns[1].parentId, "ag-1");
+});
+
 test("reduceChatStreamEvent patches tool results by tool_use_id", () => {
   const state = {
     streamingTurnId: null,
