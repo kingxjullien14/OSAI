@@ -232,6 +232,34 @@ export function applyCare(soul: PetSoul, care: PetCare): PetSoul {
   return { ...soul, needs, last, totals, bond };
 }
 
+/** Event-sourced record of finished/failed agent runs. Bumps the lifetime
+ *  totals (celebrations / startles — the keepsake counters) and nudges spirits,
+ *  WITHOUT advancing metabolic time. This is deliberately separate from `tick`:
+ *  tick early-returns when `now <= lastTick`, so two runs finishing in the same
+ *  tick window would silently drop the second increment — which is exactly why
+ *  the old notification-sampled counter never climbed. Counting here, off the
+ *  per-run result hook, makes every finished run count exactly once. */
+export function recordOutcome(
+  soul: PetSoul,
+  ev: { finished?: number; failed?: number },
+): PetSoul {
+  const finished = Math.max(0, Math.floor(ev.finished ?? 0));
+  const failed = Math.max(0, Math.floor(ev.failed ?? 0));
+  if (!finished && !failed) return soul;
+  const needs = { ...soul.needs };
+  // same shape + caps as tick's spirits response, so the pet still reacts to a
+  // burst without a single big batch swinging morale wildly.
+  needs.spirits = clamp(
+    needs.spirits + Math.min(finished, 5) * 2 - Math.min(failed, 5) * 3,
+  );
+  const totals = {
+    ...soul.totals,
+    celebrations: soul.totals.celebrations + finished,
+    startles: soul.totals.startles + failed,
+  };
+  return { ...soul, needs, totals };
+}
+
 // ── derived ──────────────────────────────────────────────────────────────────
 
 export function moodOf(soul: PetSoul, ctx: { isNight?: boolean } = {}): PetMood {

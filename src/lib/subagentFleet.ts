@@ -9,6 +9,7 @@
  * inline nesting and (b) per-agent summaries for the fleet glance.
  */
 import type { ChatTurn } from "./chatStream";
+import { toolVerb } from "./toolInfo.ts";
 
 export type ToolTurn = Extract<ChatTurn, { kind: "tool" }>;
 
@@ -82,47 +83,15 @@ export function agentLabel(t: ToolTurn): string {
   );
 }
 
-/** A short, friendly verb for a child tool call (lite version of ChatPane's
- *  `toolVerb`, duplicated here to keep this module React-free + standalone). */
-function verbLite(name: string): string {
-  switch (name.toLowerCase()) {
-    case "read":
-      return "Read";
-    case "write":
-      return "Wrote";
-    case "edit":
-    case "multiedit":
-    case "notebookedit":
-      return "Edited";
-    case "bash":
-    case "exec_command":
-      return "Ran";
-    case "grep":
-    case "search":
-      return "Searched";
-    case "glob":
-      return "Globbed";
-    case "webfetch":
-    case "webfetch_tool":
-      return "Fetched";
-    case "websearch":
-      return "Searched web";
-    case "task":
-      return "Agent";
-    case "todowrite":
-      return "Planned";
-    default:
-      return name;
-  }
-}
-
 /** One-line preview of a tool call for the fleet's "last line" — verb + target.
- *  File paths are shortened to their basename; patterns/queries/commands are kept
- *  whole, since basename-ing a glob pattern would wrongly drop its leading dirs. */
+ *  The verb comes from the shared tool registry (lib/toolInfo) so a sub-agent's
+ *  child row reads identically to the same call in the main timeline. File paths
+ *  are shortened to their basename; patterns/queries/commands are kept whole,
+ *  since basename-ing a glob pattern would wrongly drop its leading dirs. */
 export function previewTool(t: ToolTurn): string {
   const inp = t.input;
   const file = str(inp, "file_path") ?? str(inp, "path") ?? str(inp, "notebook_path");
-  if (file) return `${verbLite(t.name)} ${baseName(file)}`.trim();
+  if (file) return `${toolVerb(t.name)} ${baseName(file)}`.trim();
   const other =
     str(inp, "pattern") ??
     str(inp, "query") ??
@@ -132,7 +101,7 @@ export function previewTool(t: ToolTurn): string {
     "";
   const firstLine = other.split("\n")[0] ?? other;
   const clipped = firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
-  return `${verbLite(t.name)}${clipped ? ` ${clipped}` : ""}`.trim();
+  return `${toolVerb(t.name)}${clipped ? ` ${clipped}` : ""}`.trim();
 }
 
 function statusOf(t: ToolTurn): SubagentStatus {

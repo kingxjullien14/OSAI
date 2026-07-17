@@ -22,20 +22,23 @@
  *   7. `/` slash menu (clear / plan / model / help)
  *   8. `@` file-mention picker sourced from cwd
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
   ArrowUp,
   ArrowDown,
+  Bell,
   PackageOpen,
   Brain,
   Check,
+  Share2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Clock,
+  Copy,
   CornerDownLeft,
   FileCode,
   FileText,
@@ -48,6 +51,7 @@ import {
   ListChecks,
   Loader2,
   Mic,
+  Minimize2,
   Pencil,
   Pin,
   RefreshCw,
@@ -95,6 +99,8 @@ import {
   type ChatTurnInfo,
   type WebChatTurn,
 } from "../lib/chat";
+import { buildHandoffPrompt, contextWindowFor, engineGroupLabel, type HandoffDelivery } from "../lib/handoff";
+import { mcpToolParts, toolIconKey, toolVerb, type ToolIconKey } from "../lib/toolInfo";
 import { detectAvailableEngines } from "../lib/providerDetect";
 import {
   availableApiModels,
@@ -714,9 +720,37 @@ function toolTarget(turn: ToolTurn): { label: string; full: string } {
   }
 
   // task / sub-agent → description
-  if (name === "task") {
+  if (name === "task" || name === "agent" || name === "subagent" || name === "sub-agent") {
     const d = str("description") ?? str("subagent_type") ?? "";
     return { label: ellipsizeMid(d, 56), full: d };
+  }
+
+  // ask-the-user → the (first) question header, so the row says WHAT was asked
+  if (name === "askuserquestion") {
+    const qs = inp.questions;
+    const first = Array.isArray(qs) && qs[0] && typeof qs[0] === "object"
+      ? ((qs[0] as Record<string, unknown>).header ?? (qs[0] as Record<string, unknown>).question)
+      : undefined;
+    const label = typeof first === "string" ? first : "a question";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  // artifact / shared guide → its title/description
+  if (name === "artifact" || name === "shareonboardingguide") {
+    const label = str("title") ?? str("description") ?? str("file_path") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  // schedules / monitors → the human reason/condition they carry
+  if (name === "schedulewakeup" || name === "monitor" || name === "reportfindings") {
+    const label = str("reason") ?? str("until") ?? str("condition") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
+  }
+
+  // background-task control → the task id it acts on
+  if (name === "taskoutput" || name === "taskstop") {
+    const label = str("task_id") ?? str("taskId") ?? "";
+    return { label: ellipsizeMid(label, 56), full: label };
   }
 
   // fall back to the generic key:value preview
@@ -764,163 +798,36 @@ function toolFilePath(turn: ToolTurn): string | null {
   }
 }
 
-/** `mcp__server__tool` → its parts, or null for non-MCP names. */
-function mcpToolParts(name: string): { server: string; tool: string } | null {
-  if (!name.startsWith("mcp__")) return null;
-  const rest = name.slice(5);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return { server: rest, tool: "" };
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
-}
+// tool verb + name-parsing (mcpToolParts, toolVerb) now live in ../lib/toolInfo
+// — one pure, tested registry shared with the sub-agent fleet rows.
 
-/** Humanize an unknown tool name: "EnterWorktree" → "Enter worktree",
- *  "some_tool" → "Some tool" — so a tool we've never seen still reads as a
- *  sentence in the activity row instead of a raw identifier. */
-function prettifyToolName(name: string): string {
-  const spaced = name
-    .replace(/_/g, " ")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .trim();
-  if (!spaced) return name;
-  return spaced[0].toUpperCase() + spaced.slice(1).toLowerCase();
-}
-
-/** A short verb for the tool, Codex-style ("Read", "Ran", "Edited", "Searched"). */
-function toolVerb(name: string): string {
-  if (mcpToolParts(name)) return "MCP";
-  switch (name.toLowerCase()) {
-    case "read":
-      return "Read";
-    case "write":
-      return "Wrote";
-    case "edit":
-    case "multiedit":
-      return "Edited";
-    case "notebookedit":
-      return "Edited";
-    case "bash":
-    case "powershell":
-    case "exec_command":
-      return "Ran";
-    case "bashoutput":
-    case "write_stdin":
-      return "Output";
-    case "grep":
-    case "search":
-      return "Searched";
-    case "glob":
-      return "Globbed";
-    case "webfetch":
-    case "webfetch_tool":
-      return "Fetched";
-    case "websearch":
-    case "web_search":
-      return "Web search";
-    case "task":
-      return "Agent";
-    case "sendmessage":
-      return "Messaged agent";
-    case "mcp":
-    case "mcp_tool_call":
-    case "listmcpresourcestool":
-    case "readmcpresourcetool":
-    case "readmcpresourcedirtool":
-      return "MCP";
-    case "todowrite":
-      return "Planned";
-    case "skill":
-    case "slashcommand":
-      return "Skill";
-    case "toolsearch":
-      return "Tool search";
-    case "workflow":
-      return "Workflow";
-    case "monitor":
-      return "Monitored";
-    case "schedulewakeup":
-      return "Scheduled wake";
-    case "croncreate":
-    case "crondelete":
-    case "cronlist":
-      return "Cron";
-    case "pushnotification":
-      return "Notified";
-    case "enterplanmode":
-      return "Entered plan mode";
-    case "exitplanmode":
-      return "Proposed plan";
-    case "enterworktree":
-      return "Entered worktree";
-    case "exitworktree":
-      return "Left worktree";
-    case "taskcreate":
-      return "Task added";
-    case "taskupdate":
-      return "Task updated";
-    case "taskget":
-    case "tasklist":
-      return "Tasks";
-    case "taskoutput":
-      return "Task output";
-    case "taskstop":
-      return "Stopped task";
-    default:
-      return prettifyToolName(name);
-  }
-}
+/** Bind each pure icon GROUP (lib/toolInfo `toolIconKey`) to a lucide component.
+ *  The classification lives in the shared registry; only the component binding
+ *  is here (icons can't live in a React-free lib). Every current Claude Code
+ *  tool maps to a real icon — the "tool" fallback is for genuinely unknown names. */
+const TOOL_ICONS: Record<ToolIconKey, typeof Wrench> = {
+  file: FileText,
+  edit: Pencil,
+  shell: Terminal,
+  search: Search,
+  web: Globe,
+  plan: MapIcon,
+  list: ListChecks,
+  agent: Waypoints,
+  skill: Zap,
+  clock: Clock,
+  notify: Bell,
+  ask: HelpCircle,
+  worktree: Folder,
+  publish: Share2,
+  report: ShieldCheck,
+  mcp: Wrench,
+  tool: Wrench,
+};
 
 /** Pick the lucide icon component for a tool's activity row. */
-function toolIcon(name: string) {
-  switch (name.toLowerCase()) {
-    case "read":
-      return FileText;
-    case "write":
-    case "notebookedit":
-      return FileText;
-    case "edit":
-    case "multiedit":
-      return Pencil;
-    case "bash":
-    case "powershell":
-    case "bashoutput":
-    case "exec_command":
-    case "write_stdin":
-      return Terminal;
-    case "grep":
-    case "glob":
-    case "search":
-    case "toolsearch":
-      return Search;
-    case "webfetch":
-    case "webfetch_tool":
-    case "websearch":
-    case "web_search":
-      return Globe;
-    case "todowrite":
-    case "taskcreate":
-    case "taskupdate":
-    case "taskget":
-    case "tasklist":
-      return ListChecks;
-    case "skill":
-    case "slashcommand":
-    case "workflow":
-      return Zap;
-    case "monitor":
-    case "schedulewakeup":
-    case "croncreate":
-    case "crondelete":
-    case "cronlist":
-      return Clock;
-    case "enterplanmode":
-    case "exitplanmode":
-      return MapIcon;
-    case "mcp":
-    case "mcp_tool_call":
-      return Wrench;
-    default:
-      return Wrench;
-  }
+function toolIcon(name: string): typeof Wrench {
+  return TOOL_ICONS[toolIconKey(name)];
 }
 
 // ── file artifacts (Write / Edit / NotebookEdit targets) ─────────────────────
@@ -1434,6 +1341,10 @@ export function ChatPane({
   const [goalDraft, setGoalDraft] = useState<string | null>(null);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [handoffPanelOpen, setHandoffPanelOpen] = useState(false);
+  // How a handoff is delivered: generated into THIS chat, or written to a file.
+  const [handoffDelivery, setHandoffDelivery] = useState<HandoffDelivery>("chat");
+  // transient "copied ✓" flash on a handoff row's copy button (by model key).
+  const [handoffCopied, setHandoffCopied] = useState<string | null>(null);
   const [memoryHits, setMemoryHits] = useState<MemoryHit[]>([]);
   const [attachedMemoryIds, setAttachedMemoryIds] = useState<string[]>([]);
   const attachedMemories = useMemo(
@@ -3923,6 +3834,19 @@ export function ChatPane({
         },
       },
       {
+        id: "compact",
+        label: "/compact",
+        desc: "summarize + shrink the context window (keeps the thread)",
+        icon: <Minimize2 size={14} />,
+        run: () => {
+          // /compact is a real CLI slash command — send it as the turn text and
+          // the engine compacts in place (the composer shows "Compacting context…"
+          // while it runs). Unlike /clear it keeps the conversation.
+          setOverlay(null);
+          void sendText("/compact");
+        },
+      },
+      {
         id: "plan",
         label: "/plan",
         desc: "plan-first on the next message",
@@ -4507,47 +4431,141 @@ export function ChatPane({
           </div>
         )}
 
-        {handoffPanelOpen && (
-          <div className="mb-2 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-panel)]/85 p-1.5">
-            <div className="flex items-center justify-between px-1 pb-1">
-              <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-text-2)]">
-                <PackageOpen size={12} className="text-[var(--color-accent)]" />
-                handoff target
+        {handoffPanelOpen && (() => {
+          // Targets = the LIVE model catalog (same list the composer's model menu
+          // shows), minus the current model — you don't hand off to yourself.
+          // Grouped by engine so the API tier reads clearly next to the CLIs.
+          const currentKey = modelKey(model);
+          const targets = [...pickerModels, ...apiModels].filter((m) => modelKey(m) !== currentKey);
+          const groups: Array<[string, ChatModel[]]> = [];
+          for (const m of targets) {
+            const g = m.engine ?? "claude";
+            const bucket = groups.find(([k]) => k === g);
+            if (bucket) bucket[1].push(m);
+            else groups.push([g, [m]]);
+          }
+          const runHandoff = (target: ChatModel) => {
+            if (target.disabled) return;
+            setHandoffPanelOpen(false);
+            void sendText(buildHandoffPrompt(target, { delivery: handoffDelivery, cwd }));
+          };
+          const copyHandoff = (target: ChatModel) => {
+            const text = buildHandoffPrompt(target, { delivery: handoffDelivery, cwd });
+            const key = modelKey(target);
+            navigator.clipboard
+              ?.writeText(text)
+              .then(() => {
+                setHandoffCopied(key);
+                window.setTimeout(() => setHandoffCopied((c) => (c === key ? null : c)), 1500);
+              })
+              .catch((e) => reportDiag("chat.handoff", e, { action: "copy" }));
+          };
+          const DELIVERY: Array<{ id: HandoffDelivery; label: string; hint: string }> = [
+            { id: "chat", label: "into chat", hint: "the current model writes the handoff here" },
+            { id: "file", label: "to HANDOFF.md", hint: "written to a file in the working directory" },
+          ];
+          return (
+          <div className="mb-2 flex max-h-64 flex-col overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--osai-shadow-pop)]">
+            <div className="flex items-center justify-between px-3 pb-1 pt-1">
+              <span className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
+                <PackageOpen size={11} className="text-[var(--color-accent)]" />
+                hand off to
               </span>
               <button
                 type="button"
                 onClick={() => setHandoffPanelOpen(false)}
-                className="rounded p-0.5 text-[var(--color-muted)] hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)]"
+                className="grid h-5 w-5 place-items-center rounded text-[var(--color-muted)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
                 title="close handoff targets"
               >
                 <X size={12} />
               </button>
             </div>
-            {CHAT_MODELS.map((target) => (
-              <button
-                key={target.id}
-                type="button"
-                disabled={target.disabled}
-                onClick={() => {
-                  if (target.disabled) return;
-                  setHandoffPanelOpen(false);
-                  const engine = target.engine ?? "claude";
-                  sendText(
-                    `create a clean handoff for continuing this exact session in ${target.label} (${engine} / ${target.id}). include: current objective, important user preferences, shipped changes, files touched, verification already run, known caveats, and the next best actions. make it compact but complete enough that the target model can resume without rereading the whole chat.`,
+            {/* delivery mode — segmented control, matching the model menu's effort
+                toggle so the surface reads as native. */}
+            <div className="mx-2 mb-1 flex gap-[3px] rounded-[9px] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_60%,transparent)] p-[3px]">
+              {DELIVERY.map((d) => {
+                const on = handoffDelivery === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setHandoffDelivery(d.id)}
+                    title={d.hint}
+                    className={`flex-1 rounded-md px-2 py-[3px] text-center font-sans text-[10.5px] transition-colors ${
+                      on
+                        ? "bg-[var(--color-accent-soft)] text-[var(--color-text)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
+                        : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            {targets.length === 0 && (
+              <div className="px-3 py-2 font-sans text-[11.5px] text-[var(--color-faint)]">
+                no other models available — connect a provider in settings.
+              </div>
+            )}
+            {groups.map(([engine, models], gi) => (
+              <div key={engine} className="flex flex-col">
+                <div
+                  className={`px-3 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)] ${
+                    gi > 0 ? "mt-1 border-t border-[var(--color-border)]" : ""
+                  }`}
+                >
+                  {engineGroupLabel(engine)}
+                </div>
+                {models.map((target) => {
+                  const key = modelKey(target);
+                  const win = contextWindowFor(target);
+                  return (
+                    <div
+                      key={key}
+                      className="group/handoff relative mx-2 flex min-w-0 items-center gap-1 rounded-lg pr-1 text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel)] hover:text-[var(--color-text)]"
+                    >
+                      {/* left accent bar on hover — the MenuItem lit affordance */}
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[linear-gradient(180deg,var(--color-accent),var(--osai-accent-2))] opacity-0 shadow-[var(--osai-glow-soft)] transition-opacity group-hover/handoff:opacity-100"
+                      />
+                      <button
+                        type="button"
+                        disabled={target.disabled}
+                        onClick={() => runHandoff(target)}
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left font-sans text-[12px] disabled:cursor-not-allowed disabled:opacity-45"
+                        title={target.note ?? `hand off to ${target.label} · ~${formatTokens(win)} context`}
+                      >
+                        <span
+                          className="h-[6px] w-[6px] shrink-0 rounded-full"
+                          style={{ background: engineDotColor(target.engine) }}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{target.label}</span>
+                        <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">
+                          {formatTokens(win)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={target.disabled}
+                        onClick={() => copyHandoff(target)}
+                        title="copy the handoff prompt"
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] group-hover/handoff:opacity-100 disabled:hidden"
+                      >
+                        {handoffCopied === key ? (
+                          <Check size={12} className="text-[var(--color-success)]" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                      </button>
+                    </div>
                   );
-                }}
-                className="flex min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-[11.5px] text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-panel-2)] disabled:cursor-not-allowed disabled:opacity-45"
-                title={target.note}
-              >
-                <Sparkles size={12} className="shrink-0 text-[var(--color-accent)]" />
-                <span className="min-w-0 flex-1 truncate">{target.label}</span>
-                <span className="shrink-0 rounded border border-[var(--color-border)] px-1 py-0.5 font-mono text-[9px] text-[var(--color-faint)]">
-                  {target.engine ?? "claude"}
-                </span>
-              </button>
+                })}
+              </div>
             ))}
           </div>
-        )}
+          );
+        })()}
 
         {/* slash / @-mention overlay — opens downward on the hero (the
             composer sits near the top there; upward clipped, user-reported) */}
@@ -4773,21 +4791,9 @@ export function ChatPane({
               <b className="font-semibold">goal</b> — {goal}
             </ArmedStrip>
           )}
-          {/* Live run strip: ONLY while the phase is genuinely in-flight. Between
-              turns the phase lingers on its terminal value ("completed"/"failed")
-              and the events aren't cleared, so without this gate a fresh turn
-              showed a stale "run: completed" until its first event landed — very
-              visible on a resumed chat whose first token is slow. */}
-          {activeRun &&
-            runEventCount > 0 &&
-            (runPhase === "thinking" ||
-              runPhase === "writing" ||
-              runPhase === "acting" ||
-              runPhase === "waiting") && (
-              <ArmedStrip icon={<Waypoints size={12} className="animate-pulse" />}>
-                run: {runPhase}
-              </ArmedStrip>
-            )}
+          {/* (the live "run: {phase}" strip was removed — it duplicated the
+              activity header's phase, which already shows the same live state
+              right above the composer. One source of truth, less chrome.) */}
           {/* ── attachment tray ── images (click to preview before sending),
               quoted text snippets, and attached memories — one consistent row. */}
           {(images.length > 0 || snippets.length > 0 || attachedMemories.length > 0) && (
@@ -5100,8 +5106,26 @@ export function ChatPane({
               </button>
             )}
             </div>
-            {/* RIGHT — action: attach · mic · (working) · model pill · orb. */}
+            {/* RIGHT — action: (compact) · attach · mic · (working) · model pill · orb. */}
             <div className="ml-auto flex shrink-0 items-center gap-1">
+            {/* Compact nudge — appears once the context window is past halfway on a
+                CLI chat (compaction is a CLI feature; API chats have no /compact).
+                Warms toward danger as it fills, so a full window reads as urgent. */}
+            {!bareRail && !activeRun && !isApiChat && ctxMeter && ctxMeter.pct >= 50 && (
+              <button
+                type="button"
+                onClick={() => void sendText("/compact")}
+                title={`context ${ctxMeter.pct}% full — compact to summarize + free the window`}
+                className={`flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 font-mono text-[9.5px] transition-colors ${
+                  ctxMeter.pct >= 80
+                    ? "border-[color-mix(in_srgb,var(--color-danger)_55%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_26%,transparent)]"
+                    : "border-[color-mix(in_srgb,var(--color-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_srgb,var(--color-warning)_22%,transparent)]"
+                }`}
+              >
+                <Minimize2 size={12} />
+                compact · {ctxMeter.pct}%
+              </button>
+            )}
             {!bareRail && !activeRun && (
               <button
                 type="button"
@@ -5663,6 +5687,9 @@ export function ChatPane({
   // Segment starts: index 0 plus the event after each terminal marker, so the
   // k-th activity group replays from (roughly) its own run's beginning.
   const [cinemaAt, setCinemaAt] = useState<number | null>(null);
+  // stable replay opener passed to every (memoized) ActivityGroup — a fresh
+  // closure per group would defeat the memo.
+  const replayCinemaSeg = useCallback((seg: number) => setCinemaAt(seg), []);
   const cinemaSegStarts = useMemo(() => {
     const starts = [0];
     runEventState.events.forEach((ev, i) => {
@@ -6267,23 +6294,28 @@ export function ChatPane({
                 }
                 prevDay = day;
               }
+              // live only on the final activity group, while a turn is in flight
+              // and it hasn't been closed by a result yet. Computed ONCE so the
+              // memoized ActivityGroup gets STABLE elapsedMs/phase — a non-live
+              // group must not see the per-second `now` tick, or memo can't bail.
+              const activityLive =
+                b.kind === "activity" && streaming && b.durationMs == null && i === lastActivityIdx;
               const inner =
                 b.kind === "activity" ? (
                   <ActivityGroup
                     tools={b.tools}
                     childrenByAgent={fleet.childrenByAgent}
                     durationMs={b.durationMs}
-                    // live only on the final activity group, while a turn is in
-                    // flight and it hasn't been closed by a result yet
-                    live={streaming && b.durationMs == null && i === lastActivityIdx}
-                    elapsedMs={liveStart != null ? now - liveStart : 0}
-                    phase={runEventState.phase}
+                    live={activityLive}
+                    elapsedMs={activityLive && liveStart != null ? now - liveStart : 0}
+                    phase={activityLive ? runEventState.phase : undefined}
                     forceOpen={findOpen && findMatchSet.has(b.id)}
-                    onReplay={
-                      runEventState.events.length > 0
-                        ? () => setCinemaAt(cinemaSegStarts[segForBlock] ?? 0)
-                        : undefined
+                    // stable number + stable callback (vs a fresh closure each
+                    // render) so the memoized group's props don't churn.
+                    replaySeg={
+                      runEventState.events.length > 0 ? (cinemaSegStarts[segForBlock] ?? 0) : undefined
                     }
+                    onReplaySeg={replayCinemaSeg}
                   />
                 ) : b.kind === "user" ? (
                   <UserBubble
@@ -6864,7 +6896,16 @@ function RunRail({ phase }: { phase: RunPhase }) {
   );
 }
 
-function ActivityGroup({
+/** Memoized: on a parent re-render (typing in the composer, a per-second `now`
+ *  tick during a live turn elsewhere), an UNCHANGED activity group skips its whole
+ *  render — including its internal useMemos (deriveFleet, artifacts, todo/step
+ *  split) and the step map. Props are stabilized at the call site: `tools` /
+ *  `childrenByAgent` come from memoized state, `elapsedMs`/`phase` are held flat
+ *  for non-live groups, and replay is a stable (seg + callback) pair instead of a
+ *  fresh closure. (ActivityGroupImpl is hoisted → safe to reference here.) */
+const ActivityGroup = memo(ActivityGroupImpl);
+
+function ActivityGroupImpl({
   tools,
   childrenByAgent,
   durationMs,
@@ -6872,7 +6913,8 @@ function ActivityGroup({
   elapsedMs,
   phase,
   forceOpen = false,
-  onReplay,
+  replaySeg,
+  onReplaySeg,
 }: {
   tools: ToolTurn[];
   /** GLOBAL parent→children map (from the whole turn), so an Agent row owns ALL
@@ -6885,8 +6927,10 @@ function ActivityGroup({
   phase?: RunPhase;
   /** find-in-chat: a hit lives in this group — reveal it regardless of toggle. */
   forceOpen?: boolean;
-  /** run cinema: replay this group's run segment (finished groups only). */
-  onReplay?: () => void;
+  /** run cinema: the segment offset to replay from (finished groups only). A
+   *  stable number + the stable `onReplaySeg` keep this group's props memo-clean. */
+  replaySeg?: number;
+  onReplaySeg?: (seg: number) => void;
 }) {
   // expanded while the turn is live (so you watch tools run in real time), then
   // auto-collapses to "Worked for Xs ›" when done — unless the user toggled it.
@@ -6909,6 +6953,29 @@ function ActivityGroup({
     }
     return [...seen.values()];
   }, [tools]);
+
+  // The CURRENT todo list = the LAST TodoWrite call's snapshot (each call carries
+  // the whole list with updated statuses). We surface it as ONE prominent, live
+  // panel at the top of the group instead of a pile of collapsed "Planned" steps —
+  // so you watch items tick off as the agent completes them (the claude-code feel).
+  // Superseded snapshots aren't re-listed; the todo turns are pulled out of the
+  // step list below.
+  const todoTurn = useMemo(() => {
+    for (let i = tools.length - 1; i >= 0; i--) {
+      const t = tools[i];
+      if (
+        t.name.toLowerCase() === "todowrite" &&
+        Array.isArray((t.input as Record<string, unknown> | undefined)?.todos)
+      ) {
+        return t;
+      }
+    }
+    return null;
+  }, [tools]);
+  const stepTools = useMemo(
+    () => tools.filter((t) => t.name.toLowerCase() !== "todowrite"),
+    [tools],
+  );
 
   // a sub-agent (Task) → a nested AgentStep carrying its children (recursive, so
   // deeper fan-outs nest too); every other tool → a leaf ActivityStep.
@@ -6972,10 +7039,10 @@ function ActivityGroup({
           it never reserves vertical space in flow (the invisible-but-present
           block used to wedge a ~20px gap under every collapsed group). Reveals
           on hover / keyboard focus. */}
-      {!live && onReplay && (
+      {!live && replaySeg != null && onReplaySeg && (
         <button
           type="button"
-          onClick={onReplay}
+          onClick={() => onReplaySeg(replaySeg)}
           title="replay this run (run cinema)"
           className="absolute top-1.5 right-8 flex h-5 w-fit items-center gap-1 rounded px-1.5 font-mono text-[10px] text-[var(--color-faint)] opacity-0 transition-opacity hover:bg-[var(--color-panel-2)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/actg:opacity-100"
         >
@@ -6985,10 +7052,21 @@ function ActivityGroup({
 
       {open && n > 0 && (
         <div className="flex flex-col gap-0.5 border-t border-[var(--color-border)] px-3 py-2">
+          {/* the LIVE task list — always shown (not behind a step toggle), updates
+              in place as the agent checks items off. */}
+          {todoTurn && (
+            <div className="mb-1.5 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 font-sans text-[11px] font-medium text-[var(--color-text-2)]">
+                <ListChecks size={13} className="shrink-0 text-[var(--color-accent)]" />
+                Tasks
+              </div>
+              <TodoList todos={(todoTurn.input as Record<string, unknown>).todos as Array<Record<string, unknown>>} />
+            </div>
+          )}
           {/* live fleet glance while a fan-out is in flight; the nested Agent rows
               below are the permanent record. */}
           {live && fleet.length > 0 && <FleetView agents={fleet} />}
-          {tools.map((t) => (
+          {stepTools.map((t) => (
             <div key={t.id}>{renderNode(t)}</div>
           ))}
         </div>
@@ -7005,11 +7083,21 @@ function ActivityGroup({
   );
 }
 
+/** Memoized: a step's props (its `turn` object ref + the `live` flag) are stable
+ *  across a parent re-render, so React bails out of re-rendering every historical
+ *  tool step on each `now` tick, hover, or subscription-driven render. That
+ *  reconciliation was the dominant per-render cost in long, tool-heavy transcripts
+ *  — multiplied by every open chat pane (the "2-3 long chats → laggy" report).
+ *  content-visibility already skips off-screen PAINT; this skips their re-render.
+ *  (ActivityStepImpl is hoisted, so referencing it here before its declaration is
+ *  safe.) */
+const ActivityStep = memo(ActivityStepImpl);
+
 /** One activity step: tool icon + verb + truncated target, expandable to its
  *  full input detail (Bash command, Edit diff, Todo checklist, or args) + result.
  *  While the turn is live, the currently-running step (no result yet) auto-opens
  *  so you watch the work happen — exactly the claude-code feel. */
-function ActivityStep({ turn, live }: { turn: ToolTurn; live: boolean }) {
+function ActivityStepImpl({ turn, live }: { turn: ToolTurn; live: boolean }) {
   const Icon = toolIcon(turn.name);
   const verb = toolVerb(turn.name);
   const { label, full } = toolTarget(turn);
@@ -7174,13 +7262,49 @@ function toolDetail(turn: ToolTurn): React.ReactNode {
     );
   }
 
-  if (name === "task") {
+  if (name === "task" || name === "agent" || name === "subagent" || name === "sub-agent") {
     const prompt = str("prompt");
     if (!prompt) return null;
     return (
       <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-2 font-sans text-[11.5px] leading-relaxed text-[var(--color-muted)]">
         {prompt.length > 600 ? prompt.slice(0, 600) + "…" : prompt}
       </div>
+    );
+  }
+
+  // notebook cell edit → show the new source (like Write), so a notebook change
+  // isn't a black box next to a plain-file diff.
+  if (name === "notebookedit") {
+    const src = str("new_source") ?? str("source") ?? str("content");
+    if (!src) return null;
+    const preview = src.split("\n").slice(0, 24).join("\n");
+    const more = src.split("\n").length - 24;
+    return (
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
+        {preview}
+        {more > 0 && <span className="text-[var(--color-faint)]">{`\n… +${more} more lines`}</span>}
+      </pre>
+    );
+  }
+
+  // Generic completeness net — ANY other tool (MCP calls, Skill, ExitPlanMode's
+  // raw input, or a tool we've never seen) still shows its full parameters as
+  // pretty JSON, so no tool call is an opaque row. Trivial/empty inputs fall
+  // through to null (the row's target line already carries them).
+  const keys = Object.keys(inp);
+  if (keys.length > 0) {
+    let json: string;
+    try {
+      json = JSON.stringify(inp, null, 2);
+    } catch {
+      json = String(inp);
+    }
+    if (!json || json === "{}" || json === "null") return null;
+    const clipped = json.length > 2000 ? `${json.slice(0, 2000)}\n…` : json;
+    return (
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[var(--color-text-2)]">
+        {clipped}
+      </pre>
     );
   }
 
@@ -7350,7 +7474,7 @@ function DiffBlock({
 function TodoList({ todos }: { todos: Array<Record<string, unknown>> }) {
   const done = todos.filter((t) => String(t.status) === "completed").length;
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-2">
+    <div className="flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_50%,transparent)] px-2.5 py-2">
       {todos.map((t, i) => {
         const status = String(t.status ?? "pending");
         const content =
@@ -7392,8 +7516,18 @@ function TodoList({ todos }: { todos: Array<Record<string, unknown>> }) {
         );
       })}
       {todos.length > 0 && (
-        <div className="mt-1 border-t border-[var(--color-border)] pt-1 font-mono text-[10.5px] text-[var(--color-faint)]">
-          {done} of {todos.length} done
+        <div className="mt-1.5 flex items-center gap-2 border-t border-[var(--color-border)] pt-1.5">
+          {/* progress meter — same accent→glow bar language as the app's other
+              meters (context filament, pet bond) so the checklist reads native. */}
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-text)_10%,transparent)]">
+            <div
+              className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--osai-accent-2))] transition-[width] duration-500"
+              style={{ width: `${Math.round((done / todos.length) * 100)}%` }}
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]">
+            {done}/{todos.length}
+          </span>
         </div>
       )}
     </div>

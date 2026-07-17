@@ -573,13 +573,19 @@ test("spark model labeling is explicitly gpt-5.3, never 5.5", () => {
 }
 );
 
-test("chatpane handoff can target any model", () => {
+test("chatpane handoff targets the LIVE model catalog, not a hardcoded list", () => {
   const chatPane = read("src/components/ChatPane.tsx");
 
   assert.match(chatPane, /handoffPanelOpen/);
-  assert.match(chatPane, /handoff target/);
-  assert.match(chatPane, /CHAT_MODELS\.map\(\(target\)/);
-  assert.match(chatPane, /continuing this exact session in \$\{target\.label\}/);
+  assert.match(chatPane, /hand off to/);
+  // targets come from the live picker/API model lists, grouped by engine —
+  // NOT the old hardcoded CHAT_MODELS.map((target)) panel.
+  assert.doesNotMatch(chatPane, /CHAT_MODELS\.map\(\(target\)/);
+  assert.match(chatPane, /\[\.\.\.pickerModels, \.\.\.apiModels\]/);
+  // the prompt + delivery + copy live in the shared, tested handoff helper
+  assert.match(chatPane, /buildHandoffPrompt\(target, \{ delivery: handoffDelivery/);
+  assert.match(chatPane, /handoffDelivery/);
+  assert.match(chatPane, /copyHandoff/);
 });
 
 test("chatpane does not auto-timeout long agent runs", () => {

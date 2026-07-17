@@ -7,6 +7,8 @@
  * error rate, memory usage pressure).
  */
 
+import { recordAgentOutcome } from "./pet/store";
+
 export type PetMood =
   | "happy"
   | "content"
@@ -313,6 +315,11 @@ export function onPetUserMessage(input: PetActionInput = {}) {
 export function onPetResult(input: PetResultInput = {}) {
   startTicker();
   react(input.ok === false ? "wince" : "celebrate");
+  // Durably tally the run into the living-soul's keepsake counters. This is the
+  // ONE reliable place — onPetResult fires for every finished run (foreground or
+  // background), unlike the old notification-sampled counter. See
+  // lib/pet/store.ts recordAgentOutcome + [[living-cockpit-epic]].
+  recordAgentOutcome(input.ok !== false);
   if (input.ok === false) {
     maybeBubble("wince", "ouch — that run failed", 10 * 60_000);
   } else if ((input.durationMs ?? 0) > 120_000) {

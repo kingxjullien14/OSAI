@@ -248,14 +248,17 @@ export function PetOverlay({
         if (!newest || newest.id === lastSeenRef.current) return;
         lastSeenRef.current = newest.id;
         if (newest.read) return;
-        const now = Date.now();
         const jump = onOpenTarget ? () => onOpenTarget(newest) : undefined;
+        // NOTE: the keepsake counters (celebrations / startles) are NOT tallied
+        // here anymore — they're recorded off the per-run result hook (lib/pet.ts
+        // onPetResult → store.recordAgentOutcome), which fires for every run. This
+        // handler used to be the only counter, but it only sees BACKGROUNDED
+        // finishes (a chat.done notification), so foreground runs never counted.
+        // It now drives ONLY the roaming spirit's reaction pose + speech.
         if (newest.level === "error") {
-          saveSoul(tick(soulRef.current, { now, agentFailed: 1 }));
           playPose("startled", 2_600);
           say("error", agentErrorLine(newest.title), jump);
         } else if (newest.kind === "chat.done" || newest.level === "success") {
-          saveSoul(tick(soulRef.current, { now, agentFinished: 1 }));
           playPose("celebrate", 3_600);
           say("done", agentDoneLine(newest.title), jump);
         }

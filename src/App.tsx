@@ -75,7 +75,8 @@ import {
 import { PaneMenu, type PaneMenuEntry } from "./components/PaneMenu";
 import { PetOverlay } from "./components/pet/PetOverlay";
 import type { PetSurface } from "./lib/pet/engine";
-import { reconcileSoulFromMirror } from "./lib/pet/store";
+import { backfillCelebrations, reconcileSoulFromMirror } from "./lib/pet/store";
+import { listChatHistory } from "./lib/chatHistory";
 import { AccountMenu } from "./components/AccountMenu";
 import { ShortcutHud } from "./components/ShortcutHud";
 import { Onboarding } from "./components/Onboarding";
@@ -1107,7 +1108,19 @@ function App() {
         // localStorage, so the key is never "missing". Reconcile by bond instead.
         reconcileSoulFromMirror(snap["osai.pet.soul.v1"]);
       })
-      .catch((e) => reportDiag("app.uiMirror", e, { action: "hydrate" }));
+      .catch((e) => reportDiag("app.uiMirror", e, { action: "hydrate" }))
+      // One-time keepsake backfill AFTER any mirror reconcile settled: the pet's
+      // "runs cheered" counter was structurally broken until now, so an established
+      // install would still show every keepsake locked. Seed it from the count of
+      // past chat sessions (a conservative proxy for finished runs) — monotonic +
+      // capped + runs at most once. See store.backfillCelebrations.
+      .finally(() => {
+        void listChatHistory()
+          .then((h) => backfillCelebrations(h.length))
+          .catch(() => {
+            /* off-tauri or no history yet — forward counting still works */
+          });
+      });
     return teardown;
   }, []);
 

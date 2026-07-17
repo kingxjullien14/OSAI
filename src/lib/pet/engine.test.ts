@@ -8,6 +8,7 @@ import {
   flavorOf,
   moodOf,
   parseSoul,
+  recordOutcome,
   stageOf,
   suggestActivity,
   tick,
@@ -70,6 +71,29 @@ test("tick: agent outcomes move spirits (wins up, failures down, both capped)", 
   const spam = tick(s, { now: T0 + HOUR, agentFinished: 500 });
   const capped = tick(s, { now: T0 + HOUR, agentFinished: 5 });
   assert.equal(spam.needs.spirits, capped.needs.spirits, "win spam is capped per tick");
+});
+
+test("recordOutcome: tallies totals (no time gate) + nudges spirits", () => {
+  const s = createSoul(T0);
+  // no-op guard
+  assert.equal(recordOutcome(s, {}), s);
+  // a finished run counts once and lifts spirits
+  const won = recordOutcome(s, { finished: 1 });
+  assert.equal(won.totals.celebrations, s.totals.celebrations + 1);
+  assert.ok(won.needs.spirits > s.needs.spirits);
+  // a failure counts + dents spirits
+  const lost = recordOutcome(s, { failed: 1 });
+  assert.equal(lost.totals.startles, s.totals.startles + 1);
+  assert.ok(lost.needs.spirits < s.needs.spirits);
+  // CRITICAL: unlike tick, recordOutcome never drops rapid same-instant events —
+  // ten runs in one tick window each count (the old counter lost these).
+  let acc = s;
+  for (let i = 0; i < 10; i++) acc = recordOutcome(acc, { finished: 1 });
+  assert.equal(acc.totals.celebrations, s.totals.celebrations + 10);
+  // spirits response is capped per call (a big batch can't swing morale wildly)
+  const spam = recordOutcome(s, { finished: 500 });
+  const capped = recordOutcome(s, { finished: 5 });
+  assert.equal(spam.needs.spirits, capped.needs.spirits);
 });
 
 test("tick: surface minutes accumulate affinity; unknown surfaces ignored", () => {
