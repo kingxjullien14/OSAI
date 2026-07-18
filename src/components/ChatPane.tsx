@@ -1156,6 +1156,12 @@ export function ChatPane({
       CHAT_MODELS[0]
     );
   });
+  // Whether this chat runs on a BYO-key API provider (vs a CLI engine). Declared
+  // HERE — right after `model` — because it's read far up in the render (the
+  // composer's compact-context chip) as well as down in the branching memos; a
+  // late `const` would TDZ-crash the whole pane (a composer subtree is built
+  // before the old declaration site). Pure derivation, safe to hoist.
+  const isApiChat = isApiProviderId(model.engine);
   // detect installed engine CLIs → gray out models whose engine isn't present
   // (so a user can't pick a CLI they don't have). null = not yet probed.
   const [availEngines, setAvailEngines] = useState<Set<string> | null>(null);
@@ -5399,7 +5405,8 @@ export function ChatPane({
   // Response branching: segment the transcript into response variants (a run of
   // non-user turns between user turns; regenerate appends a fresh run = a variant).
   // ── conversation tree (Tier-3 P2 branching) — mirror declared with `turns` ──
-  const isApiChat = isApiProviderId(model.engine);
+  // (isApiChat is declared up top, right after `model`, to avoid a TDZ from the
+  // composer subtree reading it before this point.)
   // Mirror of the committed nodes, read in the effect so the whole computation
   // (incl. consuming the fork token) stays OUTSIDE a setState updater — StrictMode
   // double-invokes updaters, which would eat the fork token.
