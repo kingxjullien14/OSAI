@@ -225,7 +225,7 @@ import {
   onPetUserMessage,
 } from "../lib/pet";
 import { atBottom, distanceFromBottom } from "../lib/chatScroll";
-import { dayBoundaries, fmtTickTime, markerStyle, nearestTick } from "../lib/chatTimeline";
+import { fmtTickTime, markerStyle } from "../lib/chatTimeline";
 import { invoke, isTauriRuntime } from "../lib/tauri";
 import { playCue } from "../lib/sound";
 import { PaneDropZone } from "./PaneDropZone";
@@ -5640,13 +5640,40 @@ export function ChatPane({
   const findMatchSet = useMemo(() => new Set(findMatches), [findMatches]);
   const findCurrentId = findOpen ? (findMatches[findSel] ?? null) : null;
 
+  // scrollIntoView is unreliable in this transcript: `.chat-block` uses
+  // content-visibility:auto, so every OFF-screen block is sized from its
+  // intrinsic-size ESTIMATE (contain-intrinsic-size), not its real height. A
+  // single jump toward a far target is computed against those estimates and then
+  // lands nowhere once the blocks we scroll past render at their true size — the
+  // "outline won't jump to messages further up / won't jump at all" bug. Instead:
+  // measure the target's position live, jump instantly, then correct over the next
+  // few frames as the real heights settle, until the position is stable.
   const scrollToBlock = useCallback((id: string) => {
-    blockElsRef.current.get(id)?.scrollIntoView({
-      block: "center",
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    });
+    const root = scrollRef.current;
+    if (!root) return;
+    const wantTop = (): number | null => {
+      const el = blockElsRef.current.get(id);
+      if (!el) return null;
+      const er = el.getBoundingClientRect();
+      const rr = root.getBoundingClientRect();
+      // absolute scrollTop that centers the block in the viewport, clamped to range
+      const top = root.scrollTop + (er.top - rr.top) - (root.clientHeight - er.height) / 2;
+      return Math.max(0, Math.min(top, root.scrollHeight - root.clientHeight));
+    };
+    const first = wantTop();
+    if (first == null) return;
+    root.scrollTo({ top: first, behavior: "auto" });
+    // each pass forces the blocks we passed to render at true height, so the
+    // target settles; capped so it can never loop.
+    let tries = 0;
+    const refine = () => {
+      const top = wantTop();
+      if (top == null || tries >= 4 || Math.abs(top - root.scrollTop) < 2) return;
+      tries += 1;
+      root.scrollTo({ top, behavior: "auto" });
+      requestAnimationFrame(refine);
+    };
+    requestAnimationFrame(refine);
   }, []);
   const gotoFind = useCallback(
     (dir: 1 | -1) => {
@@ -5710,8 +5737,13 @@ export function ChatPane({
     return starts;
   }, [runEventState.events]);
 
-  // ── conversation minimap — one tick per block, click to jump ───────────
-  const [mapTicks, setMapTicks] = useState<
+  // ── conversation outline — the transcript's landmarks (your prompts, plans,
+  // questions, compactions, errors) as a clickable jump list. Measured in CONTENT
+  // space (offset / scrollHeight), the same space as the scroll thumb, so
+  // `outlineCurrentId` can tell which landmark the viewport is on. Only the
+  // landmark blocks are measured — not every block — since the outline is the
+  // sole consumer now that the minimap ticks are gone.
+  const [outlineEntries, setOutlineEntries] = useState<
     {
       id: string;
       kind: RenderBlock["kind"];
@@ -5723,21 +5755,18 @@ export function ChatPane({
   >([]);
   useEffect(() => {
     if (blocks.length < 9) {
-      setMapTicks([]);
+      setOutlineEntries([]);
       return;
     }
     // one rAF batches all the geometry reads after layout settles
     const raf = requestAnimationFrame(() => {
       const root = scrollRef.current;
       if (!root) return;
-      // Markers live in CONTENT space (offset within the scroll run / scrollHeight)
-      // — the same space as the custom rail thumb, a window of height
-      // clientHeight/scrollHeight that slides over them. Positions are measured
-      // with getBoundingClientRect relative to the scroll container, NOT
-      // offsetTop: any ancestor with a transform/filter/backdrop-filter becomes
-      // an offsetParent and silently REBASES offsetTop — the Neon Glass
-      // TurnFrame's backdrop-blur did exactly that, compressing every tick into
-      // the top of the rail. Rect math can't be rebased.
+      // Positions in CONTENT space, measured with getBoundingClientRect relative
+      // to the scroll container — NOT offsetTop: any ancestor with a
+      // transform/filter/backdrop-filter becomes an offsetParent and silently
+      // REBASES offsetTop (the Neon Glass TurnFrame's backdrop-blur did exactly
+      // that, collapsing everything to the top). Rect math can't be rebased.
       const H = Math.max(1, root.scrollHeight);
       const rootTop = root.getBoundingClientRect().top - root.scrollTop;
       const out: {
@@ -5749,6 +5778,16 @@ export function ChatPane({
         label: string;
       }[] = [];
       for (const b of blocks) {
+        const err = b.kind === "result" && b.turn.ok === false;
+        // landmarks only — prompts, plans, questions, compactions, errors
+        if (
+          b.kind !== "user" &&
+          b.kind !== "plan" &&
+          b.kind !== "ask" &&
+          b.kind !== "compaction" &&
+          !err
+        )
+          continue;
         const el = blockElsRef.current.get(b.id);
         if (!el) continue;
         const top = el.getBoundingClientRect().top - rootTop;
@@ -5756,12 +5795,12 @@ export function ChatPane({
           id: b.id,
           kind: b.kind,
           frac: Math.min(1, Math.max(0, top / H)),
-          err: b.kind === "result" && b.turn.ok === false,
+          err,
           at: blockTime(b),
           label: tickLabel(b),
         });
       }
-      setMapTicks(out);
+      setOutlineEntries(out);
     });
     return () => cancelAnimationFrame(raf);
     // railWin?.size ≈ clientHeight/scrollHeight — re-measure when the content/
@@ -5770,20 +5809,7 @@ export function ChatPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks, railWin?.size]);
 
-  // ── conversation outline — the ticks as a clickable table of contents ────
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const outlineEntries = useMemo(
-    () =>
-      mapTicks.filter(
-        (t) =>
-          t.kind === "user" ||
-          t.kind === "plan" ||
-          t.kind === "ask" ||
-          t.kind === "compaction" ||
-          t.err,
-      ),
-    [mapTicks],
-  );
   // the entry the viewport is currently on (nearest at-or-above the window top)
   const outlineCurrentId = useMemo(() => {
     if (!railWin) return outlineEntries[0]?.id ?? null;
@@ -5804,47 +5830,6 @@ export function ChatPane({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [outlineOpen]);
-
-  // ── scrubber interaction (P6): drag the minimap to scroll, hover for a
-  // time+snippet bubble, day-boundary hairlines on the rail ─────────────────
-  const railRef = useRef<HTMLDivElement>(null);
-  const scrubbingRef = useRef(false);
-  const [scrubBubble, setScrubBubble] = useState<{
-    frac: number;
-    at: number | null;
-    label: string;
-  } | null>(null);
-  const dayMarks = useMemo(
-    () => dayBoundaries(mapTicks).map((i) => ({ frac: mapTicks[i].frac })),
-    [mapTicks],
-  );
-  const railFrac = (clientY: number): number => {
-    const r = railRef.current?.getBoundingClientRect();
-    if (!r || r.height === 0) return 0;
-    return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
-  };
-  const railBubbleAt = (frac: number) => {
-    const near = nearestTick(mapTicks, frac);
-    setScrubBubble({ frac, at: near?.at ?? null, label: near?.label ?? "" });
-  };
-  const railScrubTo = (clientY: number) => {
-    const frac = railFrac(clientY);
-    const root = scrollRef.current;
-    if (root) {
-      // map the cursor fraction straight to the scroll window's TOP so the thumb
-      // tracks the pointer 1:1 (scrollbar feel), not offset by half a viewport
-      // (the old "center the point" math felt laggy/disconnected when dragging).
-      root.scrollTop = Math.max(
-        0,
-        Math.min(frac * root.scrollHeight, root.scrollHeight - root.clientHeight),
-      );
-      // derive stick from the dragged-to position — synchronously, so the thumb +
-      // pill don't lag the drag (the scroll event it fires would do it, later).
-      // Dragging INTO the bottom zone re-arms following; anywhere else detaches.
-      setStickFromPosition();
-    }
-    railBubbleAt(frac);
-  };
 
   // ── per-turn token sparkline (last 24 result turns) ─────────────────────
   const tokenHistory = useMemo(() => {
@@ -6559,92 +6544,18 @@ export function ChatPane({
           </button>
         </div>
       )}
-      {/* conversation minimap — long chats get a tick rail (same bottom
-          clearance convention as the jump pill); click a tick to jump */}
-      {(mapTicks.length > 0 || railWin) && (
-        <div
-          ref={railRef}
-          className="group/rail absolute bottom-24 right-0 top-3 z-20 w-5 cursor-ns-resize"
-          onPointerDown={(e) => {
-            scrubbingRef.current = true;
-            try {
-              e.currentTarget.setPointerCapture(e.pointerId);
-            } catch {
-              /* ignore */
-            }
-            railScrubTo(e.clientY);
-          }}
-          onPointerMove={(e) => {
-            if (scrubbingRef.current) railScrubTo(e.clientY);
-            else railBubbleAt(railFrac(e.clientY));
-          }}
-          onPointerUp={(e) => {
-            scrubbingRef.current = false;
-            try {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            } catch {
-              /* ignore */
-            }
-          }}
-          onPointerLeave={() => {
-            if (!scrubbingRef.current) setScrubBubble(null);
-          }}
-        >
-          {/* current scroll window — content-space thumb; THIS is the scrollbar
-              (native bar hidden). Markers slide inside it as you scroll. */}
-          {railWin && (
-            <div
-              // NO position transition (only `transition-colors` for the hover
-              // tint): the thumb's top/height come straight from scroll state, so an
-              // ease would make it trail the scroll — the old "follows late" lag.
-              className="pointer-events-none absolute right-[3px] w-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_55%,transparent)] shadow-[var(--osai-glow-soft)] transition-colors group-hover/rail:bg-[color-mix(in_srgb,var(--color-accent)_75%,transparent)]"
-              style={{ top: `${railWin.top * 100}%`, height: `${Math.max(railWin.size * 100, 6)}%` }}
-            />
-          )}
-          {/* day-boundary hairlines */}
-          {dayMarks.map((dm, i) => (
-            <div
-              key={`day${i}`}
-              className="pointer-events-none absolute right-0.5 h-px w-3.5 bg-[var(--color-border)]"
-              style={{ top: `${dm.frac * 100}%` }}
-            />
-          ))}
-          {/* one tick per block — click to jump */}
-          {mapTicks.map((mt) => {
-            const s = markerStyle(mt.kind, mt.err);
-            return (
-              <button
-                key={mt.id}
-                type="button"
-                tabIndex={-1}
-                onClick={() => scrollToBlock(mt.id)}
-                className="absolute right-1 rounded-full transition-transform hover:scale-x-150"
-                style={{
-                  top: `${mt.frac * 100}%`,
-                  height: s.major ? 3 : 2,
-                  width: s.major ? 8 : 5,
-                  backgroundColor: s.color,
-                  opacity: s.major ? 0.75 : 0.45,
-                }}
-              />
-            );
-          })}
-          {/* hover / drag bubble: time + snippet of the nearest turn */}
-          {scrubBubble && (
-            <div
-              className="glass pointer-events-none absolute right-7 z-10 -translate-y-1/2 rounded-md px-2 py-1 shadow-[var(--osai-shadow-pop)]"
-              style={{ top: `${scrubBubble.frac * 100}%` }}
-            >
-              {scrubBubble.at != null && (
-                <div className="font-mono text-[10px] text-[var(--color-faint)]">
-                  {fmtTickTime(scrubBubble.at)}
-                </div>
-              )}
-              <div className="max-w-[240px] truncate font-sans text-[11px] text-[var(--color-text-2)]">
-                {scrubBubble.label || "—"}
-              </div>
-            </div>
-          )}
+      {/* scroll-position indicator — a plain, non-interactive thumb (drag-scrub,
+          hover snippet, day rules and per-block ticks all removed; the outline
+          button, top-right, is the jump list). The native scrollbar stays hidden;
+          this just shows where you are. */}
+      {railWin && (
+        <div className="pointer-events-none absolute bottom-24 right-[3px] top-3 z-20 w-1.5">
+          <div
+            // top/height come straight from scroll state — no transition, or the
+            // thumb would trail the scroll.
+            className="absolute w-full rounded-full bg-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] shadow-[var(--osai-glow-soft)]"
+            style={{ top: `${railWin.top * 100}%`, height: `${Math.max(railWin.size * 100, 6)}%` }}
+          />
         </div>
       )}
       {/* conversation outline — the rail's ticks as a table of contents: your
