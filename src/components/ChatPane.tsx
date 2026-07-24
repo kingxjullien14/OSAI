@@ -99,7 +99,7 @@ import {
   type ChatTurnInfo,
   type WebChatTurn,
 } from "../lib/chat";
-import { buildHandoffPrompt, contextWindowFor, engineGroupLabel, type HandoffDelivery } from "../lib/handoff";
+import { buildHandoffPrompt, buildHandoffResumeSeed, contextWindowFor, engineGroupLabel, type HandoffDelivery } from "../lib/handoff";
 import { mcpToolParts, toolIconKey, toolVerb, type ToolIconKey } from "../lib/toolInfo";
 import { detectAvailableEngines } from "../lib/providerDetect";
 import {
@@ -969,6 +969,7 @@ export function ChatPane({
   onOpenUrl,
   onChangeCwd,
   onSessionRecorded,
+  onSpawnChat,
 }: {
   cwd?: string;
   paneKey?: string;
@@ -1009,6 +1010,9 @@ export function ChatPane({
     engine?: string;
     model?: string;
   }) => void;
+  /** Open a NEW chat pane (handoff "new chat" delivery): same working dir, a
+   *  chosen model, and a seed the fresh chat auto-sends once its engine boots. */
+  onSpawnChat?: (opts: { cwd?: string; modelId?: string; label?: string; seed?: string }) => void;
 }) {
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
   const webChatRuntime = !nativeRuntime;
@@ -1121,6 +1125,28 @@ export function ChatPane({
   //   · backgroundMemberIds — tool ids kept OUT of the transcript while their
   //     background agent runs (re-enter, collapsed, when it finishes).
   const fleet = useFleet(turns, bgTasks);
+  // The live task list surfaced ABOVE the composer (docked, like the fleet) so
+  // you can track what the agent has done / is doing without scrolling up into
+  // the (auto-collapsing) activity group. = the LATEST main-agent TodoWrite
+  // snapshot (each call carries the whole list with fresh statuses); sub-agent
+  // todos (parentId) are ignored — this is the main plan. Surfaced only while it
+  // still has open work (or the turn is live); once every item is completed it
+  // drops (the transcript keeps the record), so a finished old plan never lingers.
+  const liveTodo = useMemo<Array<Record<string, unknown>> | null>(() => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (
+        t.kind === "tool" &&
+        !t.parentId &&
+        t.name?.toLowerCase() === "todowrite" &&
+        Array.isArray((t.input as Record<string, unknown> | undefined)?.todos)
+      ) {
+        const todos = (t.input as Record<string, unknown>).todos as Array<Record<string, unknown>>;
+        return todos.length ? todos : null;
+      }
+    }
+    return null;
+  }, [turns]);
   // claude's init event arrived (session_id known) — gates the seed auto-send
   const [claudeReady, setClaudeReady] = useState(false);
 
@@ -1315,6 +1341,11 @@ export function ChatPane({
   // one interactive-tool hold (AskUserQuestion/ExitPlanMode) per turn — reset on
   // each result + each fresh dispatch (see the hold block in handleEvent).
   const holdSentRef = useRef(false);
+  // true once ANY event of the CURRENT run carried `origin` (a background agent
+  // finished and woke the model). Read at the result to tag the run a
+  // continuation so the variant segmenter stacks it standalone instead of as a
+  // ‹N/M› alternate. Reset on the result + on each fresh user dispatch.
+  const turnWokenRef = useRef(false);
   // true once this engine's assistant events carried per-call usage (claude
   // does) — the ctx readout then ignores the result event's summed usage.
   const sawCallUsageRef = useRef(false);
@@ -1347,10 +1378,30 @@ export function ChatPane({
   const [goalDraft, setGoalDraft] = useState<string | null>(null);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [handoffPanelOpen, setHandoffPanelOpen] = useState(false);
-  // How a handoff is delivered: generated into THIS chat, or written to a file.
+  // How a handoff is delivered: generated into THIS chat, written to a file, or
+  // written to a file + continued in a fresh chat on the target model.
   const [handoffDelivery, setHandoffDelivery] = useState<HandoffDelivery>("chat");
   // transient "copied ✓" flash on a handoff row's copy button (by model key).
   const [handoffCopied, setHandoffCopied] = useState<string | null>(null);
+  // the handoff panel is a transient picker → a click ANYWHERE outside it closes
+  // it (it used to stay stuck open, owner-reported). Escape closes it too.
+  const handoffRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!handoffPanelOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!handoffRef.current?.contains(e.target as Node)) setHandoffPanelOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHandoffPanelOpen(false);
+    };
+    // capture phase so it fires before inner handlers that stop propagation.
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [handoffPanelOpen]);
   const [memoryHits, setMemoryHits] = useState<MemoryHit[]>([]);
   const [attachedMemoryIds, setAttachedMemoryIds] = useState<string[]>([]);
   const attachedMemories = useMemo(
@@ -1878,6 +1929,14 @@ export function ChatPane({
 
   const handleEvent = useCallback((ev: ChatEvent) => {
     setRunEventState((state) => reduceRunEvents(state, ev));
+    // Turn-level origin latch (see turnWokenRef): a run woken by a background
+    // agent finishing carries `origin` ({kind:"task-notification"}), but it can
+    // ride the run's OPENING event (system/assistant) rather than the closing
+    // `result`. Latch it here on ANY event so the result reliably tags itself a
+    // continuation — otherwise the woken run stacks as a phantom ‹2/2› that hides
+    // the previous answer (owner-reported "jumps to page 2/2 when a sub-agent is
+    // done"). Reset on the result (consumed) and on each fresh user dispatch.
+    if (ev.origin != null) turnWokenRef.current = true;
     // ---- background sub-agent lifecycle ---------------------------------------
     // run_in_background Task agents keep working AFTER the main turn closes; the
     // engine narrates them via `system/task_*` events (no turn to render). Track
@@ -2187,11 +2246,13 @@ export function ChatPane({
         // soundscape (opt-in, default off): a soft cue when the run lands
         playCue(ev.is_error ? "fail" : "done");
         // A turn woken by a background agent finishing carries an `origin`
-        // (task-notification). Tag its result so the variant segmenter stacks it
-        // as its own segment instead of folding it into the previous prompt's
-        // ‹N/M› switcher (which used to HIDE each background completion behind the
-        // last one).
-        const continuation = ev.origin != null;
+        // (task-notification) on SOME event of the run — latched in turnWokenRef.
+        // Tag its result so the variant segmenter stacks it as its own segment
+        // instead of folding it into the previous prompt's ‹N/M› switcher (which
+        // used to HIDE each background completion behind the last one — the
+        // "jumps to page 2/2 when the sub-agent finishes" report).
+        const continuation = ev.origin != null || turnWokenRef.current;
+        turnWokenRef.current = false; // consumed — next run starts fresh
         setTurns((prev) => [
           ...prev,
           { kind: "result", id: uid(), text: foot, cost: costNum, tokens, durationMs, ok: !Boolean(ev.is_error), ...(continuation ? { continuation: true } : {}) },
@@ -2534,7 +2595,7 @@ export function ChatPane({
   // saw a streaming transition, so keying off streaming alone stranded it in
   // the tray forever — the promise was a lie until the session-up transition
   // flushed it too.
-  const dispatchRef = useRef<(text: string) => void>(() => {});
+  const dispatchRef = useRef<(text: string, imagePaths?: string[]) => void>(() => {});
   useEffect(() => {
     if (streaming) return;
     if (!started || !claudeReady) return;
@@ -2543,7 +2604,9 @@ export function ChatPane({
     const [next, ...rest] = queuedRef.current;
     setQueued(rest);
     setQueuedIdx((idx) => (rest.length === 0 ? 0 : Math.min(idx, rest.length - 1)));
-    dispatchRef.current(next.text);
+    // carry the queued row's attachments through the full send path (they can't
+    // ride a steer) so a mid-run message with images actually sends its images.
+    dispatchRef.current(next.text, next.imagePaths);
   }, [streaming, started, claudeReady]);
 
   // ── autoscroll (rebuilt from scratch) ────────────────────────────────────────
@@ -2895,6 +2958,9 @@ export function ChatPane({
       setBackendBusy(true);
       streamingTurnId.current = null;
       thinkingTurnId.current = null;
+      // a foreground dispatch (user send / regenerate) is never a background
+      // continuation — clear the origin latch so a stale wake can't tag it.
+      turnWokenRef.current = false;
       // start the turn timer (drives "Working… m:ss" → "Worked for Xs")
       const t0 = Date.now();
       turnStartRef.current = t0;
@@ -2990,8 +3056,15 @@ export function ChatPane({
       handleEvent,
     ],
   );
-  // keep the flush effect calling the latest dispatch closure
-  dispatchRef.current = dispatch;
+  // keep the flush effect calling the latest dispatch closure. Wrap so a queued
+  // row's attachments ride the send (image-only rows get the "[n images]" bubble
+  // label, matching a normal image send).
+  dispatchRef.current = (text: string, imagePaths?: string[]) => {
+    const bubble =
+      text ||
+      (imagePaths?.length ? `[${imagePaths.length} image${imagePaths.length > 1 ? "s" : ""}]` : "");
+    dispatch(bubble, imagePaths?.length ? { imagePaths } : undefined);
+  };
 
   // Answer an AskUserQuestion card: record the choice (so the card collapses) and
   // send the formatted answers back as the next user turn. claude already
@@ -3119,14 +3192,22 @@ export function ChatPane({
 
   // Queue a message instead of sending it (used while a turn is streaming). It
   // fires automatically when the current turn completes (see the flush effect).
-  const enqueue = useCallback((raw: string) => {
+  const enqueue = useCallback((raw: string, imagePaths?: string[]) => {
     setQueued((items) => {
-      const next = queueMessage(items, raw);
+      const next = queueMessage(items, raw, imagePaths);
       setQueuedIdx(next.selected);
       return next.items;
     });
     setInput("");
     setOverlay(null);
+    // attachments were captured into the queued row → clear the composer's chips
+    // (and revoke their preview URLs) so they don't also ride the NEXT send.
+    if (imagePaths?.length) {
+      setImages((prev) => {
+        prev.forEach((im) => URL.revokeObjectURL(im.url));
+        return [];
+      });
+    }
   }, []);
 
   const removeQueued = useCallback((id: string) => {
@@ -4220,6 +4301,15 @@ export function ChatPane({
       // inject); ⌥⏎ / ⌃⏎ interrupts and redirects instead (drop the turn, pivot
       // to this message). Other engines just queue for the next turn.
       if (activeRun) {
+        // attachments can't ride a steer → queue the message WITH its images so
+        // they send on the next turn (were being dropped, owner-reported).
+        const imgPaths = imagesRef.current
+          .filter((im) => im.path)
+          .map((im) => im.path as string);
+        if (imgPaths.length > 0) {
+          enqueue(input, imgPaths);
+          return;
+        }
         const canSteer = model.engine === "codex" || model.engine === "claude";
         if (canSteer && (e.altKey || e.ctrlKey)) interruptAndRedirect();
         else if (canSteer) steerDraft();
@@ -4438,11 +4528,17 @@ export function ChatPane({
         )}
 
         {handoffPanelOpen && (() => {
-          // Targets = the LIVE model catalog (same list the composer's model menu
-          // shows), minus the current model — you don't hand off to yourself.
-          // Grouped by engine so the API tier reads clearly next to the CLIs.
+          // Targets = the SAME list the composer's model menu shows: available
+          // (CLI installed / key configured) AND not hidden. The old list used
+          // the raw catalog, so it showed uninstalled engines + hidden models the
+          // user had deliberately tucked away (owner-reported). The CURRENT model
+          // is KEPT (marked "current") — handing off to the same model is a valid
+          // "open a fresh thread to continue this work" action (owner request).
+          // Grouped by engine.
           const currentKey = modelKey(model);
-          const targets = [...pickerModels, ...apiModels].filter((m) => modelKey(m) !== currentKey);
+          const targets = [...pickerModels, ...apiModels].filter(
+            (m) => !m.disabled && !hiddenModelSet.has(modelKey(m)),
+          );
           const groups: Array<[string, ChatModel[]]> = [];
           for (const m of targets) {
             const g = m.engine ?? "claude";
@@ -4453,10 +4549,26 @@ export function ChatPane({
           const runHandoff = (target: ChatModel) => {
             if (target.disabled) return;
             setHandoffPanelOpen(false);
+            // "new chat": the current model writes HANDOFF.md, then a fresh chat
+            // opens on the target model in the SAME project, seeded to read it and
+            // continue — the file is the context bridge across the two sessions.
+            if (handoffDelivery === "newchat" && onSpawnChat) {
+              void sendText(buildHandoffPrompt(target, { delivery: "newchat", cwd }));
+              onSpawnChat({
+                cwd,
+                modelId: target.id,
+                label: target.label,
+                seed: buildHandoffResumeSeed(cwd),
+              });
+              return;
+            }
             void sendText(buildHandoffPrompt(target, { delivery: handoffDelivery, cwd }));
           };
           const copyHandoff = (target: ChatModel) => {
-            const text = buildHandoffPrompt(target, { delivery: handoffDelivery, cwd });
+            const text = buildHandoffPrompt(target, {
+              delivery: handoffDelivery === "newchat" ? "file" : handoffDelivery,
+              cwd,
+            });
             const key = modelKey(target);
             navigator.clipboard
               ?.writeText(text)
@@ -4468,10 +4580,23 @@ export function ChatPane({
           };
           const DELIVERY: Array<{ id: HandoffDelivery; label: string; hint: string }> = [
             { id: "chat", label: "into chat", hint: "the current model writes the handoff here" },
-            { id: "file", label: "to HANDOFF.md", hint: "written to a file in the working directory" },
+            { id: "file", label: "to file", hint: "written to HANDOFF.md in the working directory" },
+            ...(onSpawnChat
+              ? [
+                  {
+                    id: "newchat" as HandoffDelivery,
+                    label: "new chat",
+                    hint: "writes HANDOFF.md, then opens a fresh chat on the target model in this project",
+                  },
+                ]
+              : []),
           ];
+          const pickHint = DELIVERY.find((d) => d.id === handoffDelivery)?.hint ?? "";
           return (
-          <div className="mb-2 flex max-h-64 flex-col overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--osai-shadow-pop)]">
+          <div
+            ref={handoffRef}
+            className="mb-2 flex max-h-72 flex-col overflow-y-auto rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-panel-2)] py-1 shadow-[var(--osai-shadow-pop)]"
+          >
             <div className="flex items-center justify-between px-3 pb-1 pt-1">
               <span className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-faint)]">
                 <PackageOpen size={11} className="text-[var(--color-accent)]" />
@@ -4487,8 +4612,9 @@ export function ChatPane({
               </button>
             </div>
             {/* delivery mode — segmented control, matching the model menu's effort
-                toggle so the surface reads as native. */}
-            <div className="mx-2 mb-1 flex gap-[3px] rounded-[9px] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_60%,transparent)] p-[3px]">
+                toggle so the surface reads as native. A one-line hint under it
+                spells out the chosen mode (the labels alone read cryptic). */}
+            <div className="mx-2 flex gap-[3px] rounded-[9px] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_60%,transparent)] p-[3px]">
               {DELIVERY.map((d) => {
                 const on = handoffDelivery === d.id;
                 return (
@@ -4508,6 +4634,9 @@ export function ChatPane({
                 );
               })}
             </div>
+            <div className="mx-2 mb-1 mt-1 px-0.5 font-sans text-[10px] leading-snug text-[var(--color-faint)]">
+              {pickHint}
+            </div>
             {targets.length === 0 && (
               <div className="px-3 py-2 font-sans text-[11.5px] text-[var(--color-faint)]">
                 no other models available — connect a provider in settings.
@@ -4525,6 +4654,7 @@ export function ChatPane({
                 {models.map((target) => {
                   const key = modelKey(target);
                   const win = contextWindowFor(target);
+                  const isCurrent = key === currentKey;
                   return (
                     <div
                       key={key}
@@ -4540,14 +4670,24 @@ export function ChatPane({
                         disabled={target.disabled}
                         onClick={() => runHandoff(target)}
                         className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left font-sans text-[12px] disabled:cursor-not-allowed disabled:opacity-45"
-                        title={target.note ?? `hand off to ${target.label} · ~${formatTokens(win)} context`}
+                        title={
+                          target.note ??
+                          (isCurrent
+                            ? `continue in a fresh thread on ${target.label} · ~${formatTokens(win)} context`
+                            : `hand off to ${target.label} · ~${formatTokens(win)} context`)
+                        }
                       >
                         <span
                           className="h-[6px] w-[6px] shrink-0 rounded-full"
                           style={{ background: engineDotColor(target.engine) }}
                         />
-                        <span className="min-w-0 flex-1 truncate">{target.label}</span>
-                        <span className="shrink-0 font-mono text-[9px] text-[var(--color-faint)]">
+                        <span className="min-w-0 truncate">{target.label}</span>
+                        {isCurrent && (
+                          <span className="shrink-0 font-mono text-[9px] text-[var(--color-accent)]">
+                            current
+                          </span>
+                        )}
+                        <span className="ml-auto shrink-0 font-mono text-[9px] text-[var(--color-faint)]">
                           {formatTokens(win)}
                         </span>
                       </button>
@@ -4874,6 +5014,10 @@ export function ChatPane({
               agents that keep working after the reply landed (replaces the old
               one-line pill; the transcript stays out of it). */}
           <FleetDock agents={fleet.dock} />
+          {/* live task list — the current TodoWrite plan, docked here so you can
+              watch items tick off without scrolling up into the collapsing
+              activity group. */}
+          <TodoDock todos={liveTodo} live={streaming} />
           {voiceNote && (
             <button
               type="button"
@@ -5273,10 +5417,20 @@ export function ChatPane({
                 chip carries the draft's contract (⌥/⌃ click = interrupt). */}
             {activeRun ? (
               <>
-                {hasDraft && (
+                {(hasDraft || hasReadyImages) && (
                   <button
                     type="button"
                     onClick={(e) => {
+                      // attachments can't ride a steer (stdin inject) → queue the
+                      // message WITH its image paths so they actually send on the
+                      // next turn (they were being dropped, owner-reported).
+                      const imgPaths = imagesRef.current
+                        .filter((im) => im.path)
+                        .map((im) => im.path as string);
+                      if (imgPaths.length > 0) {
+                        enqueue(input, imgPaths);
+                        return;
+                      }
                       // ⌥/⌃ click interrupts & redirects (parity with ⌥⏎); a plain
                       // click soft-steers, or queues on engines that can't steer.
                       if (action.mode === "steer") {
@@ -7446,6 +7600,77 @@ function TodoList({ todos }: { todos: Array<Record<string, unknown>> }) {
           <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-faint)]">
             {done}/{todos.length}
           </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The live task dock — the current TodoWrite plan, docked above the composer so
+ * you can track what the agent has finished / is doing at a glance, without
+ * scrolling up into the auto-collapsing activity group (the "todo list on top of
+ * the composer wasn't showing" report — it only ever lived buried in the group).
+ *
+ * Collapsed: a one-line summary (progress · the in-progress item). Expanded: the
+ * full checklist (the same TodoList the transcript uses). Hidden once every item
+ * is completed AND the turn is idle — a finished plan shouldn't nag; its record
+ * stays in the transcript.
+ */
+function TodoDock({
+  todos,
+  live,
+}: {
+  todos: Array<Record<string, unknown>> | null;
+  live: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!todos || todos.length === 0) return null;
+  const done = todos.filter((t) => String(t.status) === "completed").length;
+  const allDone = done === todos.length;
+  // finished plan + idle turn → drop it (transcript keeps the record).
+  if (allDone && !live) return null;
+  const active = todos.find((t) => String(t.status) === "in_progress");
+  const activeLabel = active
+    ? (typeof active.activeForm === "string" && active.activeForm) ||
+      (typeof active.content === "string" && active.content) ||
+      ""
+    : "";
+
+  return (
+    <div className="mx-3 mb-1 mt-2 overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[color-mix(in_srgb,var(--color-panel)_55%,transparent)] backdrop-blur-md">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[11px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text-2)]"
+      >
+        <ListChecks size={12} className="shrink-0 text-[var(--color-accent)]" />
+        <span className="shrink-0 text-[var(--color-text-2)]">
+          {live && !allDone ? <CadencedShimmer>tasks</CadencedShimmer> : "tasks"}
+        </span>
+        {!open && activeLabel && (
+          <span className="min-w-0 truncate text-[var(--color-faint)]">· {activeLabel}</span>
+        )}
+        {/* progress meter — same accent→glow bar as the in-group checklist. */}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span className="h-1 w-12 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-text)_10%,transparent)]">
+            <span
+              className="block h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--osai-accent-2))] transition-[width] duration-500"
+              style={{ width: `${Math.round((done / todos.length) * 100)}%` }}
+            />
+          </span>
+          <span className="font-mono text-[10px] tabular-nums text-[var(--color-faint)]">
+            {done}/{todos.length}
+          </span>
+          <ChevronDown
+            size={12}
+            className={`shrink-0 text-[var(--color-faint)] transition-transform ${open ? "" : "-rotate-90"}`}
+          />
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2">
+          <TodoList todos={todos} />
         </div>
       )}
     </div>

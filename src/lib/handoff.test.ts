@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   buildHandoffPrompt,
+  buildHandoffResumeSeed,
   contextWindowFor,
   engineGroupLabel,
 } from "./handoff.ts";
@@ -51,4 +52,22 @@ test("buildHandoffPrompt: chat delivery asks for a self-contained message, no fi
   const p = buildHandoffPrompt({ id: "claude-sonnet-4-6", label: "sonnet", engine: "claude" }, { delivery: "chat" });
   assert.match(p, /self-contained Markdown message/);
   assert.doesNotMatch(p, /HANDOFF\.md/);
+});
+
+test("buildHandoffPrompt: newchat delivery writes HANDOFF.md (same as file)", () => {
+  const p = buildHandoffPrompt(
+    { id: "claude-sonnet-4-6", label: "sonnet", engine: "claude" },
+    { delivery: "newchat", cwd: "C:/work/app" },
+  );
+  assert.match(p, /HANDOFF\.md/);
+  assert.match(p, /C:\/work\/app/);
+});
+
+test("buildHandoffResumeSeed: points the new chat at HANDOFF.md in the cwd", () => {
+  const s = buildHandoffResumeSeed("C:/work/app");
+  assert.match(s, /HANDOFF\.md/);
+  assert.match(s, /C:\/work\/app/);
+  assert.match(s, /read/i);
+  // graceful without a cwd
+  assert.match(buildHandoffResumeSeed(null), /HANDOFF\.md/);
 });

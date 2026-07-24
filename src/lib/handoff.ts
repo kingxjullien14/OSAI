@@ -17,7 +17,12 @@ export interface HandoffTarget {
   engine?: string;
 }
 
-export type HandoffDelivery = "chat" | "file";
+/** How a handoff is delivered:
+ *   · "chat"    — the current model writes the brief into THIS conversation.
+ *   · "file"    — the current model writes it to `HANDOFF.md` in the working dir.
+ *   · "newchat" — like "file", plus a fresh chat opens on the target model in the
+ *                 SAME project, seeded to read `HANDOFF.md` and continue. */
+export type HandoffDelivery = "chat" | "file" | "newchat";
 
 /** Approx usable context window (tokens) for a target. Mirrors ChatPane's
  *  `ctxMeter` window map so the tailored length guidance matches what the app
@@ -105,12 +110,26 @@ export function buildHandoffPrompt(
 
   const head = `Create a clean HANDOFF for continuing THIS exact session in ${target.label} (${engine} / ${target.id}).`;
   const body = `Include:\n${sections}`;
-  const tail =
-    delivery === "file"
-      ? `Write the handoff as Markdown to \`HANDOFF.md\`${
-          cwd ? ` in ${cwd}` : " in the working directory"
-        } using your file-writing tool, then reply with just the path and a one-line summary.`
-      : `Write it as a single self-contained Markdown message so ${target.label} can resume without rereading this whole chat.`;
+  const toFile = delivery === "file" || delivery === "newchat";
+  const tail = toFile
+    ? `Write the handoff as Markdown to \`HANDOFF.md\`${
+        cwd ? ` in ${cwd}` : " in the working directory"
+      } using your file-writing tool, then reply with just the path and a one-line summary.`
+    : `Write it as a single self-contained Markdown message so ${target.label} can resume without rereading this whole chat.`;
 
   return [head, body, lengthGuidance(win), flavor, tail].filter(Boolean).join("\n\n");
+}
+
+/** The seed message the freshly-opened target chat is sent (delivery "newchat").
+ *  It points the new model at the `HANDOFF.md` the current session is writing in
+ *  the same project, so it rebuilds context from the file rather than the (absent)
+ *  chat history. Kept resilient to a small write/read race — it's told to wait for
+ *  the file if it isn't there yet. */
+export function buildHandoffResumeSeed(cwd?: string | null): string {
+  const where = cwd?.trim() ? ` in ${cwd.trim()}` : " in this project";
+  return [
+    `Continue a handed-off session. A HANDOFF brief was just written to \`HANDOFF.md\`${where} by the previous model.`,
+    "Read `HANDOFF.md` in full FIRST (if it isn't there yet, it's being written — retry once after a moment), then resume the work exactly from where it left off, following its \"next best actions\" in order.",
+    "Confirm in one line that you've read the handoff before making any changes.",
+  ].join("\n\n");
 }

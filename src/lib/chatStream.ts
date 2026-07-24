@@ -186,6 +186,61 @@ function reduceAssistantEvent(
   ev: ChatEvent,
   options: ChatStreamReduceOptions,
 ): ChatStreamState {
+  // sub-agent (Task) events carry the parent Task's tool_use id here → nest.
+  const parentId =
+    typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
+
+  // ── sub-agent event: nest tool cards, LEAVE the main stream alone ──────────
+  // A Task-child assistant event must not disturb the MAIN agent's live stream.
+  // Its prose/thinking belong to the sub-agent (dropped here — the fleet strip
+  // narrates it); only its tool_use blocks nest as cards under the Agent row.
+  // Crucially it must NOT settle the main thinking turn or clear
+  // streamingTurnId/thinkingTurnId. The old code fell through to the shared
+  // path below, which unconditionally cleared both — orphaning the main agent's
+  // in-progress bubble mid-stream. When a nested tool card then landed on the
+  // tail, the next main text delta couldn't find its turn and opened a SECOND
+  // bubble mid-sentence (the "words suddenly newline-split when a sub-agent
+  // runs" report). Returning `state`'s stream ids untouched keeps the main
+  // reply one continuous bubble while the fan-out streams underneath it.
+  if (parentId) {
+    const turns = [...state.turns];
+    for (const block of ev.message?.content ?? []) {
+      if (block.type === "tool_use" || block.type === "server_tool_use") {
+        const toolId = block.id ?? options.uid();
+        if (!turns.some((t) => t.kind === "tool" && t.id === toolId)) {
+          turns.push({
+            kind: "tool",
+            id: toolId,
+            name: block.name ?? "tool",
+            input: (block.input as Record<string, unknown>) ?? {},
+            parentId,
+          });
+        }
+      } else if (block.type === "web_search_tool_result") {
+        const ref = (block as { tool_use_id?: string }).tool_use_id;
+        const content = (block as { content?: unknown }).content;
+        const text = Array.isArray(content)
+          ? content
+              .map((r) => {
+                const row = r as { title?: string; url?: string };
+                return [row.title, row.url].filter(Boolean).join(" — ");
+              })
+              .filter(Boolean)
+              .join("\n")
+          : resultToText(content);
+        for (let i = 0; i < turns.length; i++) {
+          const t = turns[i];
+          if (t.kind === "tool" && t.id === ref) {
+            turns[i] = { ...t, result: text || "(no results)" };
+            break;
+          }
+        }
+      }
+    }
+    // preserve streamingTurnId + thinkingTurnId exactly — the main stream is live.
+    return { ...state, turns };
+  }
+
   let next = settleThinking(state, options.now);
   const turns = [...next.turns];
   // the model that produced THIS turn (rides on every assistant event) — stamped
@@ -200,15 +255,7 @@ function reduceAssistantEvent(
   const hadText = (ev.message?.content ?? []).some(
     (b) => b.type === "text" && (b.text ?? "").trim(),
   );
-  // sub-agent (Task) events carry the parent Task's tool_use id here → nest.
-  const parentId =
-    typeof ev.parent_tool_use_id === "string" ? ev.parent_tool_use_id : undefined;
   for (const block of ev.message?.content ?? []) {
-    // Sub-agent PROSE/THINKING stays inside the sub-agent: its final report
-    // arrives as the Task's tool_result, and the fleet strip narrates progress.
-    // Without this guard every sub-agent sentence rendered as a main-transcript
-    // bubble (owner-reported: fan-outs looked like the agent talking to itself).
-    if (parentId && (block.type === "text" || block.type === "thinking")) continue;
     if (block.type === "text") {
       const full = (block.text ?? "").trim();
       if (full && next.streamingTurnId == null) {
@@ -273,15 +320,14 @@ function reduceAssistantEvent(
     if (block.type === "tool_use" || block.type === "server_tool_use") {
       const toolId = block.id ?? options.uid();
       if (!turns.some((turn) => turn.kind === "tool" && turn.id === toolId)) {
+        // main-agent tool turn — no `parentId` key (sub-agent children are
+        // handled + nested in the early-return branch above), keeping these
+        // shape-identical for the deepStrictEqual tests + serialized history.
         turns.push({
           kind: "tool",
           id: toolId,
           name: block.name ?? "tool",
           input: (block.input as Record<string, unknown>) ?? {},
-          // only attach when it's a real sub-agent child — keeps main-agent tool
-          // turns shape-identical (no `parentId: undefined` key) so existing
-          // deepStrictEqual tests + serialized history stay byte-stable.
-          ...(parentId ? { parentId } : {}),
         });
       }
     }
@@ -570,6 +616,14 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
       }
     }
   };
+  // Turn-level origin tracking: a run woken by a background agent finishing
+  // carries `origin` ({kind:"task-notification"}), but which EVENT of that run
+  // carries it isn't guaranteed to be the closing `result` — the system/assistant
+  // event that opens the woken run can carry it instead. So we latch it across
+  // the run and clear it once the result consumes it (or a real user turn starts).
+  // Without this the continuation flag could miss, and the woken run would stack
+  // as a phantom ‹2/2› alternate that HIDES the previous answer.
+  let turnWoken = false;
   for (const raw of lines) {
     let ev: ChatEvent;
     try {
@@ -577,6 +631,7 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
     } catch {
       continue;
     }
+    if (ev.origin != null) turnWoken = true;
     // `_ts` is the write-time ms the store stamped (chat_history.rs); 0 for older
     // rows recorded before stamping → no time (graceful).
     const ts =
@@ -633,6 +688,7 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
           .map((b) => String((b as { path?: unknown }).path ?? ""))
           .filter(Boolean);
         if (text || images.length) {
+          turnWoken = false; // a real typed turn is never a continuation
           push({
             kind: "user",
             id: uid(),
@@ -648,7 +704,8 @@ export function replayHistoryToTurns(lines: string[], uid: () => string): ChatTu
     if (ev.type === "result") {
       const ok = !ev.is_error;
       const text = ok ? "" : ev.result ?? "";
-      const continuation = ev.origin != null;
+      const continuation = ev.origin != null || turnWoken;
+      turnWoken = false; // consumed — the next run starts fresh
       // skip empty success footers (e.g. the compaction turn's own result) — the
       // grouping drops text-less results anyway. A background-continuation result
       // (origin set) is kept even when empty so its run stays a segment boundary.

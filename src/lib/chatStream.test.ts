@@ -472,3 +472,71 @@ test("fast local streams: desynced delta ref self-heals; full-text settle coales
   assert.equal(settled.state.turns[0].text, "Hello! How can I help you today?");
   assert.equal(settled.state.turns[0].streaming, false);
 });
+
+test("a sub-agent assistant event mid-stream does NOT split the main bubble", () => {
+  n = 0;
+  // the main agent is streaming a sentence, token by token
+  let s = reduceChatStreamEvent(
+    { turns: [], streamingTurnId: null, thinkingTurnId: null },
+    { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "I'll compile their" } } },
+    { now: 1, uid },
+  );
+  const mainId = s.state.streamingTurnId;
+  assert.ok(mainId, "main stream opened");
+
+  // a SUB-AGENT settles a full assistant event (prose + a tool_use) WHILE the
+  // main stream is still live — it must nest the tool card but leave the main
+  // stream's ids untouched (the old bug cleared them → next delta split).
+  s = reduceChatStreamEvent(
+    s.state,
+    {
+      type: "assistant",
+      parent_tool_use_id: "task-1",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "sub-agent chatter" },
+          { type: "tool_use", id: "child-tu", name: "Read", input: {} },
+        ],
+      },
+    },
+    { now: 2, uid },
+  );
+  assert.equal(s.state.streamingTurnId, mainId, "main streaming id preserved");
+  const childTool = s.state.turns.find((t) => t.kind === "tool" && t.id === "child-tu");
+  assert.ok(childTool, "sub-agent tool nested");
+  assert.equal(childTool.parentId, "task-1");
+  assert.ok(
+    !s.state.turns.some((t) => t.kind === "assistant" && t.text === "sub-agent chatter"),
+    "sub-agent prose stays out of the main transcript",
+  );
+
+  // the main agent's next delta must CONTINUE the same bubble, not open a second
+  s = reduceChatStreamEvent(
+    s.state,
+    { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " findings into a plan." } } },
+    { now: 3, uid },
+  );
+  const mainTurns = s.state.turns.filter((t) => t.kind === "assistant");
+  assert.equal(mainTurns.length, 1, "no mid-sentence split from the sub-agent event");
+  assert.equal(mainTurns[0].text, "I'll compile their findings into a plan.");
+});
+
+test("replay: a task-notification-woken run is flagged a continuation even when only its opening event carries origin", () => {
+  n = 0;
+  const turns = replayHistoryToTurns(
+    [
+      // a normal user turn + its answer
+      `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"start a background job"}]}}`,
+      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"launched"}]}}`,
+      `{"type":"result","is_error":false}`,
+      // the background agent finishes → the woken run: origin rides the OPENING
+      // assistant event, NOT the closing result.
+      `{"type":"assistant","origin":{"kind":"task-notification"},"message":{"role":"assistant","content":[{"type":"text","text":"job done, here's what I found"}]}}`,
+      `{"type":"result","is_error":false}`,
+    ],
+    uid,
+  );
+  const continuationResults = turns.filter((t) => t.kind === "result" && t.continuation);
+  assert.equal(continuationResults.length, 1, "woken run's result tagged continuation");
+});

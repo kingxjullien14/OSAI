@@ -3,6 +3,11 @@ import { ALT } from "./platform.ts";
 export interface QueuedMessage {
   id: string;
   text: string;
+  /** temp image paths attached to this follow-up. Steering (stdin inject) can't
+   *  carry image content blocks, so a mid-run send WITH attachments is queued
+   *  here instead and flushed via the full send path when the turn ends — else
+   *  the attachments were silently dropped (owner-reported). */
+  imagePaths?: string[];
 }
 
 export interface QueueState {
@@ -136,11 +141,21 @@ export function usageStack(current: number, initial: number): UsageStack {
   return { baseline, session: total - baseline, total };
 }
 
-/** Append one non-empty pending steer message and highlight the new row. */
-export function queueMessage(items: QueuedMessage[], raw: string): QueueState {
+/** Append one pending follow-up (text and/or attachments) and highlight the new
+ *  row. A message with attachments but no text is still valid — you can queue an
+ *  image-only follow-up mid-run. */
+export function queueMessage(
+  items: QueuedMessage[],
+  raw: string,
+  imagePaths?: string[],
+): QueueState {
   const text = raw.trim();
-  if (!text) return { items, selected: Math.max(0, items.length - 1) };
-  const next = [...items, { id: `q${++queueSeq}`, text }];
+  const imgs = imagePaths?.filter(Boolean) ?? [];
+  if (!text && imgs.length === 0) return { items, selected: Math.max(0, items.length - 1) };
+  const next = [
+    ...items,
+    { id: `q${++queueSeq}`, text, ...(imgs.length ? { imagePaths: imgs } : {}) },
+  ];
   return { items: next, selected: next.length - 1 };
 }
 
@@ -219,6 +234,17 @@ export function sendContract(input: ComposerSendContractInput): ComposerSendCont
         // honest per engine: only claude/codex can inject mid-turn.
         title: canSteer ? "type a follow-up to steer or queue" : "type a follow-up to queue",
         disabled: true,
+      };
+    }
+    // Attachments can't ride a steer/stdin inject (no image content blocks on
+    // that path), so a mid-run send WITH images is a QUEUE regardless of engine —
+    // it flushes through the full send path (with the images) when the turn ends.
+    if (canSteer && input.hasImages) {
+      return {
+        mode: "queue",
+        label: "queue",
+        title: "attachments send on the next turn (steering can't carry images)",
+        disabled: false,
       };
     }
     if (input.engine === "codex") {

@@ -1671,7 +1671,15 @@ function App() {
     setPanes((p) => p.filter((x) => x.key !== key));
     setHiddenKeys((h) => h.filter((k) => k !== key));
     setActiveKey((a) => (a === key ? null : a));
-  }, []);
+    // Never leave an empty grid: if this was the LAST pane, open a fresh chat so
+    // there's always a conversation ready (owner request). panesRef is the live
+    // list (mirrored each render) → reading it here, in an event handler, tells us
+    // the post-close count without threading `panes` into this callback's deps.
+    // `spawn` is stable (useCallback []), so referencing it keeps closePane stable.
+    if (panesRef.current.filter((x) => x.key !== key).length === 0) {
+      spawn({ type: "chat" }, "chat");
+    }
+  }, [spawn]);
   // Closing a chat pane whose claude is mid-task → prompt to keep it running in
   // the background (with optional done-notification) instead of killing it.
   const requestClose = useCallback(
@@ -3844,6 +3852,17 @@ function App() {
                       ),
                     )
                   }
+                  onSpawnChat={(opts) =>
+                    spawn(
+                      {
+                        type: "chat",
+                        cwd: opts.cwd,
+                        modelId: opts.modelId,
+                        seed: opts.seed,
+                      },
+                      opts.label ?? "handoff",
+                    )
+                  }
                   onVideoFullscreen={(on) => onVideoFullscreen(pane.key, on)}
                   chatTargets={chatPaneTargets}
                   onAnnotateTo={routeToChatTarget}
@@ -5958,6 +5977,7 @@ function PaneCard({
   onAttachApp,
   onProfileChange,
   onChangeCwd,
+  onSpawnChat,
   onVideoFullscreen,
   chatTargets,
   onAnnotateTo,
@@ -6023,6 +6043,7 @@ function PaneCard({
   onAttachApp: (app: { name: string; bundle_id: string | null }) => void;
   onProfileChange: (profile: string) => void;
   onChangeCwd: (dir: string) => void;
+  onSpawnChat?: (opts: { cwd?: string; modelId?: string; label?: string; seed?: string }) => void;
   onVideoFullscreen?: (on: boolean) => void;
   /** open conversations (key+label) — files "open in chat" picker targets. */
   chatTargets?: { key: string; label: string }[];
@@ -6427,6 +6448,7 @@ function PaneCard({
               onOpenUrl={onOpenUrl}
               onChangeCwd={onChangeCwd}
               onSessionRecorded={onSessionRecorded}
+              onSpawnChat={onSpawnChat}
             />
           )}
           </Suspense>

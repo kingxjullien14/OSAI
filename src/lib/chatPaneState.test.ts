@@ -43,6 +43,20 @@ test("queueMessage trims text and selects the newly queued item", () => {
   assert.equal(next.items.length, 1);
   assert.equal(next.items[0]?.text, "inspect the failed build");
   assert.equal(next.selected, 0);
+  // no attachments → no imagePaths key (shape-stable for existing consumers)
+  assert.equal("imagePaths" in next.items[0], false);
+});
+
+test("queueMessage carries attachments, and an image-only follow-up is valid", () => {
+  const withImgs = queueMessage([], "look at this", ["/tmp/a.png", "/tmp/b.png"]);
+  assert.deepEqual(withImgs.items[0]?.imagePaths, ["/tmp/a.png", "/tmp/b.png"]);
+  // text-less but attachment-bearing → still queued (was rejected as "empty")
+  const imgOnly = queueMessage([], "   ", ["/tmp/c.png"]);
+  assert.equal(imgOnly.items.length, 1);
+  assert.equal(imgOnly.items[0]?.text, "");
+  assert.deepEqual(imgOnly.items[0]?.imagePaths, ["/tmp/c.png"]);
+  // truly empty (no text, no images) → still a no-op
+  assert.equal(queueMessage([], "  ").items.length, 0);
 });
 
 test("cycleQueueSelection wraps in both directions", () => {
@@ -157,6 +171,28 @@ test("sendContract makes streaming send behavior explicit", () => {
     }).mode,
     "queue",
   );
+  // a mid-run send WITH attachments is a QUEUE even on a steer-capable engine —
+  // steering can't carry image content blocks (they'd be dropped).
+  assert.equal(
+    sendContract({
+      streaming: true,
+      hasDraft: true,
+      hasImages: true,
+      engine: "claude",
+      started: true,
+    }).mode,
+    "queue",
+  );
+  // images-only (no text) mid-run is still an enabled queue, not "running/disabled".
+  const imgOnly = sendContract({
+    streaming: true,
+    hasDraft: false,
+    hasImages: true,
+    engine: "codex",
+    started: true,
+  });
+  assert.equal(imgOnly.mode, "queue");
+  assert.equal(imgOnly.disabled, false);
   assert.equal(
     sendContract({
       streaming: false,
